@@ -1,33 +1,18 @@
 """
 Notebook Builder Utility
-Constructs well-formed Jupyter Notebook (.ipynb) files for Spark Coding Use Cases.
+Constructs Databricks native Python source notebook (.py) files
+with '# Databricks notebook source', '# COMMAND ----------', and '# MAGIC %md' blocks.
 """
 
-import json
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 
-def make_markdown_cell(content: str) -> Dict[str, Any]:
-    lines = [line + "\n" for line in content.split("\n")]
-    if lines and lines[-1].endswith("\n"):
-        lines[-1] = lines[-1][:-1]
-    return {
-        "cell_type": "markdown",
-        "metadata": {},
-        "source": lines
-    }
-
-def make_code_cell(code: str) -> Dict[str, Any]:
-    lines = [line + "\n" for line in code.split("\n")]
-    if lines and lines[-1].endswith("\n"):
-        lines[-1] = lines[-1][:-1]
-    return {
-        "cell_type": "code",
-        "execution_count": None,
-        "metadata": {},
-        "outputs": [],
-        "source": lines
-    }
+def format_markdown_cell(content: str) -> str:
+    lines = content.strip().split("\n")
+    magic_lines = ["# MAGIC %md"]
+    for line in lines:
+        magic_lines.append(f"# MAGIC {line}" if line else "# MAGIC")
+    return "\n".join(magic_lines)
 
 def build_notebook(
     nb_id: str,
@@ -35,26 +20,24 @@ def build_notebook(
     module_folder: str,
     module_name: str,
     difficulty: str,
-    yt_ref: str,
     business_scenario: str,
     problem_statement: str,
     architectural_notes: str,
     sections: List[Dict[str, str]],
     key_takeaways: List[str],
-    interview_questions: List[str]
-) -> Dict[str, Any]:
+    interview_questions: List[str],
+    yt_ref: str = None  # Optional / ignored to eliminate video references
+) -> str:
     """
-    Builds a complete, richly documented Jupyter notebook structure.
-    sections is a list of dicts with {"title": str, "explanation": str, "code": str}
+    Builds a complete, richly documented Databricks native Python notebook (.py).
     """
-    cells = []
+    parts = ["# Databricks notebook source"]
 
-    # Cell 1: Master Markdown Header
+    # Header Markdown Cell (Clean enterprise presentation, no video references)
     header_md = f"""# Notebook {nb_id}: {title}
 
 **Module:** {module_name}  
 **Difficulty:** `{difficulty}`  
-**Databricks Masterclass Reference:** {yt_ref}  
 
 ---
 
@@ -65,16 +48,16 @@ def build_notebook(
 {problem_statement}
 
 ## 3. Spark & Databricks Architecture Notes
-{architectural_notes}
-"""
-    cells.append(make_markdown_cell(header_md))
+{architectural_notes}"""
+    parts.append(format_markdown_cell(header_md))
 
-    # Cell 2: Universal SparkSession bootstrap code
+    # Bootstrap Markdown & Code
     bootstrap_md = """## 4. Environment Setup & SparkSession Initialization
-We configure a resilient `SparkSession` compatible with local PySpark development, Databricks runtime, or CI/CD test runners."""
-    cells.append(make_markdown_cell(bootstrap_md))
+We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners."""
+    parts.append(format_markdown_cell(bootstrap_md))
 
-    bootstrap_code = """import os
+    clean_app_title = title.replace(' ', '_').replace(':', '').replace('&', 'and')
+    bootstrap_code = f"""import os
 import sys
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
@@ -84,7 +67,7 @@ from pyspark.sql.window import Window
 # Initialize SparkSession with Delta Lake support and optimized local configs
 spark = (
     SparkSession.builder
-    .appName(f"UseCase_{nb_id}_{title.replace(' ', '_')}")
+    .appName("UseCase_{nb_id}_{clean_app_title}")
     .master("local[*]")
     .config("spark.sql.shuffle.partitions", "4")
     .config("spark.default.parallelism", "4")
@@ -95,23 +78,22 @@ spark = (
 )
 
 spark.sparkContext.setLogLevel("WARN")
-print(f" Spark Version: {spark.version}")
-print(f" Session Active: {spark.sparkContext.appName}")
-""".replace("{nb_id}", nb_id).replace("{title.replace(' ', '_')}", title.replace(' ', '_').replace(':', ''))
-    cells.append(make_code_cell(bootstrap_code))
+print(f"Spark Version: {{spark.version}}")
+print(f"Session Active: {{spark.sparkContext.appName}}")"""
+    parts.append(bootstrap_code)
 
-    # Dynamic sections
+    # Dynamic Sections
     for idx, sec in enumerate(sections, start=5):
         sec_title = sec.get("title", f"Step {idx}")
         sec_expl = sec.get("explanation", "")
         sec_code = sec.get("code", "")
-        
-        md_text = f"## {idx}. {sec_title}\n{sec_expl}"
-        cells.append(make_markdown_cell(md_text))
-        if sec_code:
-            cells.append(make_code_cell(sec_code))
 
-    # Summary & Interview Cell
+        sec_md = f"## {idx}. {sec_title}\n{sec_expl}"
+        parts.append(format_markdown_cell(sec_md))
+        if sec_code:
+            parts.append(sec_code.strip())
+
+    # Summary & Interview Questions
     summary_md = f"""## 9. Key Architectural Takeaways
 """ + "\n".join([f"- **{t}**" if not t.startswith("-") else t for t in key_takeaways]) + f"""
 
@@ -119,38 +101,14 @@ print(f" Session Active: {spark.sparkContext.appName}")
 """ + "\n".join([f"{i+1}. {q}" for i, q in enumerate(interview_questions)]) + """
 
 ---
-*Created for the **Spark Coding Use Cases Masterclass** repository referencing the Databricks All-in-One Playlist.*
-"""
-    cells.append(make_markdown_cell(summary_md))
+*Created for the **Spark & Databricks Coding Use Cases Masterclass**.*"""
 
-    notebook_json = {
-        "cells": cells,
-        "metadata": {
-            "kernelspec": {
-                "display_name": "Python 3 (ipykernel)",
-                "language": "python",
-                "name": "python3"
-            },
-            "language_info": {
-                "codemirror_mode": {
-                    "name": "ipython",
-                    "version": 3
-                },
-                "file_extension": ".py",
-                "mimetype": "text/x-python",
-                "name": "python",
-                "nbconvert_exporter": "python",
-                "pygments_lexer": "ipython3",
-                "version": "3.10.0"
-            }
-        },
-        "nbformat": 4,
-        "nbformat_minor": 5
-    }
+    parts.append(format_markdown_cell(summary_md))
 
-    return notebook_json
+    # Join with standard Databricks command delimiter
+    return "\n\n# COMMAND ----------\n\n".join(parts) + "\n"
 
-def write_notebook(path: Path, nb_dict: Dict[str, Any]) -> None:
+def write_notebook(path: Path, nb_content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
-        json.dump(nb_dict, f, indent=1, ensure_ascii=False)
+        f.write(nb_content)

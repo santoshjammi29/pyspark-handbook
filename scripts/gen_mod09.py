@@ -12,7 +12,7 @@ MODULE_NAME = "Module 09: Databricks Platform, Unity Catalog, Security & FinOps"
 def sanitize_filename(nb_id: str, title: str) -> str:
     cleaned = title.lower().replace("&", "and")
     cleaned = re.sub(r"[^a-z0-9]+", "_", cleaned).strip("_")
-    return f"{nb_id}_{cleaned}.ipynb"
+    return f"{nb_id}_{cleaned}.py"
 
 def generate(base_dir: Path):
     out_dir = base_dir / "notebooks" / MODULE_FOLDER
@@ -23,7 +23,6 @@ def generate(base_dir: Path):
             "nb_id": "086",
             "title": "Unity Catalog Three-Tier Namespace: Catalogs, Schemas and Managed vs External Tables",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 03: Databricks Architecture & Video 14: Master Unity Catalog in Databricks",
             "business_scenario": "An enterprise migrates from the legacy Hive Metastore (`hive_metastore.default`) to Databricks Unity Catalog. Platform administrators need to establish a secure 3-tier namespace (`catalog.schema.table`) separating dev, staging, and prod environments, and differentiate between Managed and External tables.",
             "problem_statement": "Master Unity Catalog architecture: create 3-tier namespaces (`catalog.schema.table`), configure Managed tables (storage lifecycle managed by Databricks) vs External tables (pointing to existing cloud object storage paths), grant access permissions, and query table metadata.",
             "architectural_notes": "Unity Catalog introduces a centralized governance model across workspaces using a 3-tier namespace: `catalog` -> `schema` -> `table/view/volume`. Dropping a Managed table deletes both metadata and underlying Delta files; dropping an External table removes ONLY metadata, preserving underlying cloud storage data files.",
@@ -100,7 +99,6 @@ print("Unity Catalog RBAC privilege model mapped.")"""
             "nb_id": "087",
             "title": "Unity Catalog Volumes for Unstructured and Semi-Structured Data Governance",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 09: DBUtils & Video 14: Master Unity Catalog in Databricks",
             "business_scenario": "A machine learning team manages non-tabular files (PDF documents, medical images, audio files, and model weights) in cloud storage. Legacy DBFS mounts lack row/file-level access control. The platform requires Unity Catalog Volumes for secure governance.",
             "problem_statement": "Master Unity Catalog Volumes: compare Managed Volumes vs External Volumes, manage files inside volumes using `dbutils.fs` and standard POSIX `/Volumes/catalog/schema/volume` paths, apply governance privileges, and ingest raw documents into Spark.",
             "architectural_notes": "Unity Catalog Volumes govern non-tabular files (CSVs, images, PDFs, models) alongside tabular tables. Unlike legacy DBFS mounts that grant broad workspace-wide access, Volumes enforce fine-grained access control using the standard 3-tier namespace (`/Volumes/catalog/schema/volume_name/`).",
@@ -161,7 +159,6 @@ print("Fine-grained volume access control mapped.")"""
             "nb_id": "088",
             "title": "Dynamic Row-Level Security (RLS) Using Row Filters and User Functions",
             "difficulty": "Advanced",
-            "yt_ref": "Video 14: Master Unity Catalog & Video 22: PII Data Masterclass",
             "business_scenario": "A multinational sales organization maintains a single centralized `sales_pipeline` table. Regional sales reps must only see deals within their assigned territory (US reps only see US deals; EU reps only see EU deals), while executive managers see all global records.",
             "problem_statement": "Implement dynamic Row-Level Security (RLS) in Databricks Unity Catalog: create a SQL user-defined filter function using `is_account_group_member()` and `current_user()`, apply the filter to a table using `ALTER TABLE ... SET ROW FILTER`, and verify secure row filtering.",
             "architectural_notes": "Unity Catalog Row Filters evaluate dynamically at query compilation time. Catalyst injects the boolean filter function into the query plan, ensuring unauthorized rows are filtered out at the storage scan level before reaching memory.",
@@ -235,7 +232,6 @@ df_filtered_user.show()"""
             "nb_id": "089",
             "title": "Dynamic Column Masking for PII Protection and Compliance",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 14: Master Unity Catalog & Video 22: PII Data Masterclass",
             "business_scenario": "A medical insurance database stores member Social Security Numbers (SSN), full names, and email addresses. Customer service representatives must only see masked SSNs (`***-**-1234`), while compliance officers see cleartext.",
             "problem_statement": "Implement dynamic Column Masking in Databricks Unity Catalog: create a SQL masking function using `is_account_group_member()`, apply the mask to sensitive columns using `ALTER TABLE ... ALTER COLUMN ... SET MASK`, and verify dynamic redaction.",
             "architectural_notes": "Column Masks evaluate dynamically at query execution. If a user is not in the authorized administrative group, the masking function replaces sensitive column data with a masked pattern (e.g. SHA256 hash or asterisks) before returning results.",
@@ -306,7 +302,6 @@ df_masked.show(truncate=False)"""
             "nb_id": "090",
             "title": "PII Encryption, Salted Hashing and AES Decryption (aes_encrypt, sha2)",
             "difficulty": "Advanced",
-            "yt_ref": "Video 22: PII Data Masterclass in Databricks | Encryption, Masking, Tokenization Explained",
             "business_scenario": "A payment processing platform stores credit card Primary Account Numbers (PANs). PCI-DSS regulatory standards mandate that card numbers must be cryptographically encrypted at rest using AES-256 with managed secret keys and salted hashes for tokenization.",
             "problem_statement": "Master cryptographic security in PySpark: encrypt sensitive columns using `aes_encrypt()`, decrypt using `aes_decrypt()`, implement irreversible salted hashing with `sha2()`, and manage cryptographic keys securely.",
             "architectural_notes": "Spark SQL built-in `aes_encrypt(expr, key, mode, padding)` provides hardware-accelerated AES encryption. Using a secret cryptographic salt prevents rainbow table attacks on hashed columns.",
@@ -376,7 +371,6 @@ df_decrypted.select("txn_id", "decrypted_card_number", "amount", "tokenized_card
             "nb_id": "091",
             "title": "Databricks Secret Scopes and Secure Credential Injection via dbutils.secrets",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 08: Master Secret Scopes in Databricks Free Edition & Video 09: DBUtils",
             "business_scenario": "A data integration pipeline connects to cloud databases, external APIs (Stripe, Salesforce), and message queues. Developers must never hardcode API keys or passwords in notebooks, Git repositories, or logs.",
             "problem_statement": "Master secret management in Databricks: create Azure Key Vault / AWS Secrets Manager backed secret scopes, retrieve secrets safely via `dbutils.secrets.get()`, understand automatic secret redaction in driver stdout, and pass credentials into JDBC and REST APIs securely.",
             "architectural_notes": "Databricks Secret Scopes store encrypted key-value pairs backed by Databricks internal storage or cloud key vaults (Azure Key Vault / AWS KMS). When `dbutils.secrets.get()` is called, Databricks replaces the secret with `[REDACTED]` in all notebook output cells and Spark logs, preventing credential leakage.",
@@ -444,7 +438,6 @@ print("Database connection properties assembled securely.")"""
             "nb_id": "092",
             "title": "FinOps and DBU Cost Calculation Using system.billing.usage System Tables",
             "difficulty": "Advanced",
-            "yt_ref": "Video 15: Job Run Cost Calculation in Databricks with SQL",
             "business_scenario": "A Director of Data Engineering needs to track monthly Databricks DBU (Databricks Unit) consumption across business units (Finance, Marketing, ML). The FinOps team must identify expensive rogue jobs, untagged clusters, and cost spikes.",
             "problem_statement": "Query Databricks Unity Catalog system billing tables: analyze `system.billing.usage`, compute DBU consumption by job, cluster, and user, calculate estimated dollar expenditures, and build an automated FinOps cost anomaly detection query in PySpark SQL.",
             "architectural_notes": "Databricks system tables (`system.billing.usage`, `system.compute.clusters`) provide historical operational telemetry. The `system.billing.usage` table records DBU consumption per SKU, account, workspace, cluster, and custom billing tags every hour.",
@@ -516,7 +509,6 @@ spark.sql(anomaly_query).show(truncate=False)"""
             "nb_id": "093",
             "title": "Lakeflow Declarative Pipelines and Delta Live Tables (DLT) Expectations",
             "difficulty": "Advanced",
-            "yt_ref": "Video 17: Databricks Lakeflow Declarative Pipelines Demo with SQL, Pyspark, DQ and E2E ETL",
             "business_scenario": "An enterprise financial lakehouse migrates manual notebook pipelines to Databricks Lakeflow Declarative Pipelines (Delta Live Tables). The platform requires declarative Medallion pipelines with embedded Data Quality Expectations that log, drop, or fail on bad data.",
             "problem_statement": "Master Delta Live Tables (DLT) & Lakeflow Declarative Pipelines: understand the `@dlt.table` and `@dlt.view` decorators, compare the 3 expectation types (`expect`, `expect_or_drop`, `expect_or_fail`), configure streaming tables vs materialized views, and inspect pipeline event logs.",
             "architectural_notes": "Lakeflow Declarative Pipelines (DLT) allow data engineers to define *what* tables to produce rather than *how* to orchestrate them. DLT automatically constructs the DAG, provisions clusters, manages checkpoints, and captures data quality metrics per expectation rule.",
@@ -618,7 +610,6 @@ for mode, behavior in exp_modes:
             "nb_id": "094",
             "title": "Databricks Asset Bundles (DABs) for Multi-Environment CI/CD Automation",
             "difficulty": "Advanced",
-            "yt_ref": "Video 21: CICD process in Databricks with Bundles | Demo by Sr Data Architect",
             "business_scenario": "An enterprise development team deploys 50 Databricks workflows and pipelines across development, staging, and production workspaces. Manual UI deployments cause configuration drift, broken paths, and deployment bugs.",
             "problem_statement": "Master Databricks Asset Bundles (DABs): configure `databricks.yml`, define multi-environment deployment targets (dev, staging, prod), configure parameterized workflows, and automate CI/CD validation (`bundle validate`, `bundle deploy`, `bundle run`).",
             "architectural_notes": "Databricks Asset Bundles (DABs) provide Infrastructure-as-Code (IaC) for Databricks projects. A YAML bundle definition (`databricks.yml`) manages notebooks, pipelines, jobs, and permissions, allowing automated deployments via GitHub Actions or GitLab CI.",
@@ -716,7 +707,6 @@ for cmd, desc in commands:
             "nb_id": "095",
             "title": "Semantic Layer Modeling and Databricks Metric Views for BI and AI Agents",
             "difficulty": "Advanced",
-            "yt_ref": "Video 24: Databricks Metric Views Explained & Video 31: Databricks Genie Ontology",
             "business_scenario": "Different business teams calculate 'Customer Churn' and 'Net Revenue' using conflicting SQL formulas, producing discrepancies between executive reports and Databricks Genie AI natural language answers.",
             "problem_statement": "Build an enterprise Semantic Layer using Databricks Metric Views: define centralized business metrics, dimensions, hierarchies, and time grains, ensuring identical calculations across Power BI, Tableau, and Databricks Genie AI agents.",
             "architectural_notes": "A Semantic Layer translates physical Delta tables into business concepts (Measures and Dimensions). Databricks Metric Views provide a standardized semantic definition where metrics (e.g. ARR, Churn Rate) are defined once and computed dynamically at any aggregation grain.",

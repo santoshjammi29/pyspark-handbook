@@ -12,7 +12,7 @@ MODULE_NAME = "Module 03: Advanced SQL, Aggregations & Analytical Window Functio
 def sanitize_filename(nb_id: str, title: str) -> str:
     cleaned = title.lower().replace("&", "and")
     cleaned = re.sub(r"[^a-z0-9]+", "_", cleaned).strip("_")
-    return f"{nb_id}_{cleaned}.ipynb"
+    return f"{nb_id}_{cleaned}.py"
 
 def generate(base_dir: Path):
     out_dir = base_dir / "notebooks" / MODULE_FOLDER
@@ -23,7 +23,6 @@ def generate(base_dir: Path):
             "nb_id": "023",
             "title": "Basic and Multi-Column Aggregations with Alias Management",
             "difficulty": "Beginner",
-            "yt_ref": "Video 15: Job Run Cost Calculation in Databricks with SQL & Video 23: Interview Questions",
             "business_scenario": "A retail analytics engine calculates daily regional performance metrics across store departments: total gross revenue, average transaction value, maximum discount applied, and distinct active shoppers.",
             "problem_statement": "Perform multi-column aggregations using `groupBy()` paired with `agg()`. Demonstrate explicit column aliasing, combining multiple statistical functions (`sum`, `avg`, `min`, `max`, `countDistinct`, `approx_count_distinct`), and using dictionary-based aggregation syntax.",
             "architectural_notes": "Spark executes aggregations via HashAggregate (when data types are mutable) or SortAggregate. In two-phase aggregation, Spark first performs partial local aggregation on each partition before shuffling partial sums across the network, reducing network traffic.",
@@ -88,7 +87,6 @@ df_approx.show()"""
             "nb_id": "024",
             "title": "Advanced Multidimensional OLAP: Rollup, Cube and Grouping Sets",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 15: Job Run Cost Calculation & Video 24: Databricks Metric Views",
             "business_scenario": "A financial controller needs a single unified sales reporting view that includes: (1) Detailed breakdown by Year, Quarter, and Product, (2) Subtotals by Year and Quarter, (3) Subtotals by Year alone, and (4) The grand total across the entire enterprise.",
             "problem_statement": "Implement multidimensional OLAP aggregations without writing multiple queries and unions. Compare `rollup()` (hierarchical subtotals), `cube()` (all possible combinations of dimensions), and explicit `GROUPING SETS`. Use `grouping_id()` to identify aggregate levels.",
             "architectural_notes": "`rollup()` generates $N + 1$ grouping levels for $N$ dimensions in hierarchical order. `cube()` computes $2^N$ grouping combinations. Spark optimizes these into a single Pass using the Expand operator, avoiding multiple scans of the source table.",
@@ -148,7 +146,6 @@ df_cube.show()"""
             "nb_id": "025",
             "title": "Pivoting and Unpivoting Data: pivot and stack Expression Mastery",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 19: Databricks Dashboard from Scratch & Video 23: Interview Questions",
             "business_scenario": "A business intelligence dashboard requires monthly revenue pivoted into wide columns (Jan, Feb, Mar...) for tabular display. Conversely, a data science model requires wide survey responses unpivoted (melted) back into long tidy format.",
             "problem_statement": "Master tabular reshaping: (1) Pivot narrow transactional rows into wide summary columns using `groupBy().pivot()`, optimizing performance by passing explicit pivot values. (2) Unpivot wide multi-column tables back into narrow key-value rows using Spark's `stack()` expression.",
             "architectural_notes": "Calling `.pivot('col')` without specifying distinct values forces an extra, expensive distributed pass over the data to discover all unique column values. Always pass the pre-defined list of distinct values: `.pivot('col', ['Val1', 'Val2'])` to eliminate this extra scan.",
@@ -210,7 +207,6 @@ df_unpivoted.show()"""
             "nb_id": "026",
             "title": "Ranking Window Functions: row_number, rank, dense_rank and percent_rank",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 23: Databricks Interview Questions & Video 20: Finance Domain E2E Project",
             "business_scenario": "A national sales management board ranks sales representatives within each geographic territory based on quarterly quota attainment. The ranking system must handle tie scores appropriately and calculate relative percentile percentiles for bonus distribution.",
             "problem_statement": "Compare and implement all four ranking window functions: `row_number()`, `rank()`, `dense_rank()`, and `percent_rank()`. Explain how tied values affect sequential numbering and subsequent rank positions. Filter for Top-N performers per partition.",
             "architectural_notes": "Window ranking functions require a WindowSpec with `partitionBy()` and `orderBy()`. Rows are partitioned across executors by partition key and sorted in-memory. If no `partitionBy()` is provided, all data is moved to a single executor partition, creating a catastrophic bottleneck.",
@@ -276,7 +272,6 @@ df_top2.show()"""
             "nb_id": "027",
             "title": "Aggregate & Cumulative Window Functions: Running Totals and Moving Averages",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 20: Finance Domain E2E Project & Video 23: Interview Questions",
             "business_scenario": "A fintech wealth management app displays account balance trajectories and 7-day smoothed moving averages of daily expenditures to help customers track spending habits.",
             "problem_statement": "Implement cumulative sums (running totals), moving averages, and frame boundary specifications: compare physical row-based frames (`rowsBetween`) vs logical value-based frames (`rangeBetween`). Calculate moving averages over preceding windows.",
             "architectural_notes": "The default window frame for an ordered window is `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`. This can cause subtle bugs when duplicate order keys exist, as Spark aggregates all rows with the identical key together. Using `ROWS BETWEEN` guarantees explicit physical row framing.",
@@ -361,7 +356,6 @@ df_comp.show()"""
             "nb_id": "028",
             "title": "Offset Window Functions: lead, lag and Period-over-Period Churn",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 20: Finance Domain E2E Project & Video 23: Interview Questions",
             "business_scenario": "A SaaS subscription billing service analyzes customer MRR (Monthly Recurring Revenue). Finance requires month-over-month revenue variance, detection of plan upgrades/downgrades, and churn identification when an active account drops subscription renewal.",
             "problem_statement": "Master offset window functions: implement `lag()` to retrieve previous month revenue and `lead()` to inspect subsequent renewal state. Calculate absolute and percentage period-over-period differences, and handle default fallback values on boundary rows.",
             "architectural_notes": "Offset functions fetch values from neighboring rows within the same executor partition buffer without self-joining the table. Self-joins require a full Cartesian shuffle, whereas `lag()` operates in single-pass linear time $O(N)$ inside the partition.",
@@ -432,7 +426,6 @@ df_variance.select("sub_id", "billing_month", "prev_mrr", "mrr", "mrr_change", "
             "nb_id": "029",
             "title": "Sessionization and the Gaps & Islands Problem in PySpark",
             "difficulty": "Advanced",
-            "yt_ref": "Video 23: Databricks Interview Questions & Video 26: Retail Data Engineering Project",
             "business_scenario": "A digital analytics platform tracks web page views. An active browsing session is defined as consecutive clicks separated by no more than 30 minutes of inactivity. When a gap exceeds 30 minutes, a new unique session identifier must be generated.",
             "problem_statement": "Solve the classic Gaps and Islands problem in distributed PySpark: detect temporal gaps using `lag()`, mark island session boundaries with conditional flags, compute cumulative sums over flags to generate sequential session IDs, and aggregate session metrics.",
             "architectural_notes": "Solving Gaps & Islands in Spark uses a 2-step window pattern: (1) An ordered window with `lag()` to compute time delta between consecutive events and emit a 1/0 boundary indicator, and (2) A cumulative sum window over the boundary indicator to generate monotonic session IDs across the entire partition.",
@@ -512,7 +505,6 @@ df_summary.show(truncate=False)"""
             "nb_id": "030",
             "title": "Relational Joins Masterclass: Inner, Outer, Semi and Anti Joins",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 12: Debugging Code & Video 23: Databricks Interview Questions",
             "business_scenario": "An enterprise CRM data reconciler syncs accounts between Salesforce and a billing database. The reconciliation team needs to find: (1) Fully matched customer profiles, (2) Customers in CRM with zero billing records, and (3) Active billing records missing from CRM.",
             "problem_statement": "Implement and compare all relational join types in PySpark: `inner`, `left`, `right`, `full_outer`, `left_semi`, and `left_anti`. Explain why `left_semi` and `left_anti` are preferred over left joins with null checks.",
             "architectural_notes": "`left_semi` join filters rows from the left table that have at least one match in the right table without duplicating left rows or including right columns. `left_anti` returns rows from the left table that have NO match in the right table. Both are far more memory-efficient than standard joins.",
@@ -583,7 +575,6 @@ df_anti.show()"""
             "nb_id": "031",
             "title": "Broadcast Hash Joins, Threshold Tuning and Memory Limits",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 13: Databricks Clusters & Video 23: Databricks Interview Questions",
             "business_scenario": "A point-of-sale stream joins billions of transaction rows with a small 2MB store metadata lookup table. Default join configuration causes an unnecessary multi-gigabyte shuffle across all executors, degrading cluster performance.",
             "problem_statement": "Eliminate shuffle overhead using Broadcast Hash Joins: apply explicit `broadcast(df)` hint, inspect the Catalyst physical plan to verify `BroadcastHashJoinExec`, understand `spark.sql.autoBroadcastJoinThreshold`, and identify the risks of driver OutOfMemory (OOM) when broadcasting large tables.",
             "architectural_notes": "In a Broadcast Hash Join, the driver downloads the small DataFrame, builds an in-memory hash table, and broadcasts it to all worker executors via Spark's peer-to-peer torrent protocol. Workers join streaming partition data locally with zero network shuffle. The default auto-broadcast threshold is 10MB (10485760 bytes).",
@@ -652,7 +643,6 @@ print(f"Current Auto Broadcast Threshold: {int(current_threshold) / (1024*1024):
             "nb_id": "032",
             "title": "Spark SQL Views, Temp Tables and Catalyst SQL Optimization",
             "difficulty": "Beginner",
-            "yt_ref": "Video 15: Job Run Cost Calculation & Video 23: Interview Questions",
             "business_scenario": "A hybrid analytics team consists of Python data engineers and SQL business analysts. The data engineering team prepares sanitized DataFrames that SQL analysts query using ANSI SQL queries and Common Table Expressions (CTEs).",
             "problem_statement": "Demonstrate seamless interoperability between PySpark DataFrames and Spark SQL: register temporary views (`createOrReplaceTempView`), global temporary views (`createGlobalTempView`), run complex SQL with CTEs via `spark.sql()`, pass dynamic parameters, and inspect Catalyst optimization.",
             "architectural_notes": "Temporary views exist purely as logical metadata pointers in the SparkSession catalog without materializing data to disk. Calling `spark.sql()` compiles SQL text through the same Catalyst parser and optimizer as DataFrame API code, producing identical physical plans.",

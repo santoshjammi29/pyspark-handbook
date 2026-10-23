@@ -12,7 +12,7 @@ MODULE_NAME = "Module 04: Delta Lake Architecture, ACID Operations & Time Travel
 def sanitize_filename(nb_id: str, title: str) -> str:
     cleaned = title.lower().replace("&", "and")
     cleaned = re.sub(r"[^a-z0-9]+", "_", cleaned).strip("_")
-    return f"{nb_id}_{cleaned}.ipynb"
+    return f"{nb_id}_{cleaned}.py"
 
 def generate(base_dir: Path):
     out_dir = base_dir / "notebooks" / MODULE_FOLDER
@@ -23,7 +23,6 @@ def generate(base_dir: Path):
             "nb_id": "033",
             "title": "Delta Table Creation, Metadata Inspection and Transaction Log Internals",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 03: Databricks Architecture & Video 14: Master Unity Catalog",
             "business_scenario": "A lakehouse platform architect requires an immutable, audit-compliant storage layer for financial ledger records. Standard Parquet files lack ACID atomicity and suffer from partial write failures during cluster spot instance terminations.",
             "problem_statement": "Create a Delta Lake table with explicit schema, inspect its physical storage directory structure, read the JSON commit log files inside `_delta_log/`, parse checkpoint parity files, and query table details via `DESCRIBE DETAIL` and `DESCRIBE HISTORY`.",
             "architectural_notes": "Delta Lake brings ACID transactions to Apache Spark using a write-ahead log stored in `_delta_log/`. Every transaction creates an atomic JSON commit (e.g. `000000.json`). Every 10 commits, Delta writes a consolidated Parquet checkpoint file to bound state reconstruction time.",
@@ -92,7 +91,6 @@ df_history.select("version", "timestamp", "userId", "operation", "operationParam
             "nb_id": "034",
             "title": "ACID CRUD Operations on Delta: Insert, Update and Delete Mechanics",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 14: Master Unity Catalog & Video 20: Finance Domain E2E Project",
             "business_scenario": "A GDPR/CCPA privacy compliance pipeline requires modifying existing customer records: deleting individuals exercising 'Right to be Forgotten' and updating consent preferences without taking the database offline.",
             "problem_statement": "Execute ACID CRUD operations on Delta Lake using `DeltaTable` API and Spark SQL: append new records (`insert`), selectively modify attributes (`update`), and purge records (`delete`). Inspect file modifications and tombstone markers.",
             "architectural_notes": "Delta Lake files are immutable. An UPDATE or DELETE operation reads existing Parquet files, rewrites modified rows into brand-new Parquet files, and writes tombstone `remove` actions into the Delta transaction log. The old files remain on disk for Time Travel until removed by `VACUUM`.",
@@ -157,7 +155,6 @@ print(f"Current version of table: {df_hist.first()['version']}")"""
             "nb_id": "035",
             "title": "Delta Upsert and MERGE INTO Mastery with Multiple Conditions",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 17: Lakeflow Declarative Pipelines & Video 26: Retail Data Engineering Project",
             "business_scenario": "A retail inventory management system synchronizes daily inventory updates from 500 physical warehouses. If an item exists in the central inventory table, update stock quantity and last_restocked date; if missing, insert the new SKU; if stock drops to -999 (discontinued), delete the item.",
             "problem_statement": "Master the `MERGE INTO` API in Delta Lake: implement complex upserts with `whenMatchedUpdate`, `whenMatchedDelete`, `whenNotMatchedInsert`, and conditional update clauses to handle real-world CDC synchronization in a single atomic transaction.",
             "architectural_notes": "Delta MERGE is an atomic operation that performs a full outer join between source updates and target Delta files to identify matching keys. It rewrites only the specific files containing matching rows, avoiding full table rewrites.",
@@ -248,7 +245,6 @@ target_table.toDF().orderBy("sku").show()"""
             "nb_id": "036",
             "title": "Delta Time Travel, Audit History and Version Rollback",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 06: Master Databricks Notebooks & Video 23: Interview Questions",
             "business_scenario": "A bug in an automated ETL pricing script mistakenly discounted all luxury goods by 90% during an overnight run. The operations team needs to audit what happened, query the table as of yesterday morning, and roll back the table to the pre-bug version.",
             "problem_statement": "Master Delta Lake Time Travel: inspect table transaction history (`DESCRIBE HISTORY`), query previous states using `VERSION AS OF` and `TIMESTAMP AS OF`, verify data recovery, and restore the table to an earlier version using `RESTORE TABLE`.",
             "architectural_notes": "Delta Lake maintains physical Parquet files from previous commits until `VACUUM` is executed. Reading a historical version reconstructs the file list from the corresponding `_delta_log` JSON commit file without modifying current data.",
@@ -311,7 +307,6 @@ spark.read.format("delta").load(delta_price_path).show()"""
             "nb_id": "037",
             "title": "VACUUM Command, Retention Hours and Safe Tombstone Management",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 15: Job Run Cost Calculation & Video 23: Interview Questions",
             "business_scenario": "A cloud lakehouse table ingests high-frequency updates, accumulating 50,000 unreferenced obsolete Parquet files and generating massive cloud storage bills. Platform engineers must reclaim storage capacity safely without corrupting active concurrent readers.",
             "problem_statement": "Execute Delta Lake `VACUUM` management: understand the default 7-day retention safety check, bypass retention for testing (`spark.databricks.delta.vacuum.parallelDelete.enabled`), evaluate `DRY RUN` mode to audit candidate files before permanent deletion, and prevent race conditions.",
             "architectural_notes": "Delta `VACUUM` physically deletes data files that have been marked as removed (tombstoned) in the transaction log and are older than the retention threshold (default 168 hours / 7 days). The safety check prevents deleting files still being read by long-running queries.",
@@ -372,7 +367,6 @@ spark.read.format("delta").load(delta_vac_path).show()"""
             "nb_id": "038",
             "title": "Delta OPTIMIZE, File Compaction and Auto-Compaction Strategies",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 13: Databricks Clusters & Video 23: Databricks Interview Questions",
             "business_scenario": "A streaming ingestion job writes 1,000 tiny 50KB Parquet files into a Delta table every hour. Query latency has plummeted from 2 seconds to 45 seconds due to the classic Big Data 'small file problem' overwhelming driver filesystem metadata operations.",
             "problem_statement": "Resolve small file degradation using Delta Lake compaction: execute `OPTIMIZE` command to bin-pack small files into standard 1GB target files, measure file count reduction, and configure Databricks auto-compaction and optimized writes (`spark.databricks.delta.optimizeWrite.enabled`).",
             "architectural_notes": "The small file problem causes high metadata lookup overhead on cloud storage (millions of GET/LIST API calls). `OPTIMIZE` reads groups of tiny files and rewrites them into consolidated 1GB (or user-tuned size) Parquet files, creating a single commit in `_delta_log`.",
@@ -428,7 +422,6 @@ print("Optimized Writes and Auto-Compaction enabled in SparkSession!")"""
             "nb_id": "039",
             "title": "Z-Order Multi-Dimensional Indexing vs Liquid Clustering (CLUSTER BY)",
             "difficulty": "Advanced",
-            "yt_ref": "Video 13: Databricks Clusters, Video 14: Master Unity Catalog & Video 23: Interview Questions",
             "business_scenario": "An ad-tech analytics platform runs ad-hoc queries filtering on combinations of `customer_id`, `event_date`, and `campaign_id`. Traditional Hive partitioning on all three columns causes over-partitioning, while single-column sorting leaves other query predicates unoptimized.",
             "problem_statement": "Compare multi-dimensional indexing techniques: implement `OPTIMIZE ... ZORDER BY (col1, col2)` to co-locate multidimensional data along space-filling Hilbert/Morton curves, and contrast with modern Databricks Liquid Clustering (`CLUSTER BY`) which supports incremental re-clustering without full rewrites.",
             "architectural_notes": "Z-Ordering maps multi-dimensional data onto a 1D space-filling curve, preserving spatial locality so queries filtering on any subset of Z-ordered columns skip unneeded Parquet files. Liquid Clustering (Databricks Runtime 13.3+) replaces partitioning and Z-order with dynamic clustering that scales incrementally.",
@@ -496,7 +489,6 @@ print("Liquid Clustering advantages: no partition lock-in, non-destructive colum
             "nb_id": "040",
             "title": "Delta Change Data Feed (CDF): Enabling and Consuming Row-Level Changes",
             "difficulty": "Advanced",
-            "yt_ref": "Video 16: LakeFlow Connect & Video 17: Lakeflow Declarative Pipelines",
             "business_scenario": "An enterprise financial lakehouse architecture maintains a real-time risk dashboard that must react to downstream row-level modifications (inserts, updates, and deletes) occurring in the upstream customer ledger without re-scanning the entire table.",
             "problem_statement": "Enable Delta Change Data Feed (`delta.enableChangeDataFeed = true`). Execute inserts, updates, and deletes on the table. Query the resulting change stream using `readChangeFeed` to capture pre-images, post-images, and deleted records.",
             "architectural_notes": "Delta Change Data Feed (CDF) generates row-level change events alongside commits. When updates occur, CDF logs both the `update_preimage` (row state before update) and `update_postimage` (row state after update), enabling exact financial double-entry reconciliation downstream.",
@@ -581,7 +573,6 @@ df_cdf.select(
             "nb_id": "041",
             "title": "Delta Schema Evolution (mergeSchema) and Schema Enforcement",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 11: Auto-loader & Video 14: Master Unity Catalog",
             "business_scenario": "A product catalog service frequently releases new product attributes (e.g. `warranty_months`, `energy_rating`). When downstream batch writers encounter unexpected new columns, default Spark writes abort with schema mismatch errors.",
             "problem_statement": "Demonstrate Delta Lake schema enforcement: observe default write failures when extra columns are introduced, and safely evolve the table schema using the `.option('mergeSchema', 'true')` write flag and automatic schema evolution.",
             "architectural_notes": "Delta Lake enforces schema on write to prevent bad data from silently corrupting tables. When `mergeSchema` is enabled, Delta updates the table metadata in `_delta_log` to include new columns as nullable, filling existing historical rows with NULLs upon reading.",
@@ -644,7 +635,6 @@ df_evolved.show()"""
             "nb_id": "042",
             "title": "Delta Table Constraints: CHECK and NOT NULL Data Quality Rules",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 17: Lakeflow Declarative Pipelines & Video 23: Interview Questions",
             "business_scenario": "A banking compliance application requires strict data quality invariants on account records: account balances must never drop below -$500, customer email addresses must contain '@', and account IDs must never be null.",
             "problem_statement": "Apply data quality constraints to Delta tables: configure `NOT NULL` constraints, add boolean `CHECK` constraints using `ALTER TABLE ADD CONSTRAINT`, verify constraint enforcement on writes, and handle constraint violation exceptions.",
             "architectural_notes": "Delta constraints are stored directly in table metadata properties (`_delta_log`). Any write operation that violates a constraint is rejected atomically before writing to disk, ensuring zero bad data lands in Gold or Silver tables.",
@@ -713,7 +703,6 @@ spark.read.format("delta").load(delta_cons_path).show()"""
             "nb_id": "043",
             "title": "In-Place Parquet to Delta Lake Migration with CONVERT TO DELTA",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 03: Databricks Architecture & Video 23: Interview Questions",
             "business_scenario": "An enterprise data platform has 100TB of historical data stored across partitioned Parquet directories in Amazon S3 or Azure ADLS. Re-writing all Parquet files into Delta would take days and cost thousands of dollars in cloud compute.",
             "problem_statement": "Perform a zero-copy, in-place migration of an existing Parquet table to Delta Lake using `CONVERT TO DELTA`. Preserve existing partition directory hierarchies and verify instant ACID transaction log generation without moving data files.",
             "architectural_notes": "`CONVERT TO DELTA` reads the file metadata and directory structure of an existing Parquet directory and synthesizes commit `000000.json` in `_delta_log/` in seconds. It does not rewrite or copy underlying Parquet data files, making it a zero-copy instant operation.",

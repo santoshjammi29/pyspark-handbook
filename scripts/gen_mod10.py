@@ -12,7 +12,7 @@ MODULE_NAME = "Module 10: End-to-End Enterprise Projects & Production Workflows"
 def sanitize_filename(nb_id: str, title: str) -> str:
     cleaned = title.lower().replace("&", "and")
     cleaned = re.sub(r"[^a-z0-9]+", "_", cleaned).strip("_")
-    return f"{nb_id}_{cleaned}.ipynb"
+    return f"{nb_id}_{cleaned}.py"
 
 def generate(base_dir: Path):
     out_dir = base_dir / "notebooks" / MODULE_FOLDER
@@ -23,7 +23,6 @@ def generate(base_dir: Path):
             "nb_id": "096",
             "title": "Project Finance: Real-Time Credit Card Fraud Detection and Customer 360",
             "difficulty": "Advanced",
-            "yt_ref": "Video 20: Finance Domain End-to-End Data Engineering Project in Databricks",
             "business_scenario": "A tier-1 retail bank processes 50 million credit card swipe transactions daily. Risk engineering must build an end-to-end Medallion pipeline that ingests raw swipes, calculates real-time risk scores (geographical velocity, transaction spikes > 3x average, rapid successive swipes within 2 minutes), and flags fraudulent transactions for real-time card blocking.",
             "problem_statement": "Build an end-to-end financial data engineering project: (1) Ingest raw swipes into Bronze Delta table with audit columns, (2) Cleanse, parse timestamps, and join against customer profiles in Silver, (3) Apply window-based fraud detection rules (swipes within 2 minutes in different cities), and (4) Publish a Gold Customer 360 Risk Summary table.",
             "architectural_notes": "Financial fraud detection requires low latency and high consistency. Combining Delta Lake ACID guarantees with window-based temporal heuristics allows detecting impossible geographic travel velocities and abnormal spend spikes without complex external ML infrastructure.",
@@ -124,7 +123,6 @@ df_gold_card360.show()"""
             "nb_id": "097",
             "title": "Project Retail: Omnichannel Multi-Source Lakehouse ETL",
             "difficulty": "Advanced",
-            "yt_ref": "Video 26: Retail Data Engineering Project in Databricks Free Edition",
             "business_scenario": "A major omnichannel retailer operates physical retail stores, an e-commerce website, and customer support via Salesforce. Data resides in three separate silos: PostgreSQL (store inventory), Clickstream logs (web), and Salesforce (customer CRM). Marketing requires a consolidated 360 customer purchase profile.",
             "problem_statement": "Execute an end-to-end retail multi-source integration pipeline: (1) Ingest multi-format sources (Postgres JDBC simulation, Web clickstream JSON, and Salesforce CSV), (2) Reconcile identity across customer identifiers, (3) Perform Delta Lake `MERGE INTO` upserts, and (4) Build a multi-channel revenue analytics model.",
             "architectural_notes": "Omnichannel retail requires resolving disparate identity keys (e.g. loyalty card ID from store POS vs email from web cookies). The Silver layer performs identity resolution, linking disparate keys to a conformed master `customer_sk`.",
@@ -202,7 +200,6 @@ df_gold_clv.show()"""
             "nb_id": "098",
             "title": "Project Healthcare: HIPAA-Compliant Clinical Records De-Identification",
             "difficulty": "Advanced",
-            "yt_ref": "Video 22: PII Data Masterclass in Databricks",
             "business_scenario": "A hospital research network prepares electronic health records (EHR) for clinical cancer research. HIPAA Safe Harbor compliance mandates the complete removal or cryptographic hashing of 18 direct identifiers (names, dates of birth, MRNs, zip codes) before sharing with researchers.",
             "problem_statement": "Build a HIPAA-compliant clinical pipeline: (1) Ingest raw clinical encounter records, (2) Apply Safe Harbor de-identification (mask names, truncate zip codes to 3 digits, shift admission dates using patient-specific cryptographically salted offsets), and (3) Calculate patient length-of-stay (LOS) metrics.",
             "architectural_notes": "HIPAA Safe Harbor requires removing names, phone numbers, and truncating zip codes where populations exceed 20,000. Dates must not be precise; date shifting preserves the chronological duration between events (e.g. admission and discharge) without revealing true calendar dates.",
@@ -274,7 +271,6 @@ df_research_gold.show(truncate=False)"""
             "nb_id": "099",
             "title": "Project Telecom: Customer Churn Prediction Feature Store and Window Features",
             "difficulty": "Advanced",
-            "yt_ref": "Video 20: Finance Domain E2E Project & Video 23: Interview Questions",
             "business_scenario": "A major mobile carrier experiences 2% monthly customer churn. Data scientists need a centralized Lakehouse Feature Store containing 30-day rolling aggregate features (drop in data usage, spike in customer service calls, late bill payments) to train machine learning churn models.",
             "problem_statement": "Build an enterprise Telecom Feature Engineering pipeline in PySpark: (1) Compute rolling 30-day temporal window aggregations per subscriber, (2) Calculate trend ratios (current 7-day usage vs 30-day average), (3) Assemble features into a Databricks Feature Store format, and (4) Validate feature drift.",
             "architectural_notes": "Feature stores prevent online/offline training-serving skew. Point-in-time correctness ensures features computed for model training reflect only the data available at the historical prediction timestamp, preventing data leakage.",
@@ -356,7 +352,6 @@ df_final_features.show()"""
             "nb_id": "100",
             "title": "Project Cybersecurity: Web Server Access Log Analytics and Threat Detection",
             "difficulty": "Advanced",
-            "yt_ref": "Video 12: Debugging Code in Databricks & Video 23: Interview Questions",
             "business_scenario": "A cyber defense operations center monitors 100 million web server access logs daily. Security analysts must parse unformatted Nginx/Apache logs, detect DDoS attacks (IPs generating > 100 requests in 1 minute), identify SQL injection attempts, and geolocate threat origins.",
             "problem_statement": "Build an end-to-end cybersecurity log analytics pipeline: (1) Parse Common Log Format (CLF) / Nginx access logs using regex, (2) Detect HTTP 4xx/5xx error bursts and potential SQL injection signatures (`UNION SELECT`, `' OR 1=1`), (3) Execute sliding window velocity checks, and (4) Output an active threat IP blacklist.",
             "architectural_notes": "Log parsing in big data pipelines is CPU-intensive. Using native `regexp_extract()` with pre-compiled regex groups in Catalyst operates inside Tungsten UTF-8 binary format, avoiding Java String object garbage collection pressure.",
@@ -443,7 +438,6 @@ df_blacklist.show(truncate=False)"""
             "nb_id": "101",
             "title": "Project IoT: Industrial Telemetry Anomaly Detection via Z-Score Statistics",
             "difficulty": "Advanced",
-            "yt_ref": "Video 11: Auto-loader & Video 12: Debugging Code in Databricks",
             "business_scenario": "A smart manufacturing plant operates 5,000 robotic welding arms. Bearings experience mechanical fatigue before catastrophic failure. Plant reliability engineers need a real-time statistical anomaly detector that computes moving Z-scores on vibration sensor streams.",
             "problem_statement": "Implement distributed statistical anomaly detection in PySpark: calculate rolling mean and standard deviation over temporal windows, compute the Z-score for vibration signals ($Z = \\frac{x - \\mu}{\\sigma}$), flag readings where $|Z| > 3.0$ (three-sigma rule), and trigger predictive maintenance tickets.",
             "architectural_notes": "The three-sigma ($3\\sigma$) rule assumes sensor readings under normal operation follow an approximate Gaussian distribution. By computing dynamic moving baselines per machine rather than static thresholds, the pipeline adapts to normal operating temperature and load shifts.",
@@ -515,7 +509,6 @@ df_anomalies.select("machine_id", "reading_time", "vibration_mm", "moving_avg", 
             "nb_id": "102",
             "title": "Project Supply Chain: Inventory Replenishment Forecasting and Reorder Triggers",
             "difficulty": "Advanced",
-            "yt_ref": "Video 26: Retail Data Engineering Project & Video 28: Data Modeling",
             "business_scenario": "A national grocery chain manages 10,000 SKUs across 20 regional distribution centers. Supply chain disruptions cause frequent stockouts of essential items. The forecasting team needs an automated Lakehouse pipeline that calculates Daily Run-Rate (DRR), Safety Stock, and triggers automated purchase orders.",
             "problem_statement": "Build an automated supply chain replenishment model in PySpark: (1) Compute 14-day moving daily sales velocity, (2) Estimate lead-time demand and safety stock using standard formulas ($SS = Z \\times \\sigma_{LTD}$), (3) Calculate dynamic Reorder Points (ROP), and (4) Generate automated Purchase Order requisitions.",
             "architectural_notes": "Supply chain optimization requires reconciling historical sales velocity with supplier delivery lead times. Calculating dynamic reorder points in PySpark enables automated daily replenishment recommendations across millions of warehouse-SKU combinations.",
@@ -586,7 +579,6 @@ df_purchase_orders.select("sku", "product_name", "current_stock", "reorder_point
             "nb_id": "103",
             "title": "Project E-Commerce: Collaborative Filtering Recommendation Engine with Spark MLlib",
             "difficulty": "Advanced",
-            "yt_ref": "Video 26: Retail Data Engineering Project & Video 27: Agentic AI for Beginners",
             "business_scenario": "An online retail store has 1 million products and 5 million shoppers. Product managers want personalized 'Recommended For You' item carousels on the homepage to increase average order value and user engagement.",
             "problem_statement": "Build an enterprise Recommendation Engine using Spark MLlib: prepare implicit user-item interaction matrices (user_id, item_id, rating), train an Alternating Least Squares (ALS) matrix factorization model, generate top-5 personalized recommendations per user, and evaluate model performance.",
             "architectural_notes": "Spark MLlib ALS (Alternating Least Squares) factorizes the sparse user-item interaction matrix $R$ into low-rank user matrix $U$ and item matrix $V$ ($R \approx U \times V^T$). It runs in distributed memory, scaling to hundreds of millions of user-item ratings across cluster nodes.",
@@ -664,7 +656,6 @@ df_unpacked_recs.show()"""
             "nb_id": "104",
             "title": "Project Agentic AI & RAG: Lakehouse Document Chunking and Vector Search",
             "difficulty": "Advanced",
-            "yt_ref": "Video 25: Genie Code & Video 27: Agentic AI for Beginners: Build an E2E Agentic Solution",
             "business_scenario": "An enterprise customer service platform deploys an Agentic AI chatbot powered by Databricks Genie and LLMs. The chatbot needs to answer questions about company product manuals, warranty terms, and legal policies stored across unstructured PDF and text documents in the Lakehouse.",
             "problem_statement": "Build an enterprise RAG (Retrieval-Augmented Generation) data preparation pipeline: (1) Ingest raw documentation from Unity Catalog Volumes, (2) Split long text into overlapping chunks using sliding windows, (3) Generate dense vector embeddings simulation, and (4) Prepare Gold vector index tables for Vector Search.",
             "architectural_notes": "RAG architectures require chunking large documents into semantically coherent segments (e.g. 500 characters with 100 character overlap) and embedding them into high-dimensional vectors. Databricks Vector Search indexes Delta tables natively, enabling hybrid semantic and keyword search.",
@@ -742,7 +733,6 @@ df_vector_ready.select("chunk_id", "title", "embedding_vector").show(truncate=Fa
             "nb_id": "105",
             "title": "Master Enterprise Production Orchestration, Workflow Parameters and Alerting",
             "difficulty": "Advanced",
-            "yt_ref": "Video 10: Databricks Job: End-to-End Demo with Loops, Parameters, Failure Handling & Alerts",
             "business_scenario": "A mission-critical enterprise financial pipeline executes 15 dependent tasks every night. The workflow must accept dynamic run parameters, retry failed tasks with exponential backoff, send Slack/Teams webhook alerts on failure, and write audit run logs.",
             "problem_statement": "Design an enterprise orchestration harness in PySpark: implement parameterized workflow execution, simulate task dependency graphs (DAGs), capture task execution durations, catch runtime exceptions, and dispatch webhook failure alerts.",
             "architectural_notes": "Databricks Workflows orchestrates complex multi-task DAGs. Using parameters (`dbutils.widgets`), tasks can be parameterized across environments. Implementing centralized audit logging inside tasks ensures compliance and accelerates root cause analysis during pipeline failures.",

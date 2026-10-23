@@ -12,7 +12,7 @@ MODULE_NAME = "Module 02: Complex Data Types & Nested Structures Handling"
 def sanitize_filename(nb_id: str, title: str) -> str:
     cleaned = title.lower().replace("&", "and")
     cleaned = re.sub(r"[^a-z0-9]+", "_", cleaned).strip("_")
-    return f"{nb_id}_{cleaned}.ipynb"
+    return f"{nb_id}_{cleaned}.py"
 
 def generate(base_dir: Path):
     out_dir = base_dir / "notebooks" / MODULE_FOLDER
@@ -23,7 +23,6 @@ def generate(base_dir: Path):
             "nb_id": "013",
             "title": "Array Creation, Element Extraction and Array Search Functions",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 06: Master Databricks Notebooks & Video 23: Interview Questions",
             "business_scenario": "A digital streaming platform logs user engagement tags, genre preferences, and content playlists as arrays. Marketing analysts need to inspect array length, test for specific genre membership, and extract primary tags.",
             "problem_statement": "Master array operations: create arrays from multiple columns (`array()`), test element membership (`array_contains()`), retrieve element by index with 1-based and negative indexing (`element_at`), sort array elements (`array_sort`), and compute array sizes.",
             "architectural_notes": "Spark represents ArrayType as native columnar array buffers in Tungsten memory. `element_at` uses 1-based indexing for positive indices (1 = first element) and -1 for the last element, differing from standard Python 0-based indexing.",
@@ -89,7 +88,6 @@ df_sets.select("user_id", "all_genres_union", "common_genres").show(truncate=Fal
             "nb_id": "014",
             "title": "Spark Higher-Order Functions: Transform, Filter and Aggregate",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 12: Debugging Code in Databricks & Video 23: Interview Questions",
             "business_scenario": "A fintech loyalty platform tracks customer reward points earned across multiple merchant transactions in an array. The team needs to adjust point values, filter out expired promo points, and sum net balances without exploding rows.",
             "problem_statement": "Implement Spark 3+ Higher-Order Functions directly on arrays: `transform` (lambda mapping), `filter` (predicate filtering), `aggregate` (reduce/fold), `exists`, and `forall` without incurring expensive explode-and-groupBy shuffles.",
             "architectural_notes": "Higher-order functions run inline lambda expressions inside the JVM on array elements without flattening the DataFrame. Exploding an array multiplies the row count and requires a subsequent `groupBy()` shuffle to reconstitute the row, causing 10x-100x slower execution.",
@@ -157,7 +155,6 @@ df_agg.select("account_id", "point_events", "total_points", "has_super_bonus", "
             "nb_id": "015",
             "title": "Exploding and Flattening Arrays: explode vs explode_outer and posexplode",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 06: Master Databricks Notebooks & Video 23: Interview Questions",
             "business_scenario": "A flight booking aggregator normalizes JSON payloads of airline bookings. Bookings contain lists of passengers and stops. Some bookings have empty passenger lists (infant reservation hold) that must not be accidentally dropped during normalization.",
             "problem_statement": "Compare `explode()` vs `explode_outer()` to prevent data loss on empty/null arrays. Use `posexplode()` to capture element sequence positions (e.g. flight leg order 0, 1, 2). Flatten multi-dimensional nested arrays (`flatten()`).",
             "architectural_notes": "Standard `explode()` drops rows where the array is empty or NULL, leading to silent data loss. `explode_outer()` emits a row with NULL for the exploded element, preserving the parent record. `posexplode()` generates both position (zero-based index) and element.",
@@ -221,7 +218,6 @@ df_flat.show(truncate=False)"""
             "nb_id": "016",
             "title": "Struct Creation, Nested Field Access and Updating Sub-Fields",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 14: Master Unity Catalog & Video 23: Interview Questions",
             "business_scenario": "A customer identity platform groups personal attributes, contact points, and address details into nested structs for clean schema organization. Downstream systems need to query specific sub-fields and update an address without reconstructing the entire object.",
             "problem_statement": "Create nested `StructType` columns using `struct()`. Access inner fields via dot notation and `col.getField()`. Demonstrate updating a single nested field inside a struct in PySpark 3.1+ without manually re-specifying all sibling fields.",
             "architectural_notes": "StructType is a compound type that stores multiple typed named fields together in memory. In earlier Spark versions, updating one nested field required re-creating the entire struct. Spark 3.1+ introduced `withField()` and `dropFields()` on Struct columns to manipulate nested fields cleanly.",
@@ -291,7 +287,6 @@ df_updated_struct.select("id", "address").show(truncate=False)"""
             "nb_id": "017",
             "title": "Recursive Schema Traversal: Flattening Deeply Nested JSON/Structs",
             "difficulty": "Advanced",
-            "yt_ref": "Video 11: Auto-loader & Video 23: Interview Questions",
             "business_scenario": "An enterprise integration hub ingests complex payloads from ERP and CRM systems containing 5+ levels of nested structs and arrays. Analysts require a completely flattened tabular DataFrame where column names reflect their full dot-delimited path.",
             "problem_statement": "Develop a generic, production-ready recursive schema flattener in Python that traverses any arbitrarily deep Spark schema. The function must explode nested arrays and flatten all nested structs into top-level columns (`parent_child_field`).",
             "architectural_notes": "Deeply nested schemas can cause severe query compilation overhead. Traversing the schema programmatically inspects `df.schema.fields` and constructs a projection expression list dynamically without executing any JVM actions.",
@@ -384,7 +379,6 @@ print(f"Successfully flattened deep schema into {len(df_flattened.columns)} scal
             "nb_id": "018",
             "title": "MapType Creation, Key Extraction and Dynamic Properties",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 14: Master Unity Catalog & Video 23: Interview Questions",
             "business_scenario": "An advertising technology platform captures custom user ad-tracking attributes (cookies, campaign IDs, UTM tags, experiment variants) as dynamic key-value pairs where keys vary across partners and cannot be fixed into a static schema.",
             "problem_statement": "Master MapType operations: construct maps from column pairs (`create_map()`), extract keys (`map_keys()`), extract values (`map_values()`), build maps from paired arrays (`map_from_arrays()`), and query dynamic attributes safely without null pointer exceptions.",
             "architectural_notes": "MapType represents key-value collections with arbitrary keys of identical data type. Unlike StructType (where field names are fixed in schema metadata), MapType allows dynamic runtime keys, making it ideal for sparse key-value attributes.",
@@ -452,7 +446,6 @@ df_kv_pairs.show()"""
             "nb_id": "019",
             "title": "Parsing Raw JSON Payloads: from_json, to_json and schema_of_json",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 11: Auto-loader & Video 17: Lakeflow Declarative Pipelines",
             "business_scenario": "A payment gateway streams raw JSON transaction events via Apache Kafka or cloud storage. Each record arrives as a single raw string column containing nested transaction data that must be parsed into typed columns.",
             "problem_statement": "Master JSON string handling: dynamically infer schema using `schema_of_json()`, parse stringified JSON into structured structs using `from_json()`, serialize DataFrames back to JSON using `to_json()`, and handle schema evolution options.",
             "architectural_notes": "`from_json()` parses JSON strings inside JVM tasks using Jackson parser, avoiding Python serialization. Specifying an explicit schema avoids costly full-table scans to infer JSON structure.",
@@ -518,7 +511,6 @@ df_re_serialized.show(truncate=False)"""
             "nb_id": "020",
             "title": "Handling Corrupted & Malformed JSON: Permissive vs DropMalformed vs FailFast",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 11: Auto-loader & Video 12: Debugging Code in Databricks",
             "business_scenario": "A public data ingestion pipeline scrapes third-party web endpoints. Up to 5% of incoming payloads contain syntax errors (truncated braces, mismatched quotes, non-JSON tokens). The pipeline must never crash and must capture all corrupted lines into an audit column.",
             "problem_statement": "Compare Spark's JSON read modes: `PERMISSIVE`, `DROPMALFORMED`, and `FAILFAST`. Configure the `columnNameOfCorruptRecord` option to capture raw malformed strings into a `_corrupt_record` quarantine column for compliance review.",
             "architectural_notes": "`PERMISSIVE` is Spark's default mode: corrupted fields evaluate to NULL and the unparseable string is diverted to `_corrupt_record`. `FAILFAST` halts execution immediately upon encountering syntax errors. `DROPMALFORMED` silently drops damaged records.",
@@ -587,7 +579,6 @@ df_dead_letter.show(truncate=False)"""
             "nb_id": "021",
             "title": "XML Data Ingestion, Hierarchical Parsing and Tag Structuring",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 09: DBUtils & Video 16: Databricks LakeFlow Connect",
             "business_scenario": "A legacy healthcare exchange transmits insurance claims in XML format. Claims contain nested patient information, diagnosis codes, and billing line items that must be parsed into structured Spark tables.",
             "problem_statement": "Ingest hierarchical XML records in PySpark: parse nested XML tags into StructType and ArrayType hierarchies, configure row tags, and handle optional missing tags without schema mismatches.",
             "architectural_notes": "Native XML parsing in Spark utilizes the `spark-xml` library (or Databricks built-in XML reader in DBR 14+). In standard PySpark, XML can be processed via the XML data source format or parsed using Python/XPath helper functions for lightweight payloads.",
@@ -663,7 +654,6 @@ print("XML extraction and schema validation completed successfully!")"""
             "nb_id": "022",
             "title": "Advanced Aggregations: collect_list vs collect_set and Sorted Collections",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 06: Master Databricks Notebooks & Video 23: Interview Questions",
             "business_scenario": "A digital customer journey pipeline aggregates all URLs visited by users within a session. Product teams need both: (1) The exact chronologically ordered sequence of pages visited (including duplicates), and (2) The unique set of pages visited without duplicates.",
             "problem_statement": "Compare `collect_list()` (preserves duplicates) vs `collect_set()` (drops duplicates). Demonstrate sorting collected arrays chronologically by sorting before aggregation or using `array_sort` on collected structs.",
             "architectural_notes": "`collect_list` and `collect_set` are wide aggregations that buffer array elements in executor memory per group. If a single key contains millions of entries (key skew), this can trigger severe Executor OutOfMemory (OOM) errors. Pre-sorting rows before `groupBy` is NOT guaranteed to preserve order across shuffles unless using sorted structs.",

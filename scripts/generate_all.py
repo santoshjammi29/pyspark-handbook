@@ -44,7 +44,7 @@ def main():
         print(f"\n[RUNNING] {name}...")
         mod.generate(BASE_DIR)
 
-    notebook_files = list(BASE_DIR.glob("notebooks/*/*.ipynb"))
+    notebook_files = list(BASE_DIR.glob("notebooks/*/*.py"))
     print("\n" + "=" * 70)
     print(f"SUCCESS: Total Notebooks Generated and Verified: {len(notebook_files)}")
     print("=" * 70)

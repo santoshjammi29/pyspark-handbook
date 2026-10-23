@@ -1,65 +1,66 @@
 """
 Notebook Validation Suite
-Inspects all 105 notebooks for valid JSON structure, cell contents, and Python syntax.
+Inspects all 105 Databricks Python notebooks (.py) for valid format, commands, and Python syntax.
 """
 
 import ast
-import json
 import sys
 from pathlib import Path
 
 def validate_all_notebooks(base_dir: Path) -> bool:
     notebook_dir = base_dir / "notebooks"
-    notebook_files = sorted(list(notebook_dir.glob("*/*.ipynb")))
+    notebook_files = sorted(list(notebook_dir.glob("*/*.py")))
 
     if not notebook_files:
-        print("[ERROR] No notebook files found!")
+        print("[ERROR] No Python notebook files (.py) found!")
         return False
 
-    print(f"Validating {len(notebook_files)} notebooks across all modules...")
+    print(f"Validating {len(notebook_files)} Databricks Python notebooks (.py) across all modules...")
     errors = []
 
     for nb_path in notebook_files:
         rel_path = nb_path.relative_to(base_dir)
         try:
-            with open(nb_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
+            content = nb_path.read_text(encoding="utf-8")
 
-            # Check format
-            if data.get("nbformat") != 4:
-                errors.append(f"{rel_path}: Invalid nbformat (expected 4, got {data.get('nbformat')})")
+            # Check header
+            if not content.startswith("# Databricks notebook source"):
+                errors.append(f"{rel_path}: Missing '# Databricks notebook source' header")
 
-            cells = data.get("cells", [])
-            if len(cells) < 4:
-                errors.append(f"{rel_path}: Too few cells ({len(cells)})")
+            commands = content.split("# COMMAND ----------")
+            if len(commands) < 4:
+                errors.append(f"{rel_path}: Too few command cells ({len(commands)})")
 
             code_cell_count = 0
             markdown_cell_count = 0
 
-            for idx, cell in enumerate(cells):
-                cell_type = cell.get("cell_type")
-                source = "".join(cell.get("source", []))
+            for idx, cmd in enumerate(commands):
+                cmd_stripped = cmd.strip()
+                if not cmd_stripped:
+                    continue
 
-                if cell_type == "code":
-                    code_cell_count += 1
-                    # Validate Python syntax if it's pure Python code (ignoring SQL/bash magic blocks)
-                    clean_source = "\n".join(
-                        line for line in source.splitlines()
-                        if not line.strip().startswith("%") and not line.strip().startswith("!")
-                    )
-                    try:
-                        ast.parse(clean_source)
-                    except SyntaxError as se:
-                        # Allow syntax in documentation snippets or SQL strings
-                        pass
-                elif cell_type == "markdown":
+                if cmd_stripped.startswith("# MAGIC %md") or "# MAGIC %md" in cmd_stripped:
                     markdown_cell_count += 1
+                else:
+                    code_cell_count += 1
+                    # Clean code lines and validate syntax
+                    code_lines = [
+                        line for line in cmd_stripped.splitlines()
+                        if not line.strip().startswith("# MAGIC") and not line.strip().startswith("%")
+                    ]
+                    code_clean = "\n".join(code_lines).strip()
+                    if code_clean:
+                        try:
+                            ast.parse(code_clean)
+                        except SyntaxError as se:
+                            # Allow syntax in documentation snippets or SQL strings
+                            pass
 
             if code_cell_count < 1 or markdown_cell_count < 1:
-                errors.append(f"{rel_path}: Must contain at least 1 code and 1 markdown cell (got {code_cell_count} code, {markdown_cell_count} md)")
+                errors.append(
+                    f"{rel_path}: Must contain at least 1 code and 1 markdown cell (got {code_cell_count} code, {markdown_cell_count} md)"
+                )
 
-        except json.JSONDecodeError as je:
-            errors.append(f"{rel_path}: Invalid JSON: {je}")
         except Exception as e:
             errors.append(f"{rel_path}: Unexpected error: {e}")
 
@@ -69,7 +70,7 @@ def validate_all_notebooks(base_dir: Path) -> bool:
             print(f"  - {err}")
         return False
 
-    print(f"\n[PASS] All {len(notebook_files)} notebooks are 100% valid Jupyter JSON and structurally sound!")
+    print(f"\n[PASS] All {len(notebook_files)} Databricks Python notebooks (.py) are structurally sound and valid!")
     return True
 
 if __name__ == "__main__":

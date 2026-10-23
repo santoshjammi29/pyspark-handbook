@@ -12,7 +12,7 @@ MODULE_NAME = "Module 01: Core PySpark Foundations & DataFrame API"
 def sanitize_filename(nb_id: str, title: str) -> str:
     cleaned = title.lower().replace("&", "and")
     cleaned = re.sub(r"[^a-z0-9]+", "_", cleaned).strip("_")
-    return f"{nb_id}_{cleaned}.ipynb"
+    return f"{nb_id}_{cleaned}.py"
 
 def generate(base_dir: Path):
     out_dir = base_dir / "notebooks" / MODULE_FOLDER
@@ -23,7 +23,6 @@ def generate(base_dir: Path):
             "nb_id": "001",
             "title": "SparkSession Initialization & DataFrame Creation Strategies",
             "difficulty": "Beginner",
-            "yt_ref": "Video 04: A Tour Around Databricks Workspace & Video 06: Master Databricks Notebooks",
             "business_scenario": "A digital commerce platform needs to ingest customer profile extracts from multiple legacy sources (in-memory lists, Python dictionaries, Pandas exports, and RDDs) into a unified PySpark DataFrame with strict schema validation.",
             "problem_statement": "Demonstrate the creation of a resilient SparkSession, configuring custom execution properties, and creating DataFrames using: (1) Programmatic RDD with StructType schema, (2) Python dictionaries/tuples with DDL string schema, (3) Pandas DataFrame conversion with PyArrow optimization, and (4) Empty DataFrames with explicit schemas for pipeline initialization.",
             "architectural_notes": "SparkSession serves as the unified entry point introduced in Spark 2.0, encapsulating SparkContext, SQLContext, and HiveContext. In Databricks, the SparkSession variable `spark` is pre-instantiated. When creating DataFrames from Python collections, PySpark serializes Python objects to Java Virtual Machine (JVM) objects via Py4J. Enabling Arrow (`spark.sql.execution.arrow.pyspark.enabled`) accelerates Pandas-to-Spark conversions by eliminating per-row serialization overhead.",
@@ -116,7 +115,6 @@ print("All DataFrame creation strategies and assertions verified successfully!")
             "nb_id": "002",
             "title": "Schema Enforcement, Safe Type Casting & Try-Cast Handling",
             "difficulty": "Beginner",
-            "yt_ref": "Video 12: Debugging Code in Databricks & Video 17: Lakeflow Declarative Pipelines",
             "business_scenario": "A payments processor receives raw transaction dumps where numeric amounts contain currency symbols, timestamps are in non-standard formats, and corrupted text entries cause pipeline aborts on type casting.",
             "problem_statement": "Implement resilient schema transformations: safely cast string columns to numeric/date types, handle malformed rows using `try_cast` (or regex sanitization), and separate valid records from corrupted data without halting execution.",
             "architectural_notes": "In ANSI SQL mode (`spark.sql.ansi.enabled = true`), standard `.cast()` throws runtime exceptions on invalid values (e.g. casting 'INVALID' to INT). Using `try_cast` or `when` expressions ensures invalid values convert to NULL rather than failing long-running batch jobs.",
@@ -188,7 +186,6 @@ df_quarantine.show(truncate=False)"""
             "nb_id": "003",
             "title": "Column Manipulation, Batch Addition & Projection Pruning",
             "difficulty": "Beginner",
-            "yt_ref": "Video 06: Master Databricks Notebooks & Video 29: Productivity Hacks",
             "business_scenario": "A SaaS telemetry service needs to enrich raw session events with calculated duration, derived flags, normalized client identifiers, and drop redundant legacy headers without incurring multiple Catalyst plan rebuilds.",
             "problem_statement": "Compare single `withColumn` chaining against Spark 3.3+ `withColumns` batch operations. Rename multiple columns dynamically using dictionary mapping, drop unwanted columns, and explain projection pruning optimizations.",
             "architectural_notes": "Chaining dozens of `.withColumn()` calls produces a deep Catalyst logical plan tree that can drastically increase driver planning and compilation time. Using `withColumns` (or a single `select` projection with all expressions) flattens the project node into a single Catalyst Project operation.",
@@ -256,7 +253,6 @@ df_final.show(truncate=False)"""
             "nb_id": "004",
             "title": "Filtering, Multi-Condition Predicates & Pushdown Analysis",
             "difficulty": "Beginner",
-            "yt_ref": "Video 12: Debugging Code in Databricks & Video 23: Interview Questions",
             "business_scenario": "A logistics fleet management company needs to identify critical alerts: vehicles with engine temperatures exceeding safe thresholds, low tire pressure, or battery degradation across specific geographic territories.",
             "problem_statement": "Build complex multi-condition filters using bitwise operators (`&`, `|`, `~`), evaluate `isin()`, string regex matching (`rlike`), and inspect the Catalyst physical plan to verify predicate pushdown into the file reader.",
             "architectural_notes": "Predicate pushdown allows the storage layer (Parquet/Delta) to skip entire row groups and data files using file-level min/max statistics without deserializing data into the JVM heap. Complex functions wrapped around columns can prevent pushdown, forcing full table scans.",
@@ -322,7 +318,6 @@ df_severe_alerts.explain(mode="formatted")"""
             "nb_id": "005",
             "title": "String Operations, Regex Extraction & Data Cleansing",
             "difficulty": "Beginner",
-            "yt_ref": "Video 22: PII Data Masterclass & Video 23: Interview Questions",
             "business_scenario": "A marketing automation system ingests unstructured customer lead notes containing messy phone numbers, email addresses with inconsistent cases, and unformatted address strings.",
             "problem_statement": "Apply string manipulation functions: trimming whitespace, case normalization, regex value extraction (`regexp_extract`), masking sensitive values with `regexp_replace`, and parsing delimited tokens into structured columns.",
             "architectural_notes": "Spark SQL string functions are backed by native UTF-8 binary representations in Apache Spark's Tungsten project, avoiding Java String object allocation overhead.",
@@ -400,7 +395,6 @@ df_masked.select("lead_id", "masked_email", "masked_phone", "city", "state").sho
             "nb_id": "006",
             "title": "Date & Timestamp Mastery: Parsing, Arithmetic & Timezones",
             "difficulty": "Beginner",
-            "yt_ref": "Video 17: Lakeflow Declarative Pipelines & Video 20: Finance Domain E2E Project",
             "business_scenario": "A global ride-sharing platform records ride dispatch, pickup, and dropoff events across multiple international timezones. Operations teams require accurate trip duration in minutes, local business hour classifications, and SLA reporting.",
             "problem_statement": "Master datetime transformations: parse timestamps with explicit timezone offsets, convert between UTC and local timezones (`from_utc_timestamp`), perform date arithmetic (`date_add`, `datediff`), and compute precise duration intervals.",
             "architectural_notes": "Spark 3.0 introduced Proleptic Gregorian calendar support by default (`spark.sql.session.timeZone`). Spark stores timestamps internally as UTC epoch microseconds. Using timezone-aware functions ensures consistency across distributed worker nodes regardless of server OS timezone settings.",
@@ -473,7 +467,6 @@ df_local.select("ride_id", "tz_city", "pickup_local", "pickup_hour", "day_of_wee
             "nb_id": "007",
             "title": "Handling Nulls, NaNs & Imputation Strategies",
             "difficulty": "Beginner",
-            "yt_ref": "Video 11: Auto-loader & Video 17: Lakeflow Declarative Pipelines",
             "business_scenario": "A medical diagnostics platform aggregates clinical lab test results. Missing biomarker readings occur due to machine sensor dropouts or patient cancellations. The pipeline must differentiate between true NULLs, NaN values, and impute baseline values.",
             "problem_statement": "Detect and quantify missing values across all columns. Compare `coalesce`, `fillna`/`na.fill`, and `dropna`/`na.drop` with thresholds. Implement statistical imputation (replacing missing numerical values with category medians).",
             "architectural_notes": "In PySpark, `NULL` (unknown value) and `NaN` (IEEE 754 Not-a-Number float) have distinct semantics. `isnan()` only applies to Double/Float columns, while `isNull()` applies to all types. Functions like `count()` ignore NULLs, but `count(*)` counts all rows.",
@@ -548,7 +541,6 @@ df_imputed.select("patient_id", "dept", "systolic_bp", "systolic_bp_imputed", "a
             "nb_id": "008",
             "title": "Sorting, Ordering Semantics & Stratified Sampling",
             "difficulty": "Beginner",
-            "yt_ref": "Video 13: Databricks Clusters & Video 23: Interview Questions",
             "business_scenario": "A financial auditing team must sample transaction logs for regulatory compliance. The sample must be stratified across risk tiers (Low, Medium, High) to reflect true operational risk distribution without skewing toward high-volume low-risk transactions.",
             "problem_statement": "Implement ordering with explicit null placement (`asc_nulls_first`, `desc_nulls_last`). Compare `sample()` vs `sampleBy()` for stratified sampling across categorical groups, and evaluate execution performance.",
             "architectural_notes": "`orderBy()` and `sort()` trigger a global RangePartitioner shuffle across all executor partitions, which can be expensive on multi-terabyte datasets. `sortWithinPartitions()` sorts locally inside each partition without shuffling.",
@@ -618,7 +610,6 @@ df_stratified.groupBy("risk_tier").count().show()"""
             "nb_id": "009",
             "title": "Deduplication Strategies: dropDuplicates vs Window Row-Number",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 11: Auto-loader & Video 23: Interview Questions",
             "business_scenario": "An e-commerce order ingestion pipeline receives duplicate HTTP webhook payloads. Some duplicates are exact identical records, while others represent updated state payloads for the same order with later timestamps.",
             "problem_statement": "Implement deduplication: (1) `distinct()` for exact row matches, (2) `dropDuplicates([subset])` for primary key deduplication with arbitrary winner selection, and (3) Deterministic deduplication using `row_number()` over Window partitions to retain the latest timestamp record.",
             "architectural_notes": "`dropDuplicates()` uses a HashAggregate under the hood. While efficient, it is non-deterministic regarding which non-key column values survive if not pre-sorted. Window functions (`row_number`) provide 100% deterministic deduplication by explicitly controlling sorting criteria.",
@@ -682,7 +673,6 @@ df_deterministic.orderBy("order_id").show()"""
             "nb_id": "010",
             "title": "Transformations vs Actions, Lazy Evaluation & Lineage Graph",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 02: Databricks Intro & Video 12: Debugging Code in Databricks",
             "business_scenario": "A performance engineering lead must diagnose why a data pipeline fails after running for 40 minutes, only to crash on a lightweight `.count()` action. The team must learn to trace lineage graphs and identify narrow vs wide transformations.",
             "problem_statement": "Demonstrate Spark's lazy evaluation mechanism. Differentiate between Narrow dependencies (map, filter) and Wide dependencies (groupBy, join, distinct). Inspect the RDD execution lineage graph using `toDebugString()` and profile action execution times.",
             "architectural_notes": "Spark constructs a Directed Acyclic Graph (DAG) of stages separated by shuffle boundaries. Narrow transformations execute entirely within the same partition in memory (pipelining). Wide transformations require data shuffling across the network to new executor partitions, creating new stages.",
@@ -735,7 +725,6 @@ df_wide.show()"""
             "nb_id": "011",
             "title": "Custom PySpark UDFs vs Vectorized Pandas UDFs (PyArrow)",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 12: Debugging Code in Databricks & Video 25: Genie Code & Optimization",
             "business_scenario": "A credit scoring model applies complex non-linear mathematical risk adjustments to customer accounts. The current implementation uses standard Python UDFs and causes severe CPU throttling and worker memory spikes.",
             "problem_statement": "Implement the calculation using: (1) Standard Python UDF (`@udf`), (2) Native Spark SQL built-in expressions, and (3) Vectorized Pandas UDF (`@pandas_udf`). Compare execution time, serialization behavior, and memory footprint.",
             "architectural_notes": "Standard Python UDFs serialize JVM row data to a Python worker process row-by-row via Py4J, incurring massive serialization and deserialization overhead and disabling Catalyst optimizations. Vectorized Pandas UDFs use Apache Arrow to transfer columnar batches into Pandas Series, achieving near-native C-speed vectorization.",
@@ -803,7 +792,6 @@ print(f"Vectorized Pandas UDF Count: {c2} in {t2:.3f} seconds (Speedup factor: {
             "nb_id": "012",
             "title": "Emulating Databricks DBUtils, Widgets & Secret Scopes Locally",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 06: Master Databricks Notebooks, Video 08: Master Secret Scopes & Video 09: DBUtils",
             "business_scenario": "An enterprise migration team develops Databricks pipelines locally inside VS Code or CI/CD test runners before deploying to production workspaces. Code relying on `dbutils.fs`, `dbutils.secrets`, and `dbutils.widgets` crashes outside of Databricks.",
             "problem_statement": "Design a clean, modular Python compatibility wrapper class `MockDBUtils` that provides identical interfaces for `dbutils.fs` (`ls`, `cp`, `mv`, `rm`, `head`, `put`), `dbutils.widgets` (`text`, `dropdown`, `get`), and `dbutils.secrets` (`get`) using environment variables and local disk storage.",
             "architectural_notes": "In Databricks, `dbutils` is a Java/Scala bridge injected into the Python REPL. Writing pipeline code that imports or references `dbutils` directly creates tight vendor lock-in. Wrapping it in a helper or using Databricks Connect decouples code for multi-cloud and local portability.",

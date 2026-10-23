@@ -12,7 +12,7 @@ MODULE_NAME = "Module 06: Streaming & Near Real-Time Processing"
 def sanitize_filename(nb_id: str, title: str) -> str:
     cleaned = title.lower().replace("&", "and")
     cleaned = re.sub(r"[^a-z0-9]+", "_", cleaned).strip("_")
-    return f"{nb_id}_{cleaned}.ipynb"
+    return f"{nb_id}_{cleaned}.py"
 
 def generate(base_dir: Path):
     out_dir = base_dir / "notebooks" / MODULE_FOLDER
@@ -23,7 +23,6 @@ def generate(base_dir: Path):
             "nb_id": "054",
             "title": "Structured Streaming Foundations: Sources, Execution Model and Query Progress",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 11: Auto-loader & Video 17: Lakeflow Declarative Pipelines",
             "business_scenario": "A payments platform monitors live transaction throughput. As card swipes occur across the globe, an unbounded stream must be parsed, enriched, and aggregated in real time without dropping micro-batches.",
             "problem_statement": "Master Spark Structured Streaming fundamentals: create a streaming DataFrame from the memory/rate stream source, inspect stream schema, configure streaming queries (`readStream` / `writeStream`), monitor execution metrics via `StreamingQueryProgress`, and manage query lifecycle.",
             "architectural_notes": "Spark Structured Streaming treats a live stream as an unbounded, continuously appended table. The engine processes micro-batches incrementally, maintaining offsets in a write-ahead log (WAL) and state in RocksDB/memory, providing end-to-end exactly-once fault tolerance.",
@@ -105,7 +104,6 @@ print("Streaming query safely stopped.")"""
             "nb_id": "055",
             "title": "Streaming Triggers: ProcessingTime, Once and AvailableNow for Cost Optimization",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 13: Databricks Clusters & Video 15: Job Run Cost Calculation",
             "business_scenario": "A cloud financial platform runs streaming pipelines. Running clusters 24/7 costs $50,000/month. Because source data arrives in hourly file batches, operations wants to run streaming pipelines incrementally on-demand, process all backlogged data, and terminate clusters immediately.",
             "problem_statement": "Compare and configure Structured Streaming triggers: (1) Fixed interval micro-batching (`Trigger.ProcessingTime('10 seconds')`), (2) Legacy single-batch (`Trigger.Once()`), and (3) Modern Databricks/Spark 3.3+ cost-optimized `Trigger.AvailableNow()` which processes all outstanding data across multiple micro-batches before shutting down.",
             "architectural_notes": "`Trigger.AvailableNow` solves the major limitation of `Trigger.Once`. While `Trigger.Once` loads all pending data into a single giant micro-batch (causing OutOfMemory crashes on large backlogs), `Trigger.AvailableNow` respects rate-limiting configurations, executing multiple properly-sized micro-batches until all backlogged data is processed, then cleanly terminates.",
@@ -194,7 +192,6 @@ spark.read.format("delta").load(str(stream_sink_dir)).show()"""
             "nb_id": "056",
             "title": "Streaming Window Aggregations and Watermarking for Late-Arriving Events",
             "difficulty": "Advanced",
-            "yt_ref": "Video 11: Auto-loader & Video 17: Lakeflow Declarative Pipelines",
             "business_scenario": "A mobile gaming platform aggregates player score events over 10-minute tumbling windows. Due to intermittent mobile connectivity and airplane mode, score events arrive up to 15 minutes late. The pipeline must incorporate late events without letting state size grow infinitely.",
             "problem_statement": "Implement streaming window aggregations with watermarking: configure `withWatermark('event_time', '10 minutes')`, compute tumbling and sliding window metrics, and explain how the watermark dictates state eviction from RocksDB memory.",
             "architectural_notes": "A watermark specifies the maximum threshold by which event-time can lag behind the maximum event-time observed by the engine ($Watermark = Max(event\_time) - Delay$). Once a window's end time falls behind the watermark, Spark emits the final aggregate and purges the window's state from memory.",
@@ -275,7 +272,6 @@ df_windowed.show(truncate=False)"""
             "nb_id": "057",
             "title": "Stream-Static Joins with Slowly Changing Dimension Lookups",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 17: Lakeflow Declarative Pipelines & Video 26: Retail Data Engineering Project",
             "business_scenario": "A financial fraud detection system processes streaming credit card swipe authorizations. Each incoming transaction contains only a `customer_id`. The stream must be joined with a static Customer Profile table to enrich swipes with user credit limit, billing address, and risk score.",
             "problem_statement": "Implement Stream-Static relational joins in PySpark: join an unbounded streaming DataFrame with a static Delta dimension table, observe how Spark automatically refreshes static table reads across micro-batches, and evaluate performance considerations.",
             "architectural_notes": "In a Stream-Static join, the static DataFrame is re-evaluated by Spark at the beginning of each streaming micro-batch. If the static table is stored in Delta Lake, updates made to the static table are picked up automatically by subsequent micro-batches without restarting the streaming query.",
@@ -354,7 +350,6 @@ df_enriched_stream.select(
             "nb_id": "058",
             "title": "Stream-Stream Dual Watermark Joins with Interval Conditions",
             "difficulty": "Advanced",
-            "yt_ref": "Video 17: Lakeflow Declarative Pipelines & Video 23: Interview Questions",
             "business_scenario": "An online retail logistics platform matches checkout order events with payment confirmation events arriving from Stripe/PayPal across separate event streams. Orders and payments can arrive seconds or minutes apart.",
             "problem_statement": "Implement Stream-Stream joins in PySpark: configure dual watermarks on both streaming sides, specify mandatory time-range interval join constraints (`payment_time BETWEEN order_time AND order_time + INTERVAL 1 HOUR`), and explain how state retention boundaries are enforced.",
             "architectural_notes": "In a stream-stream join, both datasets are unbounded. Spark must buffer incoming rows from stream A in state store until a matching row arrives from stream B. To prevent state store memory from growing infinitely, Spark strictly requires both a watermark on each stream and a time interval constraint.",
@@ -440,7 +435,6 @@ df_matched_orders.show(truncate=False)"""
             "nb_id": "059",
             "title": "Streaming Deduplication Across Time Windows with Watermarks",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 11: Auto-loader & Video 23: Databricks Interview Questions",
             "business_scenario": "An IoT gateway ingests sensor readings from connected vehicles over cellular networks. When vehicles enter tunnels or experience network reconnects, duplicate messages are re-sent. The pipeline must eliminate duplicate sensor IDs within a rolling 20-minute window.",
             "problem_statement": "Implement streaming deduplication: apply `withWatermark()` paired with `dropDuplicates()` on primary keys and event timestamps. Explain how the watermark bounds the historical key state maintained by the streaming engine.",
             "architectural_notes": "In Structured Streaming, calling `dropDuplicates(['key'])` without a watermark causes Spark to store every primary key ever seen in memory forever, eventually triggering an Executor OOM. Supplying a watermark allows Spark to evict keys older than the watermark threshold from the state store.",
@@ -507,7 +501,6 @@ print("Streaming deduplication assertion verified successfully!")"""
             "nb_id": "060",
             "title": "Idempotent ACID Delta Upserts using writeStream.foreachBatch",
             "difficulty": "Advanced",
-            "yt_ref": "Video 17: Lakeflow Declarative Pipelines & Video 20: Finance Domain E2E Project",
             "business_scenario": "A payments streaming pipeline consumes live financial transactions that include both new purchases and refund updates to existing transactions. Standard streaming `append` creates duplicate rows; the stream must perform idempotent ACID `MERGE INTO` operations into target Delta tables.",
             "problem_statement": "Master `writeStream.foreachBatch()`: design a micro-batch function that executes an atomic `DeltaTable.merge()` operation, ensures idempotency across micro-batch retries, and avoids race conditions in distributed streaming sinks.",
             "architectural_notes": "`foreachBatch` gives access to the output DataFrame of each micro-batch as a standard static DataFrame. This allows executing non-streaming operations—such as Delta Lake `MERGE INTO`, writing to multiple destinations, or executing custom API calls—inside a streaming query.",
@@ -603,7 +596,6 @@ target_delta.toDF().orderBy("txn_id").show()"""
             "nb_id": "061",
             "title": "Arbitrary Stateful Streaming Operations with FlatMapGroupsWithState Concepts",
             "difficulty": "Advanced",
-            "yt_ref": "Video 17: Lakeflow Declarative Pipelines & Video 23: Interview Questions",
             "business_scenario": "A telecommunications security monitor detects SIM-swap and fraud patterns across customer cell towers. A fraud flag must trigger only if a user connects to two distinct cell towers separated by 500+ miles within a 15-minute window.",
             "problem_statement": "Master arbitrary stateful streaming concepts: compare simple window aggregations with custom state machines, understand the mechanics of `mapGroupsWithState` and `flatMapGroupsWithState`, manage state expiration timeouts (ProcessingTime vs EventTime), and handle state state eviction.",
             "architectural_notes": "`mapGroupsWithState` and `flatMapGroupsWithState` allow developers to maintain arbitrary user-defined state objects across streaming batches. While full API implementation requires Scala/Java or PySpark with custom encoders, understanding the stateful machine model is critical for senior data engineers.",
@@ -692,7 +684,6 @@ print("State timeout and memory cleanup rules verified.")"""
             "nb_id": "062",
             "title": "Dead-Letter Queue (DLQ) Quarantine Streaming Pattern in PySpark",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 11: Auto-loader & Video 12: Debugging Code in Databricks",
             "business_scenario": "A real-time clickstream ingestion pipeline processes 10,000 events/second. A software release on the web client introduces malformed JSON payloads. Crashing the streaming query halts all company analytics; silently ignoring errors causes undetected data loss.",
             "problem_statement": "Implement the enterprise Dead-Letter Queue (DLQ) streaming pattern: split incoming streams into a clean Silver table and a Quarantine DLQ Delta table within `foreachBatch`, capturing failure stack traces and raw payloads without interrupting the live pipeline.",
             "architectural_notes": "A Dead-Letter Queue pattern ensures continuous pipeline uptime (zero downtime). Clean records flow unimpeded to production analytical tables, while corrupted, unparseable, or schema-violating rows are diverted to a quarantine table for engineering alerting and automated replay.",
@@ -784,7 +775,6 @@ spark.read.format("delta").load(quarantine_dlq_path).show(truncate=False)"""
             "nb_id": "063",
             "title": "Streaming Observability: StreamingQueryListener and SLA Latency Alerting",
             "difficulty": "Advanced",
-            "yt_ref": "Video 10: Databricks Jobs & Video 12: Debugging Code in Databricks",
             "business_scenario": "An enterprise fintech streaming pipeline must maintain an SLA of processing events within 60 seconds of origination. If a backlog builds up or micro-batch processing time spikes, on-call engineers must be alerted before SLA violations occur.",
             "problem_statement": "Implement streaming observability in PySpark: register a custom `StreamingQueryListener`, capture query startup, termination, and micro-batch progress events (`onQueryProgress`), calculate input rate vs processing rate, and generate automated SLA breach alerts.",
             "architectural_notes": "Spark's `StreamingQueryListener` provides an asynchronous callback API. When registered with `spark.streams.addListener()`, it captures event telemetry for all queries running in the SparkSession without introducing runtime overhead into the data processing tasks.",

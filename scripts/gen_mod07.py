@@ -12,7 +12,7 @@ MODULE_NAME = "Module 07: Lakehouse Data Modeling, CDC & SCD Implementation"
 def sanitize_filename(nb_id: str, title: str) -> str:
     cleaned = title.lower().replace("&", "and")
     cleaned = re.sub(r"[^a-z0-9]+", "_", cleaned).strip("_")
-    return f"{nb_id}_{cleaned}.ipynb"
+    return f"{nb_id}_{cleaned}.py"
 
 def generate(base_dir: Path):
     out_dir = base_dir / "notebooks" / MODULE_FOLDER
@@ -23,7 +23,6 @@ def generate(base_dir: Path):
             "nb_id": "064",
             "title": "Medallion Architecture: Bronze Ingestion Layer Standards and Audit Trails",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 14: Master Unity Catalog, Video 17: Lakeflow & Video 20: Finance Domain E2E Project",
             "business_scenario": "An enterprise data lakehouse ingests raw transactional data from ERP, CRM, and partner APIs. Data must land in an append-only Bronze layer preserving raw formats, capturing metadata lineage, and ensuring raw historical payloads are never lost.",
             "problem_statement": "Implement the Bronze layer of the Medallion Architecture: configure append-only raw landing, add mandatory audit columns (`_ingest_timestamp`, `_source_file_path`, `_batch_id`), enforce schema preservation, and handle schema evolution without rewriting data.",
             "architectural_notes": "The Bronze layer is an append-only, raw historical archive of source data. No cleansing, deduplication, or business logic is applied here. If a downstream pipeline bug corrupts Silver or Gold tables, the entire lakehouse can be recomputed from the Bronze layer.",
@@ -84,7 +83,6 @@ spark.read.format("delta").load(bronze_path).show(truncate=False)"""
             "nb_id": "065",
             "title": "Medallion Architecture: Silver Transformation, Cleansing and Conformance",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 17: Lakeflow Declarative Pipelines & Video 20: Finance Domain E2E Project",
             "business_scenario": "Raw invoices from the Bronze layer contain duplicate entries, unstandardized status codes ('appr', 'APPROVED', 'approved'), missing tax codes, and stringified numeric values. The Silver layer must conform and cleanse these into enterprise-ready records.",
             "problem_statement": "Build the Silver layer transformation: filter and clean raw data, standardize categorical codes, enforce data quality rules (non-negative amounts), cast data to strict primitive types, and execute deterministic deduplication into a conformed Delta Silver table.",
             "architectural_notes": "The Silver layer represents the enterprise-conformed, cleansed version of truth. It standardizes naming conventions, parses strings into structured types, deduplicates records using business keys, and joins disparate Bronze feeds into consolidated entity tables.",
@@ -166,7 +164,6 @@ spark.read.format("delta").load(silver_path).show(truncate=False)"""
             "nb_id": "066",
             "title": "Medallion Architecture: Gold Business Aggregations and Dimensional Serving",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 19: Databricks Dashboard from Scratch & Video 24: Metric Views",
             "business_scenario": "Executive leadership and Power BI dashboards require pre-aggregated quarterly vendor performance scorecards: total invoiced volume, approval rate percentages, average turnaround time, and vendor tier classifications.",
             "problem_statement": "Build the Gold layer of the Medallion Architecture: read from conformed Silver Delta tables, compute executive business metrics, apply business KPIs and risk score calculations, and write high-performance Gold aggregate tables optimized for BI consumption.",
             "architectural_notes": "The Gold layer consists of project-specific, business-level aggregated tables, star schema dimension and fact tables, or feature store tables. Gold tables are typically optimized with Z-Ordering or Liquid Clustering to ensure sub-second dashboard query response times.",
@@ -242,7 +239,6 @@ print("Gold Table successfully landed. Ready for Power BI / Tableau consumption!
             "nb_id": "067",
             "title": "Distributed Surrogate Key Generation: monotonically_increasing_id vs xxhash64 vs UUIDs",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 23: Interview Questions & Video 28: Data Modeling E2E Course",
             "business_scenario": "A lakehouse dimensional model builds customer and account dimension tables. Business analysts require synthetic integer or hash surrogate keys to decouple dimensional records from operational natural keys and enable SCD Type 2 version tracking.",
             "problem_statement": "Evaluate distributed surrogate key generation strategies in PySpark: (1) `monotonically_increasing_id()`, (2) Deterministic cryptographic hashing (`xxhash64` / `sha2`), and (3) Universally unique identifiers (`uuid`). Contrast deterministic replayability, performance, and storage footprint.",
             "architectural_notes": "`monotonically_increasing_id()` generates 64-bit integers where the upper 33 bits represent the partition ID and the lower 31 bits represent the row ID within the partition. While fast, IDs are NOT contiguous and change if the partition count changes. `xxhash64(concat_ws())` produces deterministic 64-bit hash keys that remain identical across pipeline replays.",
@@ -304,7 +300,6 @@ print("xxhash64 verified as 100% deterministic across distributed runs!")"""
             "nb_id": "068",
             "title": "Slowly Changing Dimension Type 1 (SCD Type 1) In-Place Overwrites via Delta Merge",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 17: Lakeflow & Video 28: Data Modeling E2E Course",
             "business_scenario": "A master customer dimension stores current contact email, phone number, and address. Under business policy, when a customer moves or updates contact details, past values are overwritten immediately—no historical records are retained.",
             "problem_statement": "Implement Slowly Changing Dimension Type 1 (SCD Type 1) using Delta Lake `MERGE INTO`: update existing records in-place with latest attributes, insert newly discovered customers, and maintain deterministic idempotency.",
             "architectural_notes": "SCD Type 1 overwrites old data with new data in-place without maintaining historical versions. In Delta Lake, this is executed efficiently via `DeltaTable.merge()` with `whenMatchedUpdate` and `whenNotMatchedInsert`.",
@@ -382,7 +377,6 @@ dt_scd1.toDF().orderBy("cust_id").show()"""
             "nb_id": "069",
             "title": "Slowly Changing Dimension Type 2 (SCD Type 2) Historical Tracking with Effective Dates",
             "difficulty": "Advanced",
-            "yt_ref": "Video 20: Finance Domain E2E Project & Video 28: Data Modeling E2E Course",
             "business_scenario": "An insurance underwriting platform tracks policyholder residential address history. Premium risk calculations depend strictly on the policyholder's address at the time a claim occurred, requiring complete historical tracking of address changes.",
             "problem_statement": "Implement Slowly Changing Dimension Type 2 (SCD Type 2) in PySpark: maintain `effective_start_date`, `effective_end_date`, and `is_current` active flag columns. When an attribute changes, expire the current record by setting `effective_end_date` and insert a new active record.",
             "architectural_notes": "SCD Type 2 preserves the full history of attribute changes over time. Delta Lake implements SCD2 using a two-pass MERGE pattern or Union technique: (1) Update existing current records to close the effective date window (`is_current = false`), and (2) Insert the new state with `is_current = true` and `effective_end_date = NULL` (or 9999-12-31).",
@@ -471,7 +465,6 @@ dt_scd2.toDF().orderBy("cust_id", "start_date").show()"""
             "nb_id": "070",
             "title": "Slowly Changing Dimension Type 3 and Type 4 Multi-Tier Implementation",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 28: Data Modeling E2E Course",
             "business_scenario": "A sales commission system tracks territory reassignments. Sales reps occasionally switch regions. Compensation analysts only need to compare sales under the 'current territory' vs 'immediately previous territory', while enterprise audit requires an external historical archive.",
             "problem_statement": "Implement SCD Type 3 (adding `current_territory` and `previous_territory` columns in the active table) and SCD Type 4 (maintaining a fast current-state table paired with a separate append-only historical audit archive table).",
             "architectural_notes": "SCD Type 3 stores previous and current attribute values side-by-side in the same row, simplifying year-over-year territory comparisons. SCD Type 4 splits storage: the main dimension holds only current rows for fast lookups, while an external history table records all historical mutation events.",
@@ -540,7 +533,6 @@ df_archive.show()"""
             "nb_id": "071",
             "title": "Change Data Capture (CDC) Ingestion from Debezium/Kafka into Lakehouse",
             "difficulty": "Advanced",
-            "yt_ref": "Video 16: LakeFlow Connect & Video 26: Retail Data Engineering Project",
             "business_scenario": "A transactional MySQL inventory database streams row-level changes into Kafka via Debezium CDC. Debezium publishes events containing `before`, `after`, and `op` flags (`c` for create, `u` for update, `d` for delete). The lakehouse must reconstruct current database state.",
             "problem_statement": "Ingest and process Debezium CDC streams in PySpark: parse the nested JSON envelope, handle out-of-order CDC events using sequence numbers/timestamps, execute conditional MERGE into target Delta tables, and handle hard deletes gracefully.",
             "architectural_notes": "Debezium CDC events contain metadata fields: `op` (operation: c=create, u=update, d=delete, r=snapshot read) and `ts_ms` (source commit timestamp). Applying CDC records requires deduplicating within each micro-batch by taking the latest `ts_ms` before merging.",
@@ -641,7 +633,6 @@ target_tbl.toDF().show()"""
             "nb_id": "072",
             "title": "Star Schema Implementation: Fact and Conformed Dimension Modeling in Spark",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 28: Data Modeling E2E Course & Video 26: Retail Data Engineering Project",
             "business_scenario": "A retail enterprise transitions from a monolithic relational data warehouse to a Databricks Lakehouse. BI analysts need classic Star Schema structures (Sales Fact table surrounded by Date, Customer, Store, and Product conformed dimensions).",
             "problem_statement": "Design and build a complete Star Schema in PySpark: construct conformed dimensions with surrogate keys, create the centralized Sales Fact table with foreign keys and degenerate dimensions, and execute star-join queries optimized for BI tools.",
             "architectural_notes": "Star Schemas remain the gold standard for BI reporting in Lakehouses due to user familiarity and tool compatibility (Power BI / Tableau). Spark optimizes star joins using Dynamic Partition Pruning (DPP) and Broadcast Hash Joins.",
@@ -710,7 +701,6 @@ df_star_report.show()"""
             "nb_id": "073",
             "title": "Data Vault 2.0 in the Lakehouse: Hubs, Links and Satellites Modeling",
             "difficulty": "Advanced",
-            "yt_ref": "Video 28: Data Modeling E2E Course",
             "business_scenario": "A large banking institution integrates 30 disparate core banking, loan, and credit systems. Source systems change schemas frequently. The enterprise architecture mandates Data Vault 2.0 to provide 100% auditability, parallel loading, and agile schema evolution.",
             "problem_statement": "Implement the core entities of Data Vault 2.0 in PySpark: (1) Hubs (unique business keys and hash keys), (2) Links (relationships between business keys), and (3) Satellites (contextual descriptive attributes with load timestamps).",
             "architectural_notes": "Data Vault 2.0 separates business keys (Hubs), relationships (Links), and descriptive attributes (Satellites). Hash keys (`sha2(natural_key)`) allow distributed parallel ingestion into Hubs, Links, and Satellites simultaneously without foreign key lookup bottlenecks.",

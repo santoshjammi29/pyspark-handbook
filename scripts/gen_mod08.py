@@ -12,7 +12,7 @@ MODULE_NAME = "Module 08: Performance Tuning, Query Optimization & Skew Mitigati
 def sanitize_filename(nb_id: str, title: str) -> str:
     cleaned = title.lower().replace("&", "and")
     cleaned = re.sub(r"[^a-z0-9]+", "_", cleaned).strip("_")
-    return f"{nb_id}_{cleaned}.ipynb"
+    return f"{nb_id}_{cleaned}.py"
 
 def generate(base_dir: Path):
     out_dir = base_dir / "notebooks" / MODULE_FOLDER
@@ -23,7 +23,6 @@ def generate(base_dir: Path):
             "nb_id": "074",
             "title": "Catalyst Optimizer Deep Dive: Parsed, Analyzed, Optimized Plans and Code Generation",
             "difficulty": "Advanced",
-            "yt_ref": "Video 12: Debugging Code in Databricks & Video 23: Databricks Interview Questions",
             "business_scenario": "A lead data architect conducts code reviews for data pipelines. Junior engineers write complex nested SQL and DataFrame code without understanding whether Catalyst collapses filters or pushes down projections. The team needs to inspect execution plans programmatically.",
             "problem_statement": "Master Apache Spark Catalyst Optimizer: analyze the 4 compilation phases (Parsed Logical Plan, Analyzed Logical Plan, Optimized Logical Plan, Physical Plan), inspect Whole-Stage Code Generation (`*` in physical plan), and compare `df.explain(True)` with `df.explain('formatted')`.",
             "architectural_notes": "Catalyst compiles queries through 4 stages: (1) Analysis via Catalog lookup, (2) Logical Optimization (predicate pushdown, constant folding, projection pruning), (3) Physical Planning (choosing join algorithms, e.g. BroadcastHashJoin vs SortMergeJoin), and (4) Whole-Stage Code Generation into optimized Java bytecode via Janino.",
@@ -79,7 +78,6 @@ df_plan_query.explain(mode="formatted")"""
             "nb_id": "075",
             "title": "Adaptive Query Execution (AQE): Dynamic Coalescing, Join Switching and Skew Joins",
             "difficulty": "Advanced",
-            "yt_ref": "Video 12: Debugging Code & Video 13: Databricks Clusters",
             "business_scenario": "A 2TB batch ETL pipeline runs with `spark.sql.shuffle.partitions = 200`. During filtering stages, data volume drops from 2TB to 50MB, but Spark still creates 200 tiny shuffle partitions, wasting task scheduling overhead. At joins, sudden data skew causes single task stragglers.",
             "problem_statement": "Master Adaptive Query Execution (AQE) enabled by default in Spark 3.0+: demonstrate (1) Dynamically coalescing shuffle partitions, (2) Dynamically converting Sort-Merge Join to Broadcast Hash Join at runtime, and (3) Dynamic skew join optimization (`spark.sql.adaptive.skewJoin.enabled`).",
             "architectural_notes": "Traditional Spark plans are fixed before execution starts. AQE introduces feedback loops: at shuffle stage boundaries, AQE inspects runtime partition statistics. If a table became small after filtering, AQE dynamically switches to BroadcastHashJoin; if partitions are tiny, it coalesces them dynamically.",
@@ -146,7 +144,6 @@ print("AQE Dynamic Skew Join split criteria mapped.")"""
             "nb_id": "076",
             "title": "Data Skew Detection and Mitigation Using Salting and Two-Stage Joins",
             "difficulty": "Advanced",
-            "yt_ref": "Video 12: Debugging Code in Databricks & Video 23: Databricks Interview Questions",
             "business_scenario": "A national e-commerce platform joins website clicks with user accounts. Out of 100 million clicks, 40% belong to guest user ID `GUEST_000` (null/anonymous user). The join stalls at 99% for 45 minutes because a single executor task processes all 40 million guest clicks, causing shuffle spill and OOM.",
             "problem_statement": "Detect and mitigate severe data skew: quantify partition skew using `spark_partition_id()`, implement the Salting technique (adding random integer suffixes to the skewed key on the large table and exploding matching suffixes on the dimension table), and measure performance improvements.",
             "architectural_notes": "Data skew occurs when one partition contains disproportionately more records than others. In SortMergeJoin, rows with identical keys hash to the same reducer task. Salting appends a random salt $0 \dots (K-1)$ to the skewed key, distributing the single hot key evenly across $K$ reducer partitions.",
@@ -221,7 +218,6 @@ df_balanced_join.withColumn("pid", F.spark_partition_id()).groupBy("pid").count(
             "nb_id": "077",
             "title": "Partitioning Strategies: Avoiding Over-Partitioning and Directory Pruning",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 13: Databricks Clusters & Video 14: Master Unity Catalog",
             "business_scenario": "A telemetry pipeline partitioned data by `year/month/day/hour/device_id`. After 6 months, the table contained 2 million partition directories containing tiny 10KB files. Querying the table caused driver timeouts during file listing before reading a single byte of data.",
             "problem_statement": "Evaluate big data partitioning best practices: compare high-cardinality vs low-cardinality partitioning columns, demonstrate Partition Pruning (skipping partition directories), and explain why target partition file sizes must be between 100MB and 1GB.",
             "architectural_notes": "Hive-style partitioning creates physical filesystem directories (`/date=2023-11-20/`). Partitioning by high-cardinality columns (e.g. timestamp, user_id) generates millions of tiny directories (over-partitioning), overwhelming cloud storage metadata APIs. Partitioning should only be applied to low-cardinality columns (e.g. date, region) where each partition holds at least 1GB of data.",
@@ -291,7 +287,6 @@ for title, rule in rules:
             "nb_id": "078",
             "title": "Bucketing for Pre-Sorted Join Optimization and Shuffle Elimination",
             "difficulty": "Advanced",
-            "yt_ref": "Video 13: Databricks Clusters & Video 23: Databricks Interview Questions",
             "business_scenario": "Two multi-billion-row fact tables (Orders and Shipments) are joined hourly in a critical financial pipeline. Because both tables are huge, broadcast joins are impossible. Every run shuffles 5TB of data across the network, consuming 40 minutes of compute.",
             "problem_statement": "Eliminate shuffle using Spark Bucketing: create bucketed tables with `bucketBy()` and `sortBy()`, configure matching bucket counts on both tables, and verify the total elimination of the Exchange (shuffle) operator from Sort-Merge Joins.",
             "architectural_notes": "Bucketing pre-shuffles and pre-sorts data on write according to a hash function of the bucket column. When two tables bucketed on the same key with identical (or multiple) bucket counts are joined, Spark reads matching bucket files directly without triggering any network shuffle (`Exchange` operator disappears).",
@@ -363,7 +358,6 @@ print("Cleaned up temporary tables.")"""
             "nb_id": "079",
             "title": "Caching and Persistence: StorageLevel (MEMORY_AND_DISK) vs Cache Traps",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 12: Debugging Code in Databricks & Video 13: Databricks Clusters",
             "business_scenario": "A machine learning feature engineering notebook calls `df.cache()` on a 50GB dataset. Later in the pipeline, iterative actions cause severe memory eviction, JVM garbage collection thrashing, and executor crashes. The team must learn when caching helps versus when it harms performance.",
             "problem_statement": "Master Spark DataFrame caching: compare `df.cache()` (default `MEMORY_AND_DISK_DESER`) with explicit `persist(StorageLevel)` options, inspect cache storage in Spark UI, identify common cache traps (caching intermediate one-use DataFrames), and safely unpersist (`df.unpersist()`).",
             "architectural_notes": "`cache()` is an alias for `persist(StorageLevel.MEMORY_AND_DISK)`. Caching is lazy: data is only materialized into memory when an action is executed. Caching small-to-medium DataFrames accessed multiple times saves computation; caching large DataFrames or single-use DataFrames wastes executor memory and evicts shuffle buffers.",
@@ -425,7 +419,6 @@ print(f"DataFrame unpersisted. Is cached: {df_features.is_cached}")"""
             "nb_id": "080",
             "title": "Repartition vs Coalesce Internals: Full Shuffle vs Partition Minimization",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 12: Debugging Code & Video 23: Databricks Interview Questions",
             "business_scenario": "A data pipeline writes daily reports to cloud storage. An engineer notices that writing a 5MB aggregated table produces 200 tiny files, while attempting to fix it with `repartition(1)` causes an expensive full-cluster shuffle. The team needs to choose between `repartition()` and `coalesce()` correctly.",
             "problem_statement": "Deep dive into partition restructuring: compare `repartition(numPartitions)` vs `coalesce(numPartitions)`. Explain why `repartition` triggers a full network shuffle while `coalesce` collapses existing partitions locally, and measure execution plans.",
             "architectural_notes": "`repartition()` performs a full shuffle across all cluster nodes using a HashPartitioner, creating evenly balanced partitions. It can both increase and decrease partition counts. `coalesce()` avoids a full shuffle by merging adjacent partitions on the same executor, but can ONLY decrease partition counts and can result in uneven partition sizes.",
@@ -481,7 +474,6 @@ print(f"repartition(10) on 2 partitions results in: {df_success_increase.rdd.get
             "nb_id": "081",
             "title": "Shuffle Partition Sizing and Tuning for Small vs Terabyte-Scale Jobs",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 13: Databricks Clusters & Video 15: Job Run Cost Calculation",
             "business_scenario": "A 100MB dataset query takes 45 seconds because Spark defaults to 200 shuffle partitions (`spark.sql.shuffle.partitions = 200`), launching 200 tasks that each process 500KB. Conversely, a 1TB join fails with executor GC timeouts because 200 partitions result in 5GB per task. The team needs a formula to tune shuffle partition sizing.",
             "problem_statement": "Master shuffle partition sizing: calculate optimal partition counts based on shuffle input data size (targeting 100MB - 200MB per partition), configure `spark.sql.shuffle.partitions` dynamically, and compare execution metrics.",
             "architectural_notes": "Spark's default `spark.sql.shuffle.partitions = 200` was chosen arbitrarily in Spark 1.0. If shuffle partitions are too high, task scheduling overhead dominates. If too low, partition data exceeds executor RAM, triggering costly disk spills or OOM errors. Rule of thumb: $ShufflePartitions = ShuffleDataSize / 150MB$.",
@@ -543,7 +535,6 @@ print("AQE advisory partition size configured to 64MB!")"""
             "nb_id": "082",
             "title": "Diagnosing and Fixing OutOfMemory (OOM) Errors: Driver vs Executor Heap",
             "difficulty": "Advanced",
-            "yt_ref": "Video 12: Debugging Code in Databricks & Video 13: Databricks Clusters",
             "business_scenario": "A production ETL job intermittently crashes with `java.lang.OutOfMemoryError: Java heap space`. On-call engineers arbitrarily double the cluster size, increasing cloud costs by $10,000 without resolving the root cause.",
             "problem_statement": "Diagnose and resolve Spark OutOfMemory (OOM) failures: differentiate between Driver OOM and Executor OOM, identify anti-patterns (e.g. `df.collect()` on big data, unconstrained broadcast joins, key skew in `groupBy`), and apply memory-safe architectural fixes.",
             "architectural_notes": "Driver OOM occurs when the master node runs out of memory, usually caused by collecting large DataFrames (`collect()`, `toPandas()`), broadcasting tables larger than driver memory, or accumulating massive lineage DAGs. Executor OOM occurs when worker tasks process partitions exceeding available JVM heap or off-heap memory.",
@@ -610,7 +601,6 @@ print("Lineage graph successfully truncated with checkpoint()!")"""
             "nb_id": "083",
             "title": "Spark UI, EventLog Metrics, Task Skew and Shuffle Spill Analysis",
             "difficulty": "Advanced",
-            "yt_ref": "Video 12: Debugging Code in Databricks & Video 13: Databricks Clusters",
             "business_scenario": "A mission-critical nightly reconciliation job slows down by 3x on weekends. The senior engineer must inspect Spark execution metrics to identify whether the slowdown is caused by garbage collection, shuffle spill (Memory vs Disk), task skew, or CPU starvation.",
             "problem_statement": "Analyze Spark execution metrics programmatically and via Spark UI: identify Shuffle Spill (Memory) and Shuffle Spill (Disk), detect task stragglers, interpret execution timelines, and query Spark listener bus metrics.",
             "architectural_notes": "Shuffle Spill occurs when an executor's execution memory buffer cannot hold intermediate shuffle or aggregation data. Spark first spills to uncompressed memory buffer (`Spill (Memory)`), and if that exceeds limits, writes compressed data to local executor scratch disk (`Spill (Disk)`), destroying I/O performance.",
@@ -673,7 +663,6 @@ print("Shuffle spill mitigation configurations applied.")"""
             "nb_id": "084",
             "title": "Vectorized Execution and Photon Engine Acceleration Mechanics",
             "difficulty": "Advanced",
-            "yt_ref": "Video 02: Databricks Intro, Video 13: Databricks Clusters & Video 25: Genie Code",
             "business_scenario": "An enterprise evaluates migrating high-throughput SQL analytics from classic Apache Spark clusters to Databricks clusters with Photon Engine enabled. Leadership requires an architectural analysis of C++ vectorized execution vs JVM row-based execution.",
             "problem_statement": "Deep dive into Vectorized Execution and Databricks Photon: understand CPU cache locality, SIMD vectorization, columnar in-memory processing, identify operators supported by Photon, and analyze execution speedup profiles.",
             "architectural_notes": "Classic Apache Spark compiles queries into Java bytecode running inside JVMs. Databricks Photon is a vectorized execution engine written from scratch in C++. It operates on columnar batches in CPU L1/L2 caches and uses SIMD (Single Instruction, Multiple Data) instructions, accelerating SQL and aggregation workloads by 2x to 5x.",
@@ -739,7 +728,6 @@ for title, rule in rules:
             "nb_id": "085",
             "title": "Fixing Accidental Cartesian Products and BroadcastNestedLoopJoins",
             "difficulty": "Advanced",
-            "yt_ref": "Video 12: Debugging Code in Databricks & Video 23: Interview Questions",
             "business_scenario": "A junior engineer submits a join query where the join condition accidentally uses an OR operator across two conditions: `ON (a.id = b.id OR a.email = b.email)`. The job hangs indefinitely because Catalyst cannot use hash joins or sort-merge joins, falling back to a catastrophic Cartesian product.",
             "problem_statement": "Detect and fix accidental Cartesian products: identify `BroadcastNestedLoopJoin` and `CartesianProduct` operators in execution plans, understand why non-equi joins and OR join conditions disable hash joins, and rewrite queries using UNIONs or window functions.",
             "architectural_notes": "SortMergeJoin and BroadcastHashJoin strictly require equi-join conditions (`=`). When a join predicate contains an `OR`, `<>`, or non-equi condition without an equality key, Spark must fall back to a Cartesian Product (complexity $O(N \times M)$), generating quadratic row comparisons.",

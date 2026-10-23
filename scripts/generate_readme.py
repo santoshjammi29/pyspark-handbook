@@ -1,9 +1,8 @@
 """
 Master README Generator
-Scans all 105 notebooks and builds a production-grade catalog and documentation.
+Scans all 105 Databricks Python notebooks (.py) and builds an enterprise-grade catalog and documentation.
 """
 
-import json
 from pathlib import Path
 
 def generate_readme(base_dir: Path):
@@ -30,40 +29,41 @@ def generate_readme(base_dir: Path):
         mod_key = mod_dir.name
         title = module_titles.get(mod_key, mod_key)
         catalog_md.append(f"\n### {title}\n")
-        catalog_md.append("| # | Notebook | Difficulty | Business Scenario & Core Concept |")
+        catalog_md.append("| # | Databricks Notebook | Difficulty | Business Scenario & Core Concept |")
         catalog_md.append("|---|---|---|---|")
 
-        nbs = sorted(list(mod_dir.glob("*.ipynb")))
+        nbs = sorted(list(mod_dir.glob("*.py")))
         for nb_path in nbs:
             total_count += 1
             rel_path = f"notebooks/{mod_key}/{nb_path.name}"
-            with open(nb_path, "r", encoding="utf-8") as f:
-                d = json.load(f)
+            content = nb_path.read_text(encoding="utf-8")
 
-            # Extract header text from first cell
-            first_cell = "".join(d["cells"][0]["source"])
-            
             # Extract fields
-            nb_id = nb_path.name[:3]
+            nb_id = nb_path.stem[:3]
             clean_title = nb_path.stem[4:].replace("_", " ").title()
-            
+
             difficulty = "Intermediate"
-            if "**Difficulty:** `Beginner`" in first_cell or "`Beginner`" in first_cell:
+            if "Difficulty:** `Beginner`" in content or "`Beginner`" in content:
                 difficulty = "Beginner"
-            elif "**Difficulty:** `Advanced`" in first_cell or "`Advanced`" in first_cell:
+            elif "Difficulty:** `Advanced`" in content or "`Advanced`" in content:
                 difficulty = "Advanced"
 
             # Extract business scenario snippet
             scenario = "Enterprise PySpark implementation and architectural use case."
-            if "## 1. Business Scenario & Real-World Context" in first_cell:
-                parts = first_cell.split("## 1. Business Scenario & Real-World Context")
+            if "## 1. Business Scenario & Real-World Context" in content:
+                parts = content.split("## 1. Business Scenario & Real-World Context")
                 if len(parts) > 1:
                     scenario_part = parts[1].split("## 2. Technical Requirement")[0].strip()
-                    scenario = scenario_part.replace("\n", " ")
-                    if len(scenario) > 110:
-                        scenario = scenario[:107] + "..."
+                    # Clean magic prefixes
+                    cleaned_lines = [
+                        line.replace("# MAGIC", "").strip()
+                        for line in scenario_part.splitlines()
+                        if line.replace("# MAGIC", "").strip()
+                    ]
+                    scenario = " ".join(cleaned_lines)
+                    if len(scenario) > 115:
+                        scenario = scenario[:112] + "..."
 
-            diff_badge = f"`{difficulty}`"
             if difficulty == "Beginner":
                 diff_badge = "🟢 `Beginner`"
             elif difficulty == "Intermediate":
@@ -71,52 +71,29 @@ def generate_readme(base_dir: Path):
             else:
                 diff_badge = "🔴 `Advanced`"
 
-            catalog_md.append(f"| {nb_id} | [{clean_title}]({rel_path}) | {diff_badge} | {scenario} |")
+            catalog_md.append(f"| {nb_id} | [`{nb_path.name}`]({rel_path}) | {diff_badge} | {scenario} |")
 
     catalog_section = "\n".join(catalog_md)
 
     readme_content = f"""# ⚡ Apache Spark & Databricks Lakehouse: 105 Coding Use Cases Masterclass
 
 [![CI Notebook Validation](https://github.com/santoshjammi29/spark-coding-usecases-masterclass/actions/workflows/ci.yml/badge.svg)](https://github.com/santoshjammi29/spark-coding-usecases-masterclass/actions)
+[![Databricks](https://img.shields.io/badge/Databricks-Native_.py_Notebooks-FF3621?logo=databricks&logoColor=white)](https://www.databricks.com/)
 [![PySpark](https://img.shields.io/badge/PySpark-3.4%2B-FDEE21?logo=apachespark&logoColor=black)](https://spark.apache.org/)
 [![Delta Lake](https://img.shields.io/badge/Delta_Lake-ACID-00ADD8?logo=delta&logoColor=white)](https://delta.io/)
-[![Databricks Unity Catalog](https://img.shields.io/badge/Databricks-Unity_Catalog-FF3621?logo=databricks&logoColor=white)](https://www.databricks.com/)
+[![Unity Catalog](https://img.shields.io/badge/Unity_Catalog-Governance-008080?logo=databricks&logoColor=white)](https://www.databricks.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Notebook Count](https://img.shields.io/badge/Notebooks-105_Complete-success.svg)](#-master-catalog-of-105-use-cases)
 
-Welcome to the **Spark Coding Use Cases Masterclass**! This repository is a comprehensive, production-grade collection of **105 fully executable Jupyter Notebooks**, each solving a concrete real-world engineering challenge across Apache Spark, PySpark, Delta Lake, and the Databricks Lakehouse platform.
+Welcome to the **Spark & Databricks Coding Use Cases Masterclass**! This repository is a production-grade enterprise library of **105 native Databricks Python notebooks (`.py`)**, covering essential data engineering patterns, optimization strategies, and architectural designs across Apache Spark, Delta Lake, and the Databricks Lakehouse platform.
 
-Every single notebook is **100% self-contained**—with realistic synthetic mock datasets, architectural explanations, production best practices, error-handling patterns, and senior data engineering interview questions.
-
----
-
-## 📺 Masterclass Reference Alignment
-This curriculum directly expands and codifies the architectural principles from the **[Databricks All in One Free Masterclass Playlist](https://www.youtube.com/playlist?list=PLlHuhl-cAAnH30NbAzagvT4FXSWu94uQS)** by *DataBeli*, mapping each video concept to hands-on notebooks:
-
-| Masterclass Playlist Theme | Videos | Covered In Modules |
-|---|---|---|
-| **Databricks Workspaces, UI & Magic Commands** | Videos 02, 04, 06 | Module 01 (Notebooks 001 - 012) |
-| **Orchestration, %run vs dbutils.notebook.run** | Video 07, 10 | Module 01, 10 (Notebooks 012, 105) |
-| **Secret Scopes & DBUtils File Management** | Videos 08, 09 | Module 01, 09 (Notebooks 012, 087, 091) |
-| **Auto Loader (cloudFiles) & Ingestion Engine** | Video 11 | Module 05 (Notebooks 048, 049, 050) |
-| **Debugging, Execution Plans & Performance Tuning** | Video 12, 13 | Module 08 (Notebooks 074 - 085) |
-| **Cluster Architecture, Photon & Sizing** | Video 13, 29 | Module 08 (Notebooks 081, 084) |
-| **Unity Catalog Governance (3-Tier, Volumes, ACLs)** | Video 03, 14 | Module 09 (Notebooks 086 - 089) |
-| **FinOps & Job Cost Calculation with SQL** | Video 15 | Module 09 (Notebook 092) |
-| **LakeFlow Connect & CDC Ingestion** | Video 16 | Module 05, 07 (Notebooks 047, 071) |
-| **Lakeflow Declarative Pipelines & DLT Expectations** | Video 17 | Module 09 (Notebook 093) |
-| **Genie AI Agents, Dashboards & Semantic Layer** | Videos 18, 19, 24, 25, 31 | Module 03, 09, 10 (Notebooks 025, 095, 104) |
-| **Finance Domain End-to-End Medallion Project** | Video 20 | Module 04, 07, 10 (Notebooks 035, 069, 096) |
-| **CI/CD with Databricks Asset Bundles (DABs)** | Video 21 | Module 09 (Notebook 094) |
-| **PII Data Masterclass (Masking, AES Encryption)** | Video 22 | Module 01, 09 (Notebooks 005, 089, 090) |
-| **Data Architect Interview Questions & Scenarios** | Video 23 | Embedded across all 105 Notebooks! |
-| **Retail Multi-Source Data Engineering Project** | Video 26 | Module 07, 10 (Notebooks 072, 097) |
-| **Agentic AI & Generative AI on Lakehouse** | Video 27 | Module 10 (Notebook 104) |
-| **Data Modeling (Star Schema, SCD 1/2/3/4, Data Vault)** | Video 28 | Module 07 (Notebooks 064 - 073) |
+Every notebook is structured in the official **Databricks Source Notebook format** (`# Databricks notebook source` and `# COMMAND ----------` cell delimiters) so it syncs directly into **Databricks Repos / Git Folders**, **Databricks Asset Bundles (DABs)**, **VS Code**, or standard Python runtimes.
 
 ---
 
-## 🗂️ Project Repository Structure
+## 🏗️ Curriculum Architecture Overview
+
+The 105 use cases are organized across 10 progressive, enterprise modules:
 
 ```
 spark-coding-usecases-masterclass/
@@ -124,64 +101,67 @@ spark-coding-usecases-masterclass/
 │   └── workflows/
 │       └── ci.yml                 # Automated CI running test suite & notebook validation
 ├── notebooks/
-│   ├── 01_core_dataframe_api/     # Notebooks 001 - 012: PySpark session, schema, UDFs, dbutils
-│   ├── 02_complex_data_types/     # Notebooks 013 - 022: Arrays, higher-order functions, JSON, XML
-│   ├── 03_sql_and_window_functions/# Notebooks 023 - 032: Grouping sets, pivots, ranking, gaps & islands
-│   ├── 04_delta_lake_and_acid/    # Notebooks 033 - 043: ACID, MERGE, Time Travel, VACUUM, Z-Order
-│   ├── 05_data_ingestion_autoloader/# Notebooks 044 - 053: Auto Loader, CSV, Parquet, Avro, JDBC, APIs
-│   ├── 06_streaming_realtime/     # Notebooks 054 - 063: Structured streaming, watermarks, joins, DLQ
-│   ├── 07_lakehouse_modeling_scd/ # Notebooks 064 - 073: Medallion architecture, SCD 1/2/3/4, Data Vault
-│   ├── 08_performance_and_tuning/ # Notebooks 074 - 085: Catalyst, AQE, Salting, Skew, Bucketing, Photon
-│   ├── 09_unity_catalog_and_security/# Notebooks 086 - 095: 3-tier namespace, RLS, Column masking, FinOps
-│   └── 10_end_to_end_projects/    # Notebooks 096 - 105: Finance, Retail, Healthcare, IoT, RAG, Alerts
+│   ├── 01_core_dataframe_api/     # 001 - 012: Core DataFrame API, Schemas, Arrow Pandas UDFs, DBUtils
+│   ├── 02_complex_data_types/     # 013 - 022: Arrays, Higher-Order Functions, Nested Structs, JSON, XML
+│   ├── 03_sql_and_window_functions/# 023 - 032: OLAP Cubes, Pivots, Window Functions, Joins, Catalyst SQL
+│   ├── 04_delta_lake_and_acid/    # 033 - 043: Transaction Log, ACID CRUD, MERGE, Time Travel, Liquid Clustering
+│   ├── 05_data_ingestion_autoloader/# 044 - 053: Auto Loader, Rescued Data, Parallel JDBC, Parquet, Archives
+│   ├── 06_streaming_realtime/     # 054 - 063: Structured Streaming, Triggers, Watermarks, Dual-Stream Joins, DLQ
+│   ├── 07_lakehouse_modeling_scd/ # 064 - 073: Medallion Architecture, SCD 1/2/3/4, Debezium CDC, Data Vault 2.0
+│   ├── 08_performance_and_tuning/ # 074 - 085: Catalyst Optimizer, AQE, Salting Skew, Bucketing, Photon, OOM Fixes
+│   ├── 09_unity_catalog_and_security/# 086 - 095: 3-Tier Namespace, Volumes, RLS, Column Masking, FinOps, DABs
+│   └── 10_end_to_end_projects/    # 096 - 105: Finance Fraud, Omnichannel Retail, Healthcare, IoT, RAG, Alerts
 ├── scripts/
 │   ├── generate_all.py            # Regenerates all 105 notebooks programmatically
-│   ├── validate_notebooks.py      # Verifies JSON format, cell count & AST syntax
-│   └── export_to_databricks.py    # Converts .ipynb to Databricks native .py source format
+│   ├── validate_notebooks.py      # Verifies Databricks source structure, commands & syntax
+│   ├── export_to_ipynb.py         # Converts .py notebooks to Jupyter .ipynb format
+│   └── generate_readme.py         # Rebuilds master catalog index
 ├── tests/
-│   └── test_notebook_integrity.py # Automated pytest test suite
+│   └── test_notebook_integrity.py # Pytest test suite asserting notebook contracts
 ├── .gitignore
 ├── LICENSE                        # MIT License
 ├── pyproject.toml
 ├── requirements.txt
-└── README.md                      # Master documentation & 105-notebook index
+└── README.md
 ```
 
 ---
 
-## 🚀 Quick Start Guide
+## 🚀 Deployment & Usage
 
-### 1. Run Locally (VS Code / Jupyter / Standard PySpark)
+### 1. Direct Sync into Databricks Repos / Git Folders (Recommended)
+Because all notebooks are native Databricks `.py` source files, they sync seamlessly with Databricks Workspaces:
+1. Open your **Databricks Workspace**.
+2. Click **Workspace** > **Repos** (or **Git Folders**).
+3. Click **Add Repo** and paste:
+   ```
+   https://github.com/santoshjammi29/spark-coding-usecases-masterclass.git
+   ```
+4. All 105 notebooks will immediately render with native Databricks cells, markdown headings, widgets, and interactive execution!
 
+### 2. Run Locally in VS Code or Terminal
 ```bash
 # Clone the repository
 git clone https://github.com/santoshjammi29/spark-coding-usecases-masterclass.git
 cd spark-coding-usecases-masterclass
 
-# Create and activate virtual environment
+# Create virtual environment
 python3 -m venv venv
 source venv/bin/activate
 
-# Install dependencies (PySpark, Delta Spark, PyArrow, Pandas, PyTest)
+# Install dependencies
 pip install -r requirements.txt
 
-# Launch Jupyter Lab
-jupyter lab
+# Run any notebook directly as a Python script
+python notebooks/01_core_dataframe_api/001_sparksession_initialization_and_dataframe_creation_strategies.py
 ```
 
-### 2. Import into Databricks Workspace
-- **Via Databricks Repos / Git Folders**:
-  1. Open your Databricks workspace.
-  2. Navigate to **Workspace** > **Repos** (or **Git Folders**).
-  3. Click **Add Repo** and paste your GitHub repository URL:
-     `https://github.com/santoshjammi29/spark-coding-usecases-masterclass.git`.
-  4. All 105 notebooks will open natively in your workspace!
-
-- **Convert to Native Databricks `.py` Format**:
-  If you prefer `# Databricks notebook source` format:
-  ```bash
-  python scripts/export_to_databricks.py
-  ```
+### 3. Convert to Jupyter `.ipynb` (Optional)
+If you prefer viewing in Jupyter Lab:
+```bash
+python scripts/export_to_ipynb.py
+```
+This generates standard `.ipynb` files under `jupyter_exports/`.
 
 ---
 
@@ -191,24 +171,27 @@ jupyter lab
 
 ---
 
-## ⚙️ CI/CD & Quality Assurance
+## 🧪 Testing & Validation
 
-This repository includes continuous integration tests to ensure that every single notebook is valid, well-structured, and executable:
-- **`python scripts/validate_notebooks.py`**: Ensures all 105 `.ipynb` files have valid JSON syntax, proper metadata (`nbformat: 4`), complete problem statements, code cells, and valid Python syntax.
-- **`pytest tests/`**: Automated test suite asserting module coverage, cell counts, and data contracts.
+All 105 notebooks are verified by automated tests:
+```bash
+# Validate Databricks source structure and Python AST syntax
+python scripts/validate_notebooks.py
+
+# Run test suite
+pytest tests/
+```
 
 ---
 
-## 🤝 Contributing & License
-Contributions, feedback, and additional use cases are welcome! Please feel free to open a Pull Request or Issue.
-
-Licensed under the [MIT License](LICENSE).
+## 🤝 License
+This repository is open-sourced under the [MIT License](LICENSE).
 """
 
     with open(base_dir / "README.md", "w", encoding="utf-8") as f:
         f.write(readme_content)
 
-    print(f"Generated comprehensive README.md with {total_count} cataloged notebooks!")
+    print(f"Generated clean README.md with {total_count} cataloged notebooks!")
 
 if __name__ == "__main__":
     generate_readme(Path(__file__).parent.parent)

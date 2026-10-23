@@ -12,7 +12,7 @@ MODULE_NAME = "Module 05: Data Ingestion Patterns, Auto Loader & File Formats"
 def sanitize_filename(nb_id: str, title: str) -> str:
     cleaned = title.lower().replace("&", "and")
     cleaned = re.sub(r"[^a-z0-9]+", "_", cleaned).strip("_")
-    return f"{nb_id}_{cleaned}.ipynb"
+    return f"{nb_id}_{cleaned}.py"
 
 def generate(base_dir: Path):
     out_dir = base_dir / "notebooks" / MODULE_FOLDER
@@ -23,7 +23,6 @@ def generate(base_dir: Path):
             "nb_id": "044",
             "title": "CSV Ingestion Edge Cases: Multiline, Escaped Quotes and Custom Delimiters",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 09: Manage Files with DBUtils & Video 11: Auto-loader",
             "business_scenario": "A financial auditing pipeline imports legacy bank statement extracts. The files contain multiline transaction descriptions with embedded newlines, pipe delimiters (`|`), quotes with backslash escapes, and corrupted header rows.",
             "problem_statement": "Configure robust CSV reader options in PySpark: handle multiline records (`multiLine=True`), custom delimiters (`sep='|'`), escape characters (`escape='\\\\'`), quote handling, explicit datetime inference, and graceful handling of malformed lines.",
             "architectural_notes": "By default, Spark splits CSV files across byte boundaries for parallel reading, which breaks if records contain embedded newlines. Setting `multiLine=true` disables byte-offset splitting for that file, forcing a single thread per file to parse line boundaries safely.",
@@ -94,7 +93,6 @@ print("All CSV edge-case ingestion assertions passed successfully!")"""
             "nb_id": "045",
             "title": "Parquet and ORC Columnar Ingestion: Predicate Pushdown and Dictionary Encoding",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 12: Debugging Code in Databricks & Video 13: Databricks Clusters",
             "business_scenario": "A petabyte-scale telemetry lakehouse queries 500 million vehicle diagnostic events daily. Analyst queries typically filter on single vehicle IDs and read only 3 of the 80 columns. Inefficient readers trigger multi-terabyte disk reads and network bottlenecks.",
             "problem_statement": "Demonstrate the power of columnar formats: compare Parquet and ORC file formats, observe Column Projection (reading only requested columns), and inspect Catalyst physical plans to verify Predicate Pushdown (file and row-group skipping via min/max statistics).",
             "architectural_notes": "Columnar storage arranges data by column rather than row. Row groups contain metadata statistics (min, max, null count). Spark's Parquet reader evaluates query predicates against row-group metadata before reading page data from disk, skipping entire blocks that cannot contain matching rows.",
@@ -158,7 +156,6 @@ df_filtered.show(5)"""
             "nb_id": "046",
             "title": "Avro Binary Ingestion and Schema Registry Compatibility",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 16: LakeFlow Connect & Video 17: Lakeflow Declarative Pipelines",
             "business_scenario": "An enterprise Apache Kafka event bus publishes high-throughput customer account updates serialized in Apache Avro format. Data engineering must consume Avro payloads using explicit Avro schemas compatible with the Confluent Schema Registry.",
             "problem_statement": "Ingest and serialize Apache Avro binary records in PySpark: use `from_avro()` and `to_avro()`, define JSON Avro schema specifications, handle schema evolution between writer and reader schemas, and package binary payloads.",
             "architectural_notes": "Apache Avro is a row-oriented binary serialization format widely used for streaming pipelines due to its compact size and schema evolution rules. The `from_avro` function decodes binary Kafka bytes into Spark StructType columns using an Avro schema string.",
@@ -223,7 +220,6 @@ df_payload.show(truncate=False)"""
             "nb_id": "047",
             "title": "JDBC Parallel Ingestion: Partitioning by Column, fetchsize and Connection Sizing",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 16: LakeFlow Connect & Video 26: Retail Data Engineering Project",
             "business_scenario": "A night batch pipeline extracts 50 million sales transaction records from an operational PostgreSQL production database into the Lakehouse. A single-threaded JDBC query takes 6 hours and causes database connection timeouts.",
             "problem_statement": "Optimize Spark JDBC ingestion: configure parallel partition extraction using `partitionColumn`, `lowerBound`, `upperBound`, and `numPartitions`. Tune `fetchsize` to balance executor memory vs network round-trips, and avoid database connection exhaustion.",
             "architectural_notes": "By default, `spark.read.jdbc()` executes a single query on a single executor task (`SELECT * FROM table`), creating a severe driver bottleneck. By specifying partition parameters, Spark splits the query into $N$ parallel slice queries (`WHERE col >= lower AND col < upper`) distributed across executor workers.",
@@ -294,7 +290,6 @@ df_simulated_db.withColumn("partition_id", F.spark_partition_id()).groupBy("part
             "nb_id": "048",
             "title": "Databricks Auto Loader Directory Mode: cloudFiles, Schema Inference and Checkpointing",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 11: Mastering Databricks Auto-loader for Near Real Time/Batch Data Processing",
             "business_scenario": "A cloud storage bucket receives thousands of landing files (JSON and CSV) every hour from IoT devices. Traditional batch file listings (`os.listdir` or `dbutils.fs.ls`) become prohibitively slow as the bucket scales past 100,000 files.",
             "problem_statement": "Implement Databricks Auto Loader using the `cloudFiles` format: configure directory listing mode, enable automatic schema inference (`cloudFiles.inferColumnTypes`), maintain state checkpointing, and stream landing files into a Bronze Delta table with exactly-once guarantees.",
             "architectural_notes": "Auto Loader uses `cloudFiles` source to incrementally discover landing files without re-scanning previously processed files. Directory listing mode scans file metadata incrementally, tracking discovered files in RocksDB state storage within the checkpoint directory.",
@@ -372,7 +367,6 @@ spark.read.format("delta").load(str(bronze_table_dir)).show()"""
             "nb_id": "049",
             "title": "Auto Loader Schema Evolution and Rescued Data Column (_rescued_data)",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 11: Mastering Databricks Auto-loader for Near Real Time/Batch Data Processing",
             "business_scenario": "Third-party vendors send telemetry files where new columns appear without prior warning, or column types change unexpectedly. If a pipeline drops these unexpected fields, valuable business telemetry is lost permanently.",
             "problem_statement": "Configure Auto Loader schema evolution: set `cloudFiles.schemaEvolutionMode = 'addNewColumns'`, and configure the `_rescued_data` column to automatically capture unexpected fields, mismatched data types, or corrupted text lines without halting the pipeline.",
             "architectural_notes": "When `schemaEvolutionMode` is enabled, Auto Loader automatically evolves the target schema when new columns arrive. Any values that cannot be parsed into the existing schema (e.g. string arriving in integer column) are automatically diverted into the JSON `_rescued_data` column, ensuring zero data loss.",
@@ -447,7 +441,6 @@ for k, v in autoloader_options.items():
             "nb_id": "050",
             "title": "Building a Metadata-Driven Multi-Format Ingestion Engine",
             "difficulty": "Advanced",
-            "yt_ref": "Video 16: LakeFlow Connect & Video 26: Retail Data Engineering Project",
             "business_scenario": "A centralized lakehouse ingestion platform must onboard 200+ distinct source datasets daily spanning CSV, Parquet, JSON, and ORC. Writing bespoke ingestion notebooks for each dataset is unmaintainable and error-prone.",
             "problem_statement": "Design an extensible, configuration-driven multi-format ingestion class `UnifiedIngestionEngine` in PySpark that takes a JSON/dictionary configuration spec, validates format options, applies standard audit metadata columns (`_ingested_at`, `_source_file`), and writes standardized Delta tables.",
             "architectural_notes": "A metadata-driven framework separates orchestration logic from data transformation code. Pipeline configuration (source paths, file formats, options, partition keys, schema definitions) can be stored in Delta configuration tables or YAML files and executed dynamically.",
@@ -556,7 +549,6 @@ spark.read.format("delta").load("/tmp/delta_orders_050").show(truncate=False)"""
             "nb_id": "051",
             "title": "Incremental Batch File Discovery: Watermarking and Modification Timestamps",
             "difficulty": "Intermediate",
-            "yt_ref": "Video 10: Databricks Jobs & Video 11: Auto-loader",
             "business_scenario": "A legacy data pipeline runs hourly batch jobs that read from an S3/ADLS bucket where external partners drop new files. The pipeline must process only files added since the last successful run without re-processing older files or utilizing streaming.",
             "problem_statement": "Implement incremental batch file ingestion in PySpark: use file modification timestamps (`modifiedAfter` and `modifiedBefore`), track high-watermark state in a persistent Delta metadata table, and prevent race conditions with actively written files.",
             "architectural_notes": "Spark's file readers support path options `modifiedAfter` and `modifiedBefore` (ISO 8601 strings). By querying the maximum timestamp of the previous batch and setting `modifiedAfter`, Spark skips listing and reading older files, achieving efficient incremental batch execution.",
@@ -623,7 +615,6 @@ spark.read.format("delta").load("/tmp/pipeline_watermarks_051").show(truncate=Fa
             "nb_id": "052",
             "title": "Handling Compressed Archives (.zip, .tar.gz, .bz2) in Distributed PySpark",
             "difficulty": "Advanced",
-            "yt_ref": "Video 09: DBUtils & Video 13: Databricks Clusters",
             "business_scenario": "A regulatory agency deposits quarterly compliance archives as massive 5GB ZIP and TAR.GZ files. Standard Spark readers cannot split ZIP archives across executors, causing single-node driver OutOfMemory (OOM) crashes.",
             "problem_statement": "Ingest and process compressed archives in distributed Spark: understand file splittability differences across codecs (Gzip, Bzip2, Snappy, Zip), implement parallel extraction using `binaryFiles` and distributed RDD partitions, and convert decompressed streams into DataFrames.",
             "architectural_notes": "Compression formats without sync markers (GZIP, ZIP) are not splittable: a single 5GB GZIP file must be processed by exactly one Spark task. Bzip2 and Snappy (within container formats like Parquet/Avro) are splittable across tasks.",
@@ -705,7 +696,6 @@ df_codecs.show(truncate=False)"""
             "nb_id": "053",
             "title": "Distributed REST API and Webhook Ingestion without Driver OOM",
             "difficulty": "Advanced",
-            "yt_ref": "Video 16: LakeFlow Connect & Video 25: Genie Code & Optimization",
             "business_scenario": "A financial data vendor exposes historical equity prices via an authenticated REST API with rate limits. The engineering team must fetch data for 50,000 distinct stock tickers. Running loops on the driver node takes 18 hours or crashes the driver with out-of-memory errors.",
             "problem_statement": "Implement parallel, distributed HTTP REST API ingestion in PySpark: partition entity IDs across worker nodes, use `mapPartitions` to maintain persistent connection sessions (`requests.Session`), apply batch chunking, handle exponential backoff rate limits, and assemble responses into DataFrames.",
             "architectural_notes": "Using `mapPartitions` initializes one HTTP connection pool (`requests.Session()`) per partition rather than opening a new TCP connection per row. Distributing requests across 20 executor partitions achieves 20x concurrency while honoring per-node rate limit quotas.",
