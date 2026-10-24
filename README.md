@@ -1,18 +1,28 @@
-# ⚡ Apache Spark & Databricks Lakehouse: 105 Coding Use Cases Masterclass
+<div align="center">
 
-[![CI Notebook Validation](https://github.com/santoshjammi29/spark-coding-usecases-masterclass/actions/workflows/ci.yml/badge.svg)](https://github.com/santoshjammi29/spark-coding-usecases-masterclass/actions)
-[![Databricks](https://img.shields.io/badge/Databricks-Native_.py_Notebooks-FF3621?logo=databricks&logoColor=white)](https://www.databricks.com/)
-[![Apache Spark](https://img.shields.io/badge/Apache_Spark-3.5%2B-FDEE21?logo=apachespark&logoColor=black)](https://spark.apache.org/)
-[![Delta Lake](https://img.shields.io/badge/Delta_Lake-3.2_ACID-00ADD8?logo=delta&logoColor=white)](https://delta.io/)
-[![Unity Catalog](https://img.shields.io/badge/Unity_Catalog-Governance-008080?logo=databricks&logoColor=white)](https://www.databricks.com/)
-[![Python](https://img.shields.io/badge/Python-3.9_--_3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Notebook Count](https://img.shields.io/badge/Notebooks-105_Complete-success.svg)](#-master-curriculum-catalog-of-105-use-cases)
+# ⚡ The PySpark Handbook
 
-> **The definitive enterprise reference repository of 105 battle-tested Apache Spark & Databricks Lakehouse coding use cases.**  
-> Structured in the official **Databricks Source Notebook format (`.py`)** for seamless 1-click sync with **Databricks Repos / Git Folders**, **Databricks Asset Bundles (DABs)**, **VS Code**, and local PySpark / CI runtimes.
+**105 Production Coding Use Cases, Performance Tuning Recipes & Lakehouse Masterclass**
+
+[![Stars](https://img.shields.io/github/stars/santoshjammi29/pyspark-handbook?style=for-the-badge&logo=github&color=FFD700)](https://github.com/santoshjammi29/pyspark-handbook/stargazers)
+[![Forks](https://img.shields.io/github/forks/santoshjammi29/pyspark-handbook?style=for-the-badge&logo=github&color=blue)](https://github.com/santoshjammi29/pyspark-handbook/network/members)
+[![CI Notebook Validation](https://github.com/santoshjammi29/pyspark-handbook/actions/workflows/ci.yml/badge.svg)](https://github.com/santoshjammi29/pyspark-handbook/actions)
+[![Databricks](https://img.shields.io/badge/Databricks-Native_.py_Notebooks-FF3621?style=for-the-badge&logo=databricks&logoColor=white)](https://www.databricks.com/)
+[![Apache Spark](https://img.shields.io/badge/Apache_Spark-3.5%2B-FDEE21?style=for-the-badge&logo=apachespark&logoColor=black)](https://spark.apache.org/)
+[![Delta Lake](https://img.shields.io/badge/Delta_Lake-3.2_ACID-00ADD8?style=for-the-badge&logo=delta&logoColor=white)](https://delta.io/)
+[![Unity Catalog](https://img.shields.io/badge/Unity_Catalog-Governance-008080?style=for-the-badge&logo=databricks&logoColor=white)](https://www.databricks.com/)
+[![Python](https://img.shields.io/badge/Python-3.9_--_3.12-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-purple.svg?style=for-the-badge)](LICENSE)
+[![Notebook Count](https://img.shields.io/badge/Notebooks-105_Complete-success.svg?style=for-the-badge)](#-master-curriculum-catalog-of-105-use-cases)
+
+*The definitive enterprise reference repository of 105 battle-tested Apache Spark & Databricks Lakehouse coding use cases.*  
+*Structured in the official **Databricks Source Notebook format (`.py`)** for seamless 1-click sync with **Databricks Repos / Git Folders**, **Databricks Asset Bundles (DABs)**, **VS Code**, and local PySpark / CI runtimes.*
+
+[📖 Curriculum Catalog](#-master-curriculum-catalog-of-105-use-cases) • [⚡ Quick Cheat Sheet](#-quick-cheat-sheet--tldr) • [🎯 Interview Matrix](#-senior-data-engineer-interview-matrix) • [🚀 Quickstart](#-databricks--local-quickstart)
 
 ---
+
+</div>
 
 ## 🎯 Executive Summary & Mission
 
@@ -158,7 +168,7 @@ Because every notebook in this repository is written in the native Databricks `.
 2. Navigate to **Workspace** > **Repos** (or **Git Folders**).
 3. Click **Add Repo** (or **Create Git Folder**) and enter:
    ```text
-   https://github.com/santoshjammi29/spark-coding-usecases-masterclass.git
+   https://github.com/santoshjammi29/pyspark-handbook.git
    ```
 4. Open any notebook under `notebooks/`. It will instantly render interactive Databricks cells, markdown documentation, widgets, and execution controls!
 5. Attach any active cluster and click **Run All**!
@@ -170,8 +180,8 @@ Every notebook includes an environment-aware SparkSession bootstrapper (`try: sp
 
 ```bash
 # 1. Clone repository
-git clone https://github.com/santoshjammi29/spark-coding-usecases-masterclass.git
-cd spark-coding-usecases-masterclass
+git clone https://github.com/santoshjammi29/pyspark-handbook.git
+cd pyspark-handbook
 
 # 2. Set up virtual environment
 python3 -m venv venv
@@ -455,7 +465,7 @@ The table below maps real-world production challenges and frequently asked Staff
 ## 📂 Repository Structure
 
 ```
-spark-coding-usecases-masterclass/
+pyspark-handbook/
 ├── .github/
 │   └── workflows/
 │       └── ci.yml                     # Automated GitHub Actions CI workflow
@@ -487,6 +497,37 @@ spark-coding-usecases-masterclass/
 
 ---
 
+## ⚡ Quick Cheat Sheet & TL;DR
+
+### 1. Salting Skewed Keys in PySpark
+```python
+import pyspark.sql.functions as F
+
+SALT_BUCKETS = 8
+
+# Step 1: Add salt to skewed DataFrame
+df_salted = df_large.withColumn("salt", F.concat(F.col("skewed_key"), F.lit("_"), F.floor(F.rand() * SALT_BUCKETS)))
+
+# Step 2: Replicate the lookup dimension table to match salt keys
+df_lookup_replicated = df_small.withColumn("salt_array", F.array([F.lit(i) for i in range(SALT_BUCKETS)])) \
+                               .withColumn("salt_id", F.explode("salt_array")) \
+                               .withColumn("salt", F.concat(F.col("join_key"), F.lit("_"), F.col("salt_id")))
+
+# Step 3: Perform balanced join
+df_result = df_salted.join(df_lookup_replicated, on="salt", how="inner")
+```
+
+### 2. Enabling Adaptive Query Execution (AQE) Best Practices
+```python
+# Essential production configurations for Apache Spark 3.5+
+spark.conf.set("spark.sql.adaptive.enabled", "true")
+spark.conf.set("spark.sql.adaptive.coalescePartitions.enabled", "true")
+spark.conf.set("spark.sql.adaptive.skewJoin.enabled", "true")
+spark.conf.set("spark.sql.adaptive.autoBroadcastJoinThreshold", "67108864")  # 64MB
+```
+
+---
+
 ## 🧪 Automated Testing & Continuous Integration
 
 This repository enforces strict code quality and structural contracts on every commit via GitHub Actions:
@@ -506,8 +547,31 @@ python tests/test_notebook_integrity.py
 
 ---
 
+## 🤝 Contributing
+
+Contributions, feedback, and optimization recipes are warmly welcomed!
+1. Fork the Project
+2. Create your Feature Branch (`git checkout -b feature/awesome-pyspark-recipe`)
+3. Commit your Changes (`git commit -m 'Add SCD2 PySpark implementation'`)
+4. Push to the Branch (`git push origin feature/awesome-pyspark-recipe`)
+5. Open a Pull Request
+
+---
+
+## ⭐ Star History
+
+If this handbook helped you ace an interview or optimize a production lakehouse pipeline, **please give it a star!** ⭐
+
+[![Star History Chart](https://api.star-history.com/svg?repos=santoshjammi29/pyspark-handbook&type=Date)](https://star-history.com/#santoshjammi29/pyspark-handbook&Date)
+
+---
+
 ## 📜 License & Acknowledgments
 
 This project is licensed under the **[MIT License](LICENSE)** — feel free to use it for personal study, enterprise lakehouse development, internal team training, and technical interview preparation.
 
-*Built with ❤️ for the Apache Spark and Databricks Lakehouse community.*
+<div align="center">
+
+Maintained with ❤️ by [Santosh Jammi](https://github.com/santoshjammi29)
+
+</div>
