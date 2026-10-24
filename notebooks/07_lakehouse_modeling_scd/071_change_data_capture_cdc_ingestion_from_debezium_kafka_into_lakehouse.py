@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 071: Change Data Capture (CDC) Ingestion from Debezium/Kafka into Lakehouse
 # MAGIC
-# MAGIC **Module:** Module 07: Lakehouse Data Modeling, CDC & SCD Implementation  
-# MAGIC **Difficulty:** `Advanced`  
+# MAGIC **Module:** Module 07: Lakehouse Data Modeling, CDC & SCD Implementation
+# MAGIC **Difficulty:** `Advanced`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC A transactional MySQL inventory database streams row-level changes into Kafka via Debezium CDC. Debezium publishes events containing `before`, `after`, and `op` flags (`c` for create, `u` for update, `d` for delete). The lakehouse must reconstruct current database state.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Ingest and process Debezium CDC streams in PySpark: parse the nested JSON envelope, handle out-of-order CDC events using sequence numbers/timestamps, execute conditional MERGE into target Delta tables, and handle hard deletes gracefully.
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC Debezium CDC events contain metadata fields: `op` (operation: c=create, u=update, d=delete, r=snapshot read) and `ts_ms` (source commit timestamp). Applying CDC records requires deduplicating within each micro-batch by taking the latest `ts_ms` before merging.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_071_Change_Data_Capture_CDC_Ingestion_from_DebeziumKafka_into_Lakehouse")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_071_Change_Data_Capture_(CDC)_Ingestion_from_Debezium/Kafka_into_Lakehouse")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Generating Debezium CDC JSON Payloads
+# MAGIC ### Step 1: Generating Debezium CDC JSON Payloads
 # MAGIC Create representative Debezium change events including create, update, and delete.
 
 # COMMAND ----------
@@ -78,7 +80,7 @@ df_raw_cdc.show(truncate=False)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Flattening CDC Payload & Filtering Latest Event per Primary Key
+# MAGIC ### Step 2: Flattening CDC Payload & Filtering Latest Event per Primary Key
 # MAGIC Extract primary keys, payload attributes, and deduplicate by timestamp.
 
 # COMMAND ----------
@@ -107,7 +109,7 @@ df_latest_cdc.show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Merging CDC State into Target Delta Lakehouse Table
+# MAGIC ### Step 3: Merging CDC State into Target Delta Lakehouse Table
 # MAGIC Apply conditional update, insert, and delete using Delta merge.
 
 # COMMAND ----------
@@ -149,12 +151,14 @@ target_tbl.toDF().show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **Debezium CDC envelopes provide `before`, `after`, `op`, and commit sequence timestamps.**
 # MAGIC - **Always deduplicate the incoming CDC micro-batch by primary key ordering on `ts_ms` before calling Delta MERGE.**
 # MAGIC - **Handle delete operations explicitly with `whenMatchedDelete(condition='source.op == "d"')`.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. How do you handle out-of-order CDC events arriving from Kafka in a Spark Structured Streaming job?
 # MAGIC 2. What is the difference between soft deletes and hard deletes in Lakehouse CDC architectures?
 # MAGIC 3. How does Delta Lake's Change Data Feed (CDF) compare with external CDC sources like Debezium?

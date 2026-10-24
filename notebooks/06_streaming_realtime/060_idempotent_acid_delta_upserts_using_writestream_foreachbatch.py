@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 060: Idempotent ACID Delta Upserts using writeStream.foreachBatch
 # MAGIC
-# MAGIC **Module:** Module 06: Streaming & Near Real-Time Processing  
-# MAGIC **Difficulty:** `Advanced`  
+# MAGIC **Module:** Module 06: Streaming & Near Real-Time Processing
+# MAGIC **Difficulty:** `Advanced`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC A payments streaming pipeline consumes live financial transactions that include both new purchases and refund updates to existing transactions. Standard streaming `append` creates duplicate rows; the stream must perform idempotent ACID `MERGE INTO` operations into target Delta tables.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Master `writeStream.foreachBatch()`: design a micro-batch function that executes an atomic `DeltaTable.merge()` operation, ensures idempotency across micro-batch retries, and avoids race conditions in distributed streaming sinks.
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC `foreachBatch` gives access to the output DataFrame of each micro-batch as a standard static DataFrame. This allows executing non-streaming operations—such as Delta Lake `MERGE INTO`, writing to multiple destinations, or executing custom API calls—inside a streaming query.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_060_Idempotent_ACID_Delta_Upserts_using_writeStreamforeachBatch")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_060_Idempotent_ACID_Delta_Upserts_using_writeStream.foreachBatch")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Initializing Target Delta Silver Ledger Table
+# MAGIC ### Step 1: Initializing Target Delta Silver Ledger Table
 # MAGIC Create target Delta table for transactions.
 
 # COMMAND ----------
@@ -80,7 +82,7 @@ target_delta.toDF().show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Defining the Idempotent foreachBatch Upsert Function
+# MAGIC ### Step 2: Defining the Idempotent foreachBatch Upsert Function
 # MAGIC Implement micro-batch merge function with deduplication and ACID upsert.
 
 # COMMAND ----------
@@ -90,11 +92,11 @@ def upsert_to_delta(micro_batch_df, batch_id):
     Invoked for each micro-batch. Performs idempotent MERGE into target Delta table.
     """
     print(f"--> Processing Micro-Batch ID: {batch_id} (Rows: {micro_batch_df.count()})")
-    
+
     # 1. Deduplicate micro-batch by taking the latest update per txn_id
     window_spec = Window.partitionBy("txn_id").orderBy(F.col("updated_at").desc())
     deduped_batch = micro_batch_df.withColumn("rn", F.row_number().over(window_spec))                                 .filter(F.col("rn") == 1)                                 .drop("rn")
-    
+
     # 2. Atomic MERGE into target Delta table
     target_table = DeltaTable.forPath(spark, silver_ledger_path)
     (
@@ -120,7 +122,7 @@ print("foreachBatch upsert function defined.")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Testing foreachBatch Execution with Incoming Stream Batch
+# MAGIC ### Step 3: Testing foreachBatch Execution with Incoming Stream Batch
 # MAGIC Simulate streaming micro-batch executing the upsert logic.
 
 # COMMAND ----------
@@ -142,12 +144,14 @@ target_delta.toDF().orderBy("txn_id").show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **`foreachBatch()` bridges streaming DataFrames with batch APIs like Delta Lake `MERGE INTO`.**
 # MAGIC - **Always deduplicate the micro-batch DataFrame before calling `merge()` to avoid `DeltaAnalysisException` on duplicate source keys.**
 # MAGIC - **Ensure operations inside `foreachBatch` are idempotent so pipeline retries upon failure do not duplicate data.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. Why can't you use standard `.writeStream.format('delta')` with `.mode('update')` directly in PySpark?
 # MAGIC 2. How does `foreachBatch` handle failure recovery and ensure exactly-once semantics?
 # MAGIC 3. What performance issues can arise if the micro-batch in `foreachBatch` is not pre-deduplicated?

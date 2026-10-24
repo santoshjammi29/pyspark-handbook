@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 062: Dead-Letter Queue (DLQ) Quarantine Streaming Pattern in PySpark
 # MAGIC
-# MAGIC **Module:** Module 06: Streaming & Near Real-Time Processing  
-# MAGIC **Difficulty:** `Intermediate`  
+# MAGIC **Module:** Module 06: Streaming & Near Real-Time Processing
+# MAGIC **Difficulty:** `Intermediate`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC A real-time clickstream ingestion pipeline processes 10,000 events/second. A software release on the web client introduces malformed JSON payloads. Crashing the streaming query halts all company analytics; silently ignoring errors causes undetected data loss.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Implement the enterprise Dead-Letter Queue (DLQ) streaming pattern: split incoming streams into a clean Silver table and a Quarantine DLQ Delta table within `foreachBatch`, capturing failure stack traces and raw payloads without interrupting the live pipeline.
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC A Dead-Letter Queue pattern ensures continuous pipeline uptime (zero downtime). Clean records flow unimpeded to production analytical tables, while corrupted, unparseable, or schema-violating rows are diverted to a quarantine table for engineering alerting and automated replay.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_062_Dead_Letter_Queue_DLQ_Quarantine_Streaming_Pattern_in_PySpark")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_062_Dead-Letter_Queue_(DLQ)_Quarantine_Streaming_Pattern_in_PySpark")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Simulating Mixed Clean and Corrupted Streaming Ingestion
+# MAGIC ### Step 1: Simulating Mixed Clean and Corrupted Streaming Ingestion
 # MAGIC Create a batch with valid and damaged message payloads.
 
 # COMMAND ----------
@@ -80,7 +82,7 @@ df_incoming.show(truncate=False)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. DLQ Routing Logic with Schema Parsing and Validation
+# MAGIC ### Step 2: DLQ Routing Logic with Schema Parsing and Validation
 # MAGIC Parse JSON with schema and apply validation rules to segregate clean vs dirty rows.
 
 # COMMAND ----------
@@ -106,7 +108,7 @@ df_classified.show(truncate=False)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Routing to Clean Silver Table vs Dead-Letter Queue Sink
+# MAGIC ### Step 3: Routing to Clean Silver Table vs Dead-Letter Queue Sink
 # MAGIC Write clean records to Silver and route failed records to DLQ with audit metadata.
 
 # COMMAND ----------
@@ -140,12 +142,14 @@ spark.read.format("delta").load(quarantine_dlq_path).show(truncate=False)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **The Dead-Letter Queue (DLQ) pattern isolates malformed data without stopping production streaming pipelines.**
 # MAGIC - **Always capture the raw unparsed payload and an explicit `error_reason` column in the quarantine sink.**
 # MAGIC - **Build replay mechanisms so that once upstream schema fixes are deployed, quarantined data can be re-ingested.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. What is a Dead Letter Queue (DLQ) pattern and why is it essential for 24/7 streaming SLAs?
 # MAGIC 2. How do you alert on-call data engineers when the DLQ error rate exceeds a safety threshold?
 # MAGIC 3. How do you re-process or replay records from a Delta DLQ table back into the main pipeline?

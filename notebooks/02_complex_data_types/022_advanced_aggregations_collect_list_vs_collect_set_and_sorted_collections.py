@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 022: Advanced Aggregations: collect_list vs collect_set and Sorted Collections
 # MAGIC
-# MAGIC **Module:** Module 02: Complex Data Types & Nested Structures Handling  
-# MAGIC **Difficulty:** `Intermediate`  
+# MAGIC **Module:** Module 02: Complex Data Types & Nested Structures Handling
+# MAGIC **Difficulty:** `Intermediate`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC A digital customer journey pipeline aggregates all URLs visited by users within a session. Product teams need both: (1) The exact chronologically ordered sequence of pages visited (including duplicates), and (2) The unique set of pages visited without duplicates.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Compare `collect_list()` (preserves duplicates) vs `collect_set()` (drops duplicates). Demonstrate sorting collected arrays chronologically by sorting before aggregation or using `array_sort` on collected structs.
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC `collect_list` and `collect_set` are wide aggregations that buffer array elements in executor memory per group. If a single key contains millions of entries (key skew), this can trigger severe Executor OutOfMemory (OOM) errors. Pre-sorting rows before `groupBy` is NOT guaranteed to preserve order across shuffles unless using sorted structs.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_022_Advanced_Aggregations_collect_list_vs_collect_set_and_Sorted_Collections")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_022_Advanced_Aggregations_collect_list_vs_collect_set_and_Sorted_Collections")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Generating User Session Clickstream
+# MAGIC ### Step 1: Generating User Session Clickstream
 # MAGIC Create chronologically timestamped page views per user session.
 
 # COMMAND ----------
@@ -76,7 +78,7 @@ df_clicks.show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. collect_list vs collect_set Aggregation
+# MAGIC ### Step 2: collect_list vs collect_set Aggregation
 # MAGIC Observe difference in duplicate retention.
 
 # COMMAND ----------
@@ -91,7 +93,7 @@ df_aggregated.show(truncate=False)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Guaranteed Chronological Sorting of Collected Elements
+# MAGIC ### Step 3: Guaranteed Chronological Sorting of Collected Elements
 # MAGIC Pack timestamp and URL into a struct, collect, sort, and extract page URLs.
 
 # COMMAND ----------
@@ -116,12 +118,14 @@ df_sorted_journey.show(truncate=False)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **`collect_list()` retains duplicates and element count; `collect_set()` removes duplicates without guaranteed order.**
 # MAGIC - **Shuffles in Spark do not guarantee row arrival order; to sort collected arrays, bundle values into structs with sort keys and apply `array_sort()`.**
 # MAGIC - **Beware of key skew: collecting millions of items on a single key causes executor heap exhaustion.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. Why is `df.sort('time').groupBy('id').agg(collect_list('val'))` NOT guaranteed to preserve order in distributed Spark?
 # MAGIC 2. How do you safely sort elements collected by `collect_list()`?
 # MAGIC 3. What risk does `collect_list()` pose when operating on skewed keys?

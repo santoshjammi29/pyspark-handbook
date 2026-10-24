@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 061: Arbitrary Stateful Streaming Operations with FlatMapGroupsWithState Concepts
 # MAGIC
-# MAGIC **Module:** Module 06: Streaming & Near Real-Time Processing  
-# MAGIC **Difficulty:** `Advanced`  
+# MAGIC **Module:** Module 06: Streaming & Near Real-Time Processing
+# MAGIC **Difficulty:** `Advanced`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC A telecommunications security monitor detects SIM-swap and fraud patterns across customer cell towers. A fraud flag must trigger only if a user connects to two distinct cell towers separated by 500+ miles within a 15-minute window.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Master arbitrary stateful streaming concepts: compare simple window aggregations with custom state machines, understand the mechanics of `mapGroupsWithState` and `flatMapGroupsWithState`, manage state expiration timeouts (ProcessingTime vs EventTime), and handle state state eviction.
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC `mapGroupsWithState` and `flatMapGroupsWithState` allow developers to maintain arbitrary user-defined state objects across streaming batches. While full API implementation requires Scala/Java or PySpark with custom encoders, understanding the stateful machine model is critical for senior data engineers.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_061_Arbitrary_Stateful_Streaming_Operations_with_FlatMapGroupsWithState_Concepts")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_061_Arbitrary_Stateful_Streaming_Operations_with_FlatMapGroupsWithState_Concepts")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Arbitrary Stateful Processing Architectural Blueprint
+# MAGIC ### Step 1: Arbitrary Stateful Processing Architectural Blueprint
 # MAGIC Illustrate how state machines track custom sessions and timeout states.
 
 # COMMAND ----------
@@ -73,7 +75,7 @@ print("Arbitrary state machine architecture mapped.")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Simulating Stateful Machine Transitions in PySpark
+# MAGIC ### Step 2: Simulating Stateful Machine Transitions in PySpark
 # MAGIC Model state transitions using window state tracking.
 
 # COMMAND ----------
@@ -122,7 +124,7 @@ df_state_transitions.select("user_id", "tower_id", "prev_tower", "elapsed_minute
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. State Timeout & Eviction Strategy
+# MAGIC ### Step 3: State Timeout & Eviction Strategy
 # MAGIC Highlight how timeout policies prevent state store memory leaks.
 
 # COMMAND ----------
@@ -137,12 +139,14 @@ print("State timeout and memory cleanup rules verified.")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **`mapGroupsWithState` enables custom complex state machines beyond simple tumbling/sliding aggregations.**
 # MAGIC - **Always configure timeouts (`GroupStateTimeout.EventTimeTimeout`) to evict stale keys from state stores.**
 # MAGIC - **RocksDB is the recommended state store provider for large stateful pipelines in production.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. What is the difference between `mapGroupsWithState` and `flatMapGroupsWithState`?
 # MAGIC 2. What are the two timeout types supported in stateful streaming and how do they differ?
 # MAGIC 3. How does RocksDB state store overcome JVM heap limitations for multi-gigabyte streaming states?

@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 055: Streaming Triggers: ProcessingTime, Once and AvailableNow for Cost Optimization
 # MAGIC
-# MAGIC **Module:** Module 06: Streaming & Near Real-Time Processing  
-# MAGIC **Difficulty:** `Intermediate`  
+# MAGIC **Module:** Module 06: Streaming & Near Real-Time Processing
+# MAGIC **Difficulty:** `Intermediate`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC A cloud financial platform runs streaming pipelines. Running clusters 24/7 costs $50,000/month. Because source data arrives in hourly file batches, operations wants to run streaming pipelines incrementally on-demand, process all backlogged data, and terminate clusters immediately.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Compare and configure Structured Streaming triggers: (1) Fixed interval micro-batching (`Trigger.ProcessingTime('10 seconds')`), (2) Legacy single-batch (`Trigger.Once()`), and (3) Modern Databricks/Spark 3.3+ cost-optimized `Trigger.AvailableNow()` which processes all outstanding data across multiple micro-batches before shutting down.
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC `Trigger.AvailableNow` solves the major limitation of `Trigger.Once`. While `Trigger.Once` loads all pending data into a single giant micro-batch (causing OutOfMemory crashes on large backlogs), `Trigger.AvailableNow` respects rate-limiting configurations, executing multiple properly-sized micro-batches until all backlogged data is processed, then cleanly terminates.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_055_Streaming_Triggers_ProcessingTime_Once_and_AvailableNow_for_Cost_Optimization")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_055_Streaming_Triggers_ProcessingTime,_Once_and_AvailableNow_for_Cost_Optimization")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Trigger Architecture Comparison Blueprint
+# MAGIC ### Step 1: Trigger Architecture Comparison Blueprint
 # MAGIC Evaluate the execution lifecycle of different streaming triggers.
 
 # COMMAND ----------
@@ -70,7 +72,7 @@ print("Streaming trigger architectural profiles defined.")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Simulating Incremental Processing with Trigger.AvailableNow
+# MAGIC ### Step 2: Simulating Incremental Processing with Trigger.AvailableNow
 # MAGIC Run an incremental streaming pass using AvailableNow.
 
 # COMMAND ----------
@@ -112,7 +114,7 @@ spark.read.format("delta").load(str(stream_sink_dir)).show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Verifying Incremental Offset Advancement
+# MAGIC ### Step 3: Verifying Incremental Offset Advancement
 # MAGIC Add more files and run another AvailableNow pass to verify exactly-once continuation.
 
 # COMMAND ----------
@@ -137,12 +139,14 @@ spark.read.format("delta").load(str(stream_sink_dir)).show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **`Trigger.AvailableNow` processes all outstanding backlog across multiple micro-batches and terminates automatically.**
 # MAGIC - **Ideal for orchestrating streaming pipelines from Databricks Workflows or Airflow on transient single-job clusters.**
 # MAGIC - **Provides the exact streaming checkpointing and exactly-once semantics without running expensive 24/7 idle clusters.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. Why was `Trigger.AvailableNow` introduced in Spark 3.3 to replace `Trigger.Once`?
 # MAGIC 2. How does `Trigger.AvailableNow` enable significant cloud FinOps cost savings?
 # MAGIC 3. What happens to streaming state when a query with `Trigger.AvailableNow` completes?

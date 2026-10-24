@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 027: Aggregate & Cumulative Window Functions: Running Totals and Moving Averages
 # MAGIC
-# MAGIC **Module:** Module 03: Advanced SQL, Aggregations & Analytical Window Functions  
-# MAGIC **Difficulty:** `Intermediate`  
+# MAGIC **Module:** Module 03: Advanced SQL, Aggregations & Analytical Window Functions
+# MAGIC **Difficulty:** `Intermediate`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC A fintech wealth management app displays account balance trajectories and 7-day smoothed moving averages of daily expenditures to help customers track spending habits.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Implement cumulative sums (running totals), moving averages, and frame boundary specifications: compare physical row-based frames (`rowsBetween`) vs logical value-based frames (`rangeBetween`). Calculate moving averages over preceding windows.
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC The default window frame for an ordered window is `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`. This can cause subtle bugs when duplicate order keys exist, as Spark aggregates all rows with the identical key together. Using `ROWS BETWEEN` guarantees explicit physical row framing.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_027_Aggregate_and_Cumulative_Window_Functions_Running_Totals_and_Moving_Averages")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_027_Aggregate_and_Cumulative_Window_Functions_Running_Totals_and_Moving_Averages")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Generating Daily Spending Feed
+# MAGIC ### Step 1: Generating Daily Spending Feed
 # MAGIC Create daily customer transactions.
 
 # COMMAND ----------
@@ -76,7 +78,7 @@ df_spend.show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Cumulative Running Total & 3-Day Moving Average
+# MAGIC ### Step 2: Cumulative Running Total & 3-Day Moving Average
 # MAGIC Apply rowsBetween frames for physical sliding windows.
 
 # COMMAND ----------
@@ -107,7 +109,7 @@ df_analytics.show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Comparing ROWS BETWEEN vs RANGE BETWEEN with Duplicate Keys
+# MAGIC ### Step 3: Comparing ROWS BETWEEN vs RANGE BETWEEN with Duplicate Keys
 # MAGIC Illustrate how duplicate keys affect RANGE frames vs ROWS frames.
 
 # COMMAND ----------
@@ -132,12 +134,14 @@ df_comp.show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **`ROWS BETWEEN` defines physical row count boundaries (e.g. 2 preceding rows).**
 # MAGIC - **`RANGE BETWEEN` defines logical value offsets based on the order column.**
 # MAGIC - **Default window frame with `orderBy` is `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`, which aggregates identical order keys together.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. What is the difference between `rowsBetween` and `rangeBetween` in Spark Window specifications?
 # MAGIC 2. What is the default frame specification when an `orderBy` clause is present in a Window?
 # MAGIC 3. How do you compute a rolling 30-day time-based window on irregular transaction dates?

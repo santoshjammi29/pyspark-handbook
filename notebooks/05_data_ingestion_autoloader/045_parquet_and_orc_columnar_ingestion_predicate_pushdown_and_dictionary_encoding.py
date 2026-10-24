@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 045: Parquet and ORC Columnar Ingestion: Predicate Pushdown and Dictionary Encoding
 # MAGIC
-# MAGIC **Module:** Module 05: Data Ingestion Patterns, Auto Loader & File Formats  
-# MAGIC **Difficulty:** `Intermediate`  
+# MAGIC **Module:** Module 05: Data Ingestion Patterns, Auto Loader & File Formats
+# MAGIC **Difficulty:** `Intermediate`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC A petabyte-scale telemetry lakehouse queries 500 million vehicle diagnostic events daily. Analyst queries typically filter on single vehicle IDs and read only 3 of the 80 columns. Inefficient readers trigger multi-terabyte disk reads and network bottlenecks.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Demonstrate the power of columnar formats: compare Parquet and ORC file formats, observe Column Projection (reading only requested columns), and inspect Catalyst physical plans to verify Predicate Pushdown (file and row-group skipping via min/max statistics).
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC Columnar storage arranges data by column rather than row. Row groups contain metadata statistics (min, max, null count). Spark's Parquet reader evaluates query predicates against row-group metadata before reading page data from disk, skipping entire blocks that cannot contain matching rows.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_045_Parquet_and_ORC_Columnar_Ingestion_Predicate_Pushdown_and_Dictionary_Encoding")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_045_Parquet_and_ORC_Columnar_Ingestion_Predicate_Pushdown_and_Dictionary_Encoding")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Generating Wide Diagnostic Telemetry Dataset
+# MAGIC ### Step 1: Generating Wide Diagnostic Telemetry Dataset
 # MAGIC Create dataset with multiple columns and save as Parquet.
 
 # COMMAND ----------
@@ -82,7 +84,7 @@ print(f"Parquet dataset written with 50,000 rows.")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Demonstrating Column Projection (Zero-Cost Column Pruning)
+# MAGIC ### Step 2: Demonstrating Column Projection (Zero-Cost Column Pruning)
 # MAGIC Select only 2 columns and observe Catalyst projected schema.
 
 # COMMAND ----------
@@ -97,7 +99,7 @@ df_pruned.explain(mode="formatted")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Demonstrating Predicate Pushdown (Row-Group Skipping)
+# MAGIC ### Step 3: Demonstrating Predicate Pushdown (Row-Group Skipping)
 # MAGIC Filter on vehicle_id and verify PushedFilters in physical plan.
 
 # COMMAND ----------
@@ -112,12 +114,14 @@ df_filtered.show(5)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **Column Projection reads only required columns from disk, dramatically reducing I/O and network transfer.**
 # MAGIC - **Predicate Pushdown pushes WHERE filters directly to the Parquet/ORC file reader to skip row groups using min/max stats.**
 # MAGIC - **Dictionary encoding replaces repetitive string values with small integer keys, compressing high-repetition columns efficiently.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. What is the internal structure of a Parquet file (Header, Row Groups, Column Chunks, Pages, Footer)?
 # MAGIC 2. Why does wrapping a column in a function (e.g. `WHERE upper(col) == 'VAL'`) disable Parquet predicate pushdown?
 # MAGIC 3. How does ORC's Lightweight Index compare to Parquet's Row Group Statistics?

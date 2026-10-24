@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 012: Emulating Databricks DBUtils, Widgets & Secret Scopes Locally
 # MAGIC
-# MAGIC **Module:** Module 01: Core PySpark Foundations & DataFrame API  
-# MAGIC **Difficulty:** `Intermediate`  
+# MAGIC **Module:** Module 01: Core PySpark Foundations & DataFrame API
+# MAGIC **Difficulty:** `Intermediate`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC An enterprise migration team develops Databricks pipelines locally inside VS Code or CI/CD test runners before deploying to production workspaces. Code relying on `dbutils.fs`, `dbutils.secrets`, and `dbutils.widgets` crashes outside of Databricks.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Design a clean, modular Python compatibility wrapper class `MockDBUtils` that provides identical interfaces for `dbutils.fs` (`ls`, `cp`, `mv`, `rm`, `head`, `put`), `dbutils.widgets` (`text`, `dropdown`, `get`), and `dbutils.secrets` (`get`) using environment variables and local disk storage.
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC In Databricks, `dbutils` is a Java/Scala bridge injected into the Python REPL. Writing pipeline code that imports or references `dbutils` directly creates tight vendor lock-in. Wrapping it in a helper or using Databricks Connect decouples code for multi-cloud and local portability.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_012_Emulating_Databricks_DBUtils_Widgets_and_Secret_Scopes_Locally")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_012_Emulating_Databricks_DBUtils,_Widgets_and_Secret_Scopes_Locally")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Building the Universal DBUtils Emulation Bridge
+# MAGIC ### Step 1: Building the Universal DBUtils Emulation Bridge
 # MAGIC Create a drop-in replacement that activates when native `dbutils` is unavailable.
 
 # COMMAND ----------
@@ -125,7 +127,7 @@ print("Universal DBUtils Emulator initialized successfully!")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Testing DBUtils Filesystem Operations
+# MAGIC ### Step 2: Testing DBUtils Filesystem Operations
 # MAGIC Create, list, read, and delete files using the dbutils interface.
 
 # COMMAND ----------
@@ -148,7 +150,7 @@ dbutils.fs.rm("/tmp/dbfs_test", recurse=True)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Testing Widgets & Secure Secret Retrieval
+# MAGIC ### Step 3: Testing Widgets & Secure Secret Retrieval
 # MAGIC Pass dynamic parameters and fetch credentials without hardcoding.
 
 # COMMAND ----------
@@ -167,12 +169,14 @@ print(f"Retrieved Secret: {api_key[:4]}**** (Masked)")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **Never hardcode credentials in notebooks—use secret scopes via `dbutils.secrets.get()` in Databricks or environment variables locally.**
 # MAGIC - **Widgets allow parameterized workflow execution from Databricks Jobs and Airflow DAGs.**
 # MAGIC - **Emulating `dbutils` enables seamless local development and automated CI testing outside Databricks.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. What is the difference between `%run` and `dbutils.notebook.run()` when chaining notebooks?
 # MAGIC 2. How does Databricks redact secrets retrieved via `dbutils.secrets.get()` in driver output logs?
 # MAGIC 3. What are Unity Catalog Volumes and how do they replace legacy DBFS mounts?

@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 105: Master Enterprise Production Orchestration, Workflow Parameters and Alerting
 # MAGIC
-# MAGIC **Module:** Module 10: End-to-End Enterprise Projects & Production Workflows  
-# MAGIC **Difficulty:** `Advanced`  
+# MAGIC **Module:** Module 10: End-to-End Enterprise Projects & Production Workflows
+# MAGIC **Difficulty:** `Advanced`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC A mission-critical enterprise financial pipeline executes 15 dependent tasks every night. The workflow must accept dynamic run parameters, retry failed tasks with exponential backoff, send Slack/Teams webhook alerts on failure, and write audit run logs.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Design an enterprise orchestration harness in PySpark: implement parameterized workflow execution, simulate task dependency graphs (DAGs), capture task execution durations, catch runtime exceptions, and dispatch webhook failure alerts.
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC Databricks Workflows orchestrates complex multi-task DAGs. Using parameters (`dbutils.widgets`), tasks can be parameterized across environments. Implementing centralized audit logging inside tasks ensures compliance and accelerates root cause analysis during pipeline failures.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_105_Master_Enterprise_Production_Orchestration_Workflow_Parameters_and_Alerting")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_105_Master_Enterprise_Production_Orchestration,_Workflow_Parameters_and_Alerting")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Designing Parameterized Task Execution Harness
+# MAGIC ### Step 1: Designing Parameterized Task Execution Harness
 # MAGIC Create an orchestration class that executes pipeline tasks with timing and error handling.
 
 # COMMAND ----------
@@ -74,7 +76,7 @@ class EnterpriseTaskRunner:
         start_time = time.time()
         status = "SUCCESS"
         error_msg = None
-        
+
         try:
             task_func()
         except Exception as e:
@@ -102,7 +104,7 @@ print("EnterpriseTaskRunner class initialized.")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Executing Multi-Task Orchestration Sequence
+# MAGIC ### Step 2: Executing Multi-Task Orchestration Sequence
 # MAGIC Run tasks representing Ingestion, Transformation, and Quality Checks.
 
 # COMMAND ----------
@@ -130,7 +132,7 @@ runner.execute_task("Task_3_Data_Quality_Validation", task_quality_check)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Publishing Master Workflow Audit Log to Delta Table
+# MAGIC ### Step 3: Publishing Master Workflow Audit Log to Delta Table
 # MAGIC Persist run execution telemetry for FinOps and SLA monitoring.
 
 # COMMAND ----------
@@ -145,12 +147,14 @@ df_audit.show(truncate=False)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **Production pipelines require parameterized orchestration across environments (dev, test, prod).**
 # MAGIC - **Always capture start time, duration, status, and error stack traces in a centralized audit Delta table.**
 # MAGIC - **Automate webhook alerts to Slack or PagerDuty on task failure to meet enterprise SLAs.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. How do you pass dynamic parameters and return values between tasks in Databricks Workflows?
 # MAGIC 2. What is the difference between task-level retries and job-level retries in orchestration DAGs?
 # MAGIC 3. How do you design an audit logging architecture that captures pipeline execution metrics across 500+ jobs?

@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 102: Project Supply Chain: Inventory Replenishment Forecasting and Reorder Triggers
 # MAGIC
-# MAGIC **Module:** Module 10: End-to-End Enterprise Projects & Production Workflows  
-# MAGIC **Difficulty:** `Advanced`  
+# MAGIC **Module:** Module 10: End-to-End Enterprise Projects & Production Workflows
+# MAGIC **Difficulty:** `Advanced`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC A national grocery chain manages 10,000 SKUs across 20 regional distribution centers. Supply chain disruptions cause frequent stockouts of essential items. The forecasting team needs an automated Lakehouse pipeline that calculates Daily Run-Rate (DRR), Safety Stock, and triggers automated purchase orders.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Build an automated supply chain replenishment model in PySpark: (1) Compute 14-day moving daily sales velocity, (2) Estimate lead-time demand and safety stock using standard formulas ($SS = Z \times \sigma_{LTD}$), (3) Calculate dynamic Reorder Points (ROP), and (4) Generate automated Purchase Order requisitions.
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC Supply chain optimization requires reconciling historical sales velocity with supplier delivery lead times. Calculating dynamic reorder points in PySpark enables automated daily replenishment recommendations across millions of warehouse-SKU combinations.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_102_Project_Supply_Chain_Inventory_Replenishment_Forecasting_and_Reorder_Triggers")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_102_Project_Supply_Chain_Inventory_Replenishment_Forecasting_and_Reorder_Triggers")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Preparing Inventory Levels and Daily Demand Feed
+# MAGIC ### Step 1: Preparing Inventory Levels and Daily Demand Feed
 # MAGIC Create SKU inventory stock levels and supplier lead-time parameters.
 
 # COMMAND ----------
@@ -72,7 +74,7 @@ df_inventory.show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Calculating Safety Stock & Dynamic Reorder Point (ROP)
+# MAGIC ### Step 2: Calculating Safety Stock & Dynamic Reorder Point (ROP)
 # MAGIC Apply standard industrial supply chain formulas in PySpark.
 
 # COMMAND ----------
@@ -98,7 +100,7 @@ df_rop.select("sku", "product_name", "current_stock", "lead_time_demand", "safet
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Generating Automated Purchase Orders (PO Requisitions)
+# MAGIC ### Step 3: Generating Automated Purchase Orders (PO Requisitions)
 # MAGIC Trigger purchase orders when current stock drops below reorder point.
 
 # COMMAND ----------
@@ -119,12 +121,14 @@ df_purchase_orders.select("sku", "product_name", "current_stock", "reorder_point
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **Reorder Point (ROP) equals Lead Time Demand plus statistical Safety Stock.**
 # MAGIC - **Automating ROP calculations prevents stockouts while minimizing expensive warehouse carrying costs.**
 # MAGIC - **Gold replenishment tables trigger automated ERP purchase order webhooks via Databricks Workflows.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. How do you calculate Safety Stock statistically and what is the role of the Z-score service factor?
 # MAGIC 2. How do you handle supplier lead time variability in supply chain data models?
 # MAGIC 3. What is the difference between periodic review and continuous review inventory policies?

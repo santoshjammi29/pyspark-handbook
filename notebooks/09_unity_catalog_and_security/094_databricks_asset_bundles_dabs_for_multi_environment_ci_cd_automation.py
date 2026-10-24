@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 094: Databricks Asset Bundles (DABs) for Multi-Environment CI/CD Automation
 # MAGIC
-# MAGIC **Module:** Module 09: Databricks Platform, Unity Catalog, Security & FinOps  
-# MAGIC **Difficulty:** `Advanced`  
+# MAGIC **Module:** Module 09: Databricks Platform, Unity Catalog, Security & FinOps
+# MAGIC **Difficulty:** `Advanced`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC An enterprise development team deploys 50 Databricks workflows and pipelines across development, staging, and production workspaces. Manual UI deployments cause configuration drift, broken paths, and deployment bugs.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Master Databricks Asset Bundles (DABs): configure `databricks.yml`, define multi-environment deployment targets (dev, staging, prod), configure parameterized workflows, and automate CI/CD validation (`bundle validate`, `bundle deploy`, `bundle run`).
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC Databricks Asset Bundles (DABs) provide Infrastructure-as-Code (IaC) for Databricks projects. A YAML bundle definition (`databricks.yml`) manages notebooks, pipelines, jobs, and permissions, allowing automated deployments via GitHub Actions or GitLab CI.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_094_Databricks_Asset_Bundles_DABs_for_Multi_Environment_CICD_Automation")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_094_Databricks_Asset_Bundles_(DABs)_for_Multi-Environment_CI/CD_Automation")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Designing databricks.yml Bundle Configuration
+# MAGIC ### Step 1: Designing databricks.yml Bundle Configuration
 # MAGIC Create production-ready YAML specification for multi-environment deployment.
 
 # COMMAND ----------
@@ -93,7 +95,7 @@ print(bundle_yaml_content)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Defining Workflow Job Resource in Bundle
+# MAGIC ### Step 2: Defining Workflow Job Resource in Bundle
 # MAGIC Declare jobs, schedules, and cluster settings in resources/jobs.yml.
 
 # COMMAND ----------
@@ -128,7 +130,7 @@ print(job_resource_yaml)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. DABs CLI Command Lifecycle Cheatsheet
+# MAGIC ### Step 3: DABs CLI Command Lifecycle Cheatsheet
 # MAGIC Review developer CLI workflows for DABs.
 
 # COMMAND ----------
@@ -146,12 +148,14 @@ for cmd, desc in commands:
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **Databricks Asset Bundles (DABs) implement Infrastructure-as-Code (IaC) for Databricks projects.**
 # MAGIC - **Target environments (dev, staging, prod) enable seamless promotion via GitHub Actions CI/CD.**
 # MAGIC - **DABs eliminate manual workspace UI changes, preventing configuration drift.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. What is a Databricks Asset Bundle (DAB) and what problem does it solve in enterprise MLOps/DataOps?
 # MAGIC 2. What is the difference between `mode: development` and `mode: production` in `databricks.yml`?
 # MAGIC 3. How do you parameterize cluster configurations across dev and prod targets in DABs?

@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 046: Avro Binary Ingestion and Schema Registry Compatibility
 # MAGIC
-# MAGIC **Module:** Module 05: Data Ingestion Patterns, Auto Loader & File Formats  
-# MAGIC **Difficulty:** `Intermediate`  
+# MAGIC **Module:** Module 05: Data Ingestion Patterns, Auto Loader & File Formats
+# MAGIC **Difficulty:** `Intermediate`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC An enterprise Apache Kafka event bus publishes high-throughput customer account updates serialized in Apache Avro format. Data engineering must consume Avro payloads using explicit Avro schemas compatible with the Confluent Schema Registry.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Ingest and serialize Apache Avro binary records in PySpark: use `from_avro()` and `to_avro()`, define JSON Avro schema specifications, handle schema evolution between writer and reader schemas, and package binary payloads.
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC Apache Avro is a row-oriented binary serialization format widely used for streaming pipelines due to its compact size and schema evolution rules. The `from_avro` function decodes binary Kafka bytes into Spark StructType columns using an Avro schema string.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_046_Avro_Binary_Ingestion_and_Schema_Registry_Compatibility")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_046_Avro_Binary_Ingestion_and_Schema_Registry_Compatibility")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Defining Avro Schema JSON Specification
+# MAGIC ### Step 1: Defining Avro Schema JSON Specification
 # MAGIC Define standard Avro JSON schema.
 
 # COMMAND ----------
@@ -76,7 +78,7 @@ print("Avro Schema JSON defined successfully.")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Simulating Avro Ingestion and Struct Conversion
+# MAGIC ### Step 2: Simulating Avro Ingestion and Struct Conversion
 # MAGIC Create events and demonstrate Avro integration patterns.
 
 # COMMAND ----------
@@ -96,7 +98,7 @@ df_events.show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Packaging Structs for Streaming Message Buses
+# MAGIC ### Step 3: Packaging Structs for Streaming Message Buses
 # MAGIC Bundle fields into structs for downstream message publishing.
 
 # COMMAND ----------
@@ -113,12 +115,14 @@ df_payload.show(truncate=False)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **Avro is the industry standard format for streaming message buses (Kafka, Event Hubs) due to compact binary encoding.**
 # MAGIC - **`from_avro(col, schema)` parses binary payloads using the exact Avro schema definition.**
 # MAGIC - **Schema evolution in Avro allows adding optional fields with default values without breaking downstream consumers.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. Why is Avro preferred for message bus streaming while Parquet is preferred for analytical storage?
 # MAGIC 2. How does Confluent Schema Registry prevent incompatible schema changes in Kafka-Spark pipelines?
 # MAGIC 3. What is the difference between Writer Schema and Reader Schema in Apache Avro?

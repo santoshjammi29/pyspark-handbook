@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 066: Medallion Architecture: Gold Business Aggregations and Dimensional Serving
 # MAGIC
-# MAGIC **Module:** Module 07: Lakehouse Data Modeling, CDC & SCD Implementation  
-# MAGIC **Difficulty:** `Intermediate`  
+# MAGIC **Module:** Module 07: Lakehouse Data Modeling, CDC & SCD Implementation
+# MAGIC **Difficulty:** `Intermediate`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC Executive leadership and Power BI dashboards require pre-aggregated quarterly vendor performance scorecards: total invoiced volume, approval rate percentages, average turnaround time, and vendor tier classifications.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Build the Gold layer of the Medallion Architecture: read from conformed Silver Delta tables, compute executive business metrics, apply business KPIs and risk score calculations, and write high-performance Gold aggregate tables optimized for BI consumption.
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC The Gold layer consists of project-specific, business-level aggregated tables, star schema dimension and fact tables, or feature store tables. Gold tables are typically optimized with Z-Ordering or Liquid Clustering to ensure sub-second dashboard query response times.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_066_Medallion_Architecture_Gold_Business_Aggregations_and_Dimensional_Serving")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_066_Medallion_Architecture_Gold_Business_Aggregations_and_Dimensional_Serving")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Reading from Silver Layer Invoices
+# MAGIC ### Step 1: Reading from Silver Layer Invoices
 # MAGIC Create realistic Silver invoice dataset.
 
 # COMMAND ----------
@@ -75,7 +77,7 @@ df_silver_in.show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Computing Gold KPI Aggregations and Business Tiers
+# MAGIC ### Step 2: Computing Gold KPI Aggregations and Business Tiers
 # MAGIC Calculate approval rate, total volume, and classify vendor risk tiers.
 
 # COMMAND ----------
@@ -108,7 +110,7 @@ df_gold_kpis.show(truncate=False)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Writing to Gold Delta Lake Table with Liquid Clustering
+# MAGIC ### Step 3: Writing to Gold Delta Lake Table with Liquid Clustering
 # MAGIC Save to Gold destination ready for BI and semantic metrics.
 
 # COMMAND ----------
@@ -124,12 +126,14 @@ print("Gold Table successfully landed. Ready for Power BI / Tableau consumption!
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **Gold tables represent domain-specific business aggregates and dimensional models designed for end-user analytics.**
 # MAGIC - **Pre-aggregating KPIs in Gold reduces compute consumption on BI tools and guarantees single-version-of-truth metrics.**
 # MAGIC - **Apply clustering (`CLUSTER BY`) on Gold tables based on typical dashboard filter columns.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. Why should BI tools query Gold tables rather than directly querying Silver tables?
 # MAGIC 2. How does the Medallion Architecture ensure compliance with GDPR 'Right to be Forgotten' across Bronze, Silver, and Gold?
 # MAGIC 3. What is the difference between a Gold table and a materialized view in Databricks?

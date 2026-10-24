@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 057: Stream-Static Joins with Slowly Changing Dimension Lookups
 # MAGIC
-# MAGIC **Module:** Module 06: Streaming & Near Real-Time Processing  
-# MAGIC **Difficulty:** `Intermediate`  
+# MAGIC **Module:** Module 06: Streaming & Near Real-Time Processing
+# MAGIC **Difficulty:** `Intermediate`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC A financial fraud detection system processes streaming credit card swipe authorizations. Each incoming transaction contains only a `customer_id`. The stream must be joined with a static Customer Profile table to enrich swipes with user credit limit, billing address, and risk score.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Implement Stream-Static relational joins in PySpark: join an unbounded streaming DataFrame with a static Delta dimension table, observe how Spark automatically refreshes static table reads across micro-batches, and evaluate performance considerations.
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC In a Stream-Static join, the static DataFrame is re-evaluated by Spark at the beginning of each streaming micro-batch. If the static table is stored in Delta Lake, updates made to the static table are picked up automatically by subsequent micro-batches without restarting the streaming query.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_057_Stream_Static_Joins_with_Slowly_Changing_Dimension_Lookups")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_057_Stream-Static_Joins_with_Slowly_Changing_Dimension_Lookups")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Creating Static Customer Profile Dimension Table in Delta
+# MAGIC ### Step 1: Creating Static Customer Profile Dimension Table in Delta
 # MAGIC Create static customer lookup table.
 
 # COMMAND ----------
@@ -80,7 +82,7 @@ df_static_customers.show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Simulating Streaming Transaction Batch
+# MAGIC ### Step 2: Simulating Streaming Transaction Batch
 # MAGIC Create streaming transactions to join against static customer dimension.
 
 # COMMAND ----------
@@ -99,7 +101,7 @@ df_stream_mock.show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Executing Stream-Static Join & Fraud Flag Derivation
+# MAGIC ### Step 3: Executing Stream-Static Join & Fraud Flag Derivation
 # MAGIC Join streaming authorizations with static profile to detect credit limit breaches.
 
 # COMMAND ----------
@@ -127,12 +129,14 @@ df_enriched_stream.select(
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **Stream-Static joins do NOT require state tracking or watermarks because the static table is fully bounded.**
 # MAGIC - **When joining with a static Delta table, Spark reads the latest snapshot of the Delta table for each micro-batch.**
 # MAGIC - **Outer stream-static joins are supported: `stream.join(static, how='left')` retains all stream records.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. Does a Stream-Static join require watermarking or state management?
 # MAGIC 2. What happens if new rows are added to the static Delta table while the stream is running?
 # MAGIC 3. Can you perform a right-outer join where the stream is on the right and static table is on the left?

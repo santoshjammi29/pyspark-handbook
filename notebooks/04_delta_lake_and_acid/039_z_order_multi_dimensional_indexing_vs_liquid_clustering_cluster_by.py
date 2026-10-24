@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 039: Z-Order Multi-Dimensional Indexing vs Liquid Clustering (CLUSTER BY)
 # MAGIC
-# MAGIC **Module:** Module 04: Delta Lake Architecture, ACID Operations & Time Travel  
-# MAGIC **Difficulty:** `Advanced`  
+# MAGIC **Module:** Module 04: Delta Lake Architecture, ACID Operations & Time Travel
+# MAGIC **Difficulty:** `Advanced`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC An ad-tech analytics platform runs ad-hoc queries filtering on combinations of `customer_id`, `event_date`, and `campaign_id`. Traditional Hive partitioning on all three columns causes over-partitioning, while single-column sorting leaves other query predicates unoptimized.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Compare multi-dimensional indexing techniques: implement `OPTIMIZE ... ZORDER BY (col1, col2)` to co-locate multidimensional data along space-filling Hilbert/Morton curves, and contrast with modern Databricks Liquid Clustering (`CLUSTER BY`) which supports incremental re-clustering without full rewrites.
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC Z-Ordering maps multi-dimensional data onto a 1D space-filling curve, preserving spatial locality so queries filtering on any subset of Z-ordered columns skip unneeded Parquet files. Liquid Clustering (Databricks Runtime 13.3+) replaces partitioning and Z-order with dynamic clustering that scales incrementally.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_039_Z_Order_Multi_Dimensional_Indexing_vs_Liquid_Clustering_CLUSTER_BY")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_039_Z-Order_Multi-Dimensional_Indexing_vs_Liquid_Clustering_(CLUSTER_BY)")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Generating Multi-Dimensional Telemetry Dataset
+# MAGIC ### Step 1: Generating Multi-Dimensional Telemetry Dataset
 # MAGIC Create dataset queried across multiple filter dimensions.
 
 # COMMAND ----------
@@ -80,7 +82,7 @@ print("Telemetry Delta table written.")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Applying Z-ORDER BY Multi-Dimensional Compaction
+# MAGIC ### Step 2: Applying Z-ORDER BY Multi-Dimensional Compaction
 # MAGIC Run OPTIMIZE with ZORDER BY on multiple high-cardinality query columns.
 
 # COMMAND ----------
@@ -94,7 +96,7 @@ print("Table successfully Z-Ordered for fast multi-column data skipping!")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Architectural Deep Dive: Liquid Clustering (CLUSTER BY)
+# MAGIC ### Step 3: Architectural Deep Dive: Liquid Clustering (CLUSTER BY)
 # MAGIC Explain Databricks Liquid Clustering syntax and operational advantages.
 
 # COMMAND ----------
@@ -116,12 +118,14 @@ print("Liquid Clustering advantages: no partition lock-in, non-destructive colum
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **Z-Ordering arranges multi-dimensional data along a Morton space-filling curve for optimal file skipping.**
 # MAGIC - **Z-Order requires periodic full rewrites of data files; Liquid Clustering (`CLUSTER BY`) enables incremental clustering.**
 # MAGIC - **Choose clustering columns that appear frequently in query WHERE clause filters and possess high cardinality.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. How does Z-Ordering achieve file skipping across multiple columns simultaneously without creating Hive partition directories?
 # MAGIC 2. What is the main limitation of traditional Hive partitioning that Liquid Clustering solves?
 # MAGIC 3. Why should you limit Z-Order to 2-4 columns rather than Z-ordering 10+ columns?

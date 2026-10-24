@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 087: Unity Catalog Volumes for Unstructured and Semi-Structured Data Governance
 # MAGIC
-# MAGIC **Module:** Module 09: Databricks Platform, Unity Catalog, Security & FinOps  
-# MAGIC **Difficulty:** `Intermediate`  
+# MAGIC **Module:** Module 09: Databricks Platform, Unity Catalog, Security & FinOps
+# MAGIC **Difficulty:** `Intermediate`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC A machine learning team manages non-tabular files (PDF documents, medical images, audio files, and model weights) in cloud storage. Legacy DBFS mounts lack row/file-level access control. The platform requires Unity Catalog Volumes for secure governance.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Master Unity Catalog Volumes: compare Managed Volumes vs External Volumes, manage files inside volumes using `dbutils.fs` and standard POSIX `/Volumes/catalog/schema/volume` paths, apply governance privileges, and ingest raw documents into Spark.
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC Unity Catalog Volumes govern non-tabular files (CSVs, images, PDFs, models) alongside tabular tables. Unlike legacy DBFS mounts that grant broad workspace-wide access, Volumes enforce fine-grained access control using the standard 3-tier namespace (`/Volumes/catalog/schema/volume_name/`).
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_087_Unity_Catalog_Volumes_for_Unstructured_and_Semi_Structured_Data_Governance")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_087_Unity_Catalog_Volumes_for_Unstructured_and_Semi-Structured_Data_Governance")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Unity Catalog Volumes DDL Specification
+# MAGIC ### Step 1: Unity Catalog Volumes DDL Specification
 # MAGIC Create Managed and External Volumes within schemas.
 
 # COMMAND ----------
@@ -77,7 +79,7 @@ print(volume_sql)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Interacting with Volumes via POSIX Paths and DBUtils
+# MAGIC ### Step 2: Interacting with Volumes via POSIX Paths and DBUtils
 # MAGIC Read and write files directly using the unified /Volumes path.
 
 # COMMAND ----------
@@ -95,7 +97,7 @@ print("Volumes provide direct POSIX file path access for Python libraries (OpenC
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Governing File Access with Unity Catalog Permissions
+# MAGIC ### Step 3: Governing File Access with Unity Catalog Permissions
 # MAGIC Grant read and write privileges on Volumes.
 
 # COMMAND ----------
@@ -109,12 +111,14 @@ print("Fine-grained volume access control mapped.")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **Unity Catalog Volumes extend data governance to non-tabular files (PDFs, images, CSVs, models).**
 # MAGIC - **Volumes provide standard POSIX path syntax (`/Volumes/catalog/schema/volume/file.ext`) compatible with Python libraries.**
 # MAGIC - **Volumes deprecate insecure legacy DBFS mounts by bringing unified access controls and audit logs.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. What is a Unity Catalog Volume and why was it introduced to replace legacy DBFS mounts?
 # MAGIC 2. What is the difference between a Managed Volume and an External Volume?
 # MAGIC 3. How do data scientists access files inside a Volume using standard Python `open()`?

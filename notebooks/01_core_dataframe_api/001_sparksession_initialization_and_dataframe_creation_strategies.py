@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 001: SparkSession Initialization & DataFrame Creation Strategies
 # MAGIC
-# MAGIC **Module:** Module 01: Core PySpark Foundations & DataFrame API  
-# MAGIC **Difficulty:** `Beginner`  
+# MAGIC **Module:** Module 01: Core PySpark Foundations & DataFrame API
+# MAGIC **Difficulty:** `Beginner`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC A digital commerce platform needs to ingest customer profile extracts from multiple legacy sources (in-memory lists, Python dictionaries, Pandas exports, and RDDs) into a unified PySpark DataFrame with strict schema validation.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Demonstrate the creation of a resilient SparkSession, configuring custom execution properties, and creating DataFrames using: (1) Programmatic RDD with StructType schema, (2) Python dictionaries/tuples with DDL string schema, (3) Pandas DataFrame conversion with PyArrow optimization, and (4) Empty DataFrames with explicit schemas for pipeline initialization.
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC SparkSession serves as the unified entry point introduced in Spark 2.0, encapsulating SparkContext, SQLContext, and HiveContext. In Databricks, the SparkSession variable `spark` is pre-instantiated. When creating DataFrames from Python collections, PySpark serializes Python objects to Java Virtual Machine (JVM) objects via Py4J. Enabling Arrow (`spark.sql.execution.arrow.pyspark.enabled`) accelerates Pandas-to-Spark conversions by eliminating per-row serialization overhead.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_001_SparkSession_Initialization_and_DataFrame_Creation_Strategies")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_001_SparkSession_Initialization_and_DataFrame_Creation_Strategies")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Strategy 1: Programmatic Schema with StructType and Tuples
+# MAGIC ### Strategy 1: Programmatic Schema with StructType and Tuples
 # MAGIC Explicit StructType schemas prevent costly schema inference passes over distributed data and ensure strict type validation.
 
 # COMMAND ----------
@@ -85,7 +87,7 @@ df_customers.show(truncate=False)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Strategy 2: DDL-Formatted Schema String
+# MAGIC ### Strategy 2: DDL-Formatted Schema String
 # MAGIC DDL strings provide a concise, readable alternative to nested StructType declarations while retaining full type safety.
 
 # COMMAND ----------
@@ -106,7 +108,7 @@ df_orders.show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Strategy 3: High-Performance Pandas Conversion via PyArrow
+# MAGIC ### Strategy 3: High-Performance Pandas Conversion via PyArrow
 # MAGIC When working with data scientist outputs or REST API responses, converting Pandas DataFrames using Apache Arrow offers dramatic speedups.
 
 # COMMAND ----------
@@ -131,7 +133,7 @@ df_products.show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 8. Verification & Pipeline Readiness Check
+# MAGIC ### Step 4: Verification & Pipeline Readiness Check
 # MAGIC Assert non-empty DataFrames, column integrity, and schema compliance before feeding downstream medallion pipelines.
 
 # COMMAND ----------
@@ -146,12 +148,14 @@ print("All DataFrame creation strategies and assertions verified successfully!")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **Always supply explicit StructType or DDL schemas in production to avoid schema inference performance penalties.**
 # MAGIC - **Enable Arrow (`spark.sql.execution.arrow.pyspark.enabled`) for zero-copy memory transfers between Pandas and PySpark.**
 # MAGIC - **Spark DataFrames are lazily evaluated representations of Catalyst logical plans—`createDataFrame` only builds the plan until an action is triggered.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. What happens under the hood when you omit a schema in `spark.createDataFrame(data)`?
 # MAGIC 2. How does Apache Arrow optimize PySpark-to-Pandas serialization compared to default Py4J pickling?
 # MAGIC 3. What is the difference between `master('local[*]')` and cluster mode execution when configuring a SparkSession?

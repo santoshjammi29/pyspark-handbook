@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 040: Delta Change Data Feed (CDF): Enabling and Consuming Row-Level Changes
 # MAGIC
-# MAGIC **Module:** Module 04: Delta Lake Architecture, ACID Operations & Time Travel  
-# MAGIC **Difficulty:** `Advanced`  
+# MAGIC **Module:** Module 04: Delta Lake Architecture, ACID Operations & Time Travel
+# MAGIC **Difficulty:** `Advanced`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC An enterprise financial lakehouse architecture maintains a real-time risk dashboard that must react to downstream row-level modifications (inserts, updates, and deletes) occurring in the upstream customer ledger without re-scanning the entire table.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Enable Delta Change Data Feed (`delta.enableChangeDataFeed = true`). Execute inserts, updates, and deletes on the table. Query the resulting change stream using `readChangeFeed` to capture pre-images, post-images, and deleted records.
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC Delta Change Data Feed (CDF) generates row-level change events alongside commits. When updates occur, CDF logs both the `update_preimage` (row state before update) and `update_postimage` (row state after update), enabling exact financial double-entry reconciliation downstream.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_040_Delta_Change_Data_Feed_CDF_Enabling_and_Consuming_Row_Level_Changes")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_040_Delta_Change_Data_Feed_(CDF)_Enabling_and_Consuming_Row-Level_Changes")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Creating Delta Table with Change Data Feed Enabled
+# MAGIC ### Step 1: Creating Delta Table with Change Data Feed Enabled
 # MAGIC Enable CDF at table creation via table properties.
 
 # COMMAND ----------
@@ -78,7 +80,7 @@ print("Delta Table initialized with Change Data Feed enabled.")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Executing Downstream Commits: Update, Delete & Insert
+# MAGIC ### Step 2: Executing Downstream Commits: Update, Delete & Insert
 # MAGIC Apply subsequent transactions to generate change events.
 
 # COMMAND ----------
@@ -100,7 +102,7 @@ print("Applied 3 commits to generate CDF events.")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Querying the Change Data Feed Stream
+# MAGIC ### Step 3: Querying the Change Data Feed Stream
 # MAGIC Read row-level changes across versions using readChangeFeed.
 
 # COMMAND ----------
@@ -115,23 +117,25 @@ df_cdf = (
 
 print("Complete Change Data Feed Stream:")
 df_cdf.select(
-    "cust_id", 
-    "name", 
-    "credit_limit", 
-    "_change_type", 
-    "_commit_version", 
+    "cust_id",
+    "name",
+    "credit_limit",
+    "_change_type",
+    "_commit_version",
     "_commit_timestamp"
 ).show(truncate=False)
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **Delta Change Data Feed captures row-level mutations: `insert`, `update_preimage`, `update_postimage`, and `delete`.**
 # MAGIC - **Enables efficient incremental ETL architectures without doing expensive full-table diffs.**
 # MAGIC - **CDF is queried using `.option('readChangeFeed', 'true')` with `startingVersion` or `startingTimestamp`.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. What is the difference between `update_preimage` and `update_postimage` in Delta CDF?
 # MAGIC 2. How does Delta Lake store CDF records physically on disk without duplicating data unnecessarily?
 # MAGIC 3. How does Delta CDF enable downstream streaming pipelines to process updates and deletes incrementally?

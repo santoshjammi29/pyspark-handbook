@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 053: Distributed REST API and Webhook Ingestion without Driver OOM
 # MAGIC
-# MAGIC **Module:** Module 05: Data Ingestion Patterns, Auto Loader & File Formats  
-# MAGIC **Difficulty:** `Advanced`  
+# MAGIC **Module:** Module 05: Data Ingestion Patterns, Auto Loader & File Formats
+# MAGIC **Difficulty:** `Advanced`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC A financial data vendor exposes historical equity prices via an authenticated REST API with rate limits. The engineering team must fetch data for 50,000 distinct stock tickers. Running loops on the driver node takes 18 hours or crashes the driver with out-of-memory errors.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Implement parallel, distributed HTTP REST API ingestion in PySpark: partition entity IDs across worker nodes, use `mapPartitions` to maintain persistent connection sessions (`requests.Session`), apply batch chunking, handle exponential backoff rate limits, and assemble responses into DataFrames.
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC Using `mapPartitions` initializes one HTTP connection pool (`requests.Session()`) per partition rather than opening a new TCP connection per row. Distributing requests across 20 executor partitions achieves 20x concurrency while honoring per-node rate limit quotas.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_053_Distributed_REST_API_and_Webhook_Ingestion_without_Driver_OOM")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_053_Distributed_REST_API_and_Webhook_Ingestion_without_Driver_OOM")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Preparing Target Partitioned Request Keys
+# MAGIC ### Step 1: Preparing Target Partitioned Request Keys
 # MAGIC Create target ticker symbols distributed across 4 partitions.
 
 # COMMAND ----------
@@ -68,7 +70,7 @@ print(f"Total Tickers: {df_tickers.count()} across {df_tickers.rdd.getNumPartiti
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Distributed Ingestion via mapPartitions and Session Pooling
+# MAGIC ### Step 2: Distributed Ingestion via mapPartitions and Session Pooling
 # MAGIC Execute parallel HTTP calls inside worker tasks.
 
 # COMMAND ----------
@@ -81,7 +83,7 @@ def fetch_ticker_data_partition(iterator):
     # Simulates reusable requests.Session()
     session_id = f"worker_session_{time.time()}"
     results = []
-    
+
     for row in iterator:
         ticker = row.ticker
         # Simulate network latency to REST API (e.g. 5ms)
@@ -114,7 +116,7 @@ df_api_results.show(10)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Validation & Status Code Auditing
+# MAGIC ### Step 3: Validation & Status Code Auditing
 # MAGIC Verify all requests completed with HTTP 200.
 
 # COMMAND ----------
@@ -126,12 +128,14 @@ print("All distributed API calls verified successfully!")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **`mapPartitions` allows initializing heavyweight objects (database connections, HTTP sessions) once per partition rather than per row.**
 # MAGIC - **Distributing API calls across worker partitions speeds up extraction linearly with cluster worker count.**
 # MAGIC - **Always include rate-limiting sleep intervals and exponential backoff retry logic inside worker partitions.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. Why is `mapPartitions` far superior to `map` for executing REST API requests or database lookups?
 # MAGIC 2. How do you handle API rate-limiting (HTTP 429 Too Many Requests) across multiple distributed Spark executors?
 # MAGIC 3. What is the risk of driver OutOfMemory (OOM) if you fetch millions of API responses using `.collect()`?

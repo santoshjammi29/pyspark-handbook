@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 099: Project Telecom: Customer Churn Prediction Feature Store and Window Features
 # MAGIC
-# MAGIC **Module:** Module 10: End-to-End Enterprise Projects & Production Workflows  
-# MAGIC **Difficulty:** `Advanced`  
+# MAGIC **Module:** Module 10: End-to-End Enterprise Projects & Production Workflows
+# MAGIC **Difficulty:** `Advanced`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC A major mobile carrier experiences 2% monthly customer churn. Data scientists need a centralized Lakehouse Feature Store containing 30-day rolling aggregate features (drop in data usage, spike in customer service calls, late bill payments) to train machine learning churn models.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Build an enterprise Telecom Feature Engineering pipeline in PySpark: (1) Compute rolling 30-day temporal window aggregations per subscriber, (2) Calculate trend ratios (current 7-day usage vs 30-day average), (3) Assemble features into a Databricks Feature Store format, and (4) Validate feature drift.
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC Feature stores prevent online/offline training-serving skew. Point-in-time correctness ensures features computed for model training reflect only the data available at the historical prediction timestamp, preventing data leakage.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_099_Project_Telecom_Customer_Churn_Prediction_Feature_Store_and_Window_Features")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_099_Project_Telecom_Customer_Churn_Prediction_Feature_Store_and_Window_Features")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Generating Daily Subscriber Usage Telemetry
+# MAGIC ### Step 1: Generating Daily Subscriber Usage Telemetry
 # MAGIC Create daily data and voice usage logs per subscriber.
 
 # COMMAND ----------
@@ -75,7 +77,7 @@ df_usage.show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Computing 30-Day Windowed Feature Aggregations
+# MAGIC ### Step 2: Computing 30-Day Windowed Feature Aggregations
 # MAGIC Calculate rolling 30-day average usage and support call counts using window specifications.
 
 # COMMAND ----------
@@ -98,7 +100,7 @@ df_features.select("subscriber_id", "usage_date", "data_gb", "avg_data_gb_30d", 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Deriving Churn Risk Indicators & Feature Store Packaging
+# MAGIC ### Step 3: Deriving Churn Risk Indicators & Feature Store Packaging
 # MAGIC Calculate feature ratios and assemble final ML training dataset.
 
 # COMMAND ----------
@@ -130,12 +132,14 @@ df_final_features.show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **Feature Stores decouple ML feature engineering from real-time model serving.**
 # MAGIC - **Use `rangeBetween` on timestamp or epoch day columns to compute rolling time-based features.**
 # MAGIC - **Ratios comparing short-term activity to long-term baseline (e.g. 7-day vs 30-day) are powerful predictors.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. What is point-in-time correctness in Feature Store design and how does it prevent data leakage?
 # MAGIC 2. What is the difference between online and offline feature stores?
 # MAGIC 3. How do you implement rolling 30-day window features in PySpark on irregular daily observations?

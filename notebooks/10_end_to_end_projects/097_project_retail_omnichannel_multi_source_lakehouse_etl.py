@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 097: Project Retail: Omnichannel Multi-Source Lakehouse ETL
 # MAGIC
-# MAGIC **Module:** Module 10: End-to-End Enterprise Projects & Production Workflows  
-# MAGIC **Difficulty:** `Advanced`  
+# MAGIC **Module:** Module 10: End-to-End Enterprise Projects & Production Workflows
+# MAGIC **Difficulty:** `Advanced`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC A major omnichannel retailer operates physical retail stores, an e-commerce website, and customer support via Salesforce. Data resides in three separate silos: PostgreSQL (store inventory), Clickstream logs (web), and Salesforce (customer CRM). Marketing requires a consolidated 360 customer purchase profile.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Execute an end-to-end retail multi-source integration pipeline: (1) Ingest multi-format sources (Postgres JDBC simulation, Web clickstream JSON, and Salesforce CSV), (2) Reconcile identity across customer identifiers, (3) Perform Delta Lake `MERGE INTO` upserts, and (4) Build a multi-channel revenue analytics model.
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC Omnichannel retail requires resolving disparate identity keys (e.g. loyalty card ID from store POS vs email from web cookies). The Silver layer performs identity resolution, linking disparate keys to a conformed master `customer_sk`.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_097_Project_Retail_Omnichannel_Multi_Source_Lakehouse_ETL")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_097_Project_Retail_Omnichannel_Multi-Source_Lakehouse_ETL")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Step 1: Simulating Multi-Source Ingestion Feeds
+# MAGIC ### Step 1: Simulating Multi-Source Ingestion Feeds
 # MAGIC Create store POS transactions, web clickstream sessions, and CRM profiles.
 
 # COMMAND ----------
@@ -76,7 +78,7 @@ print("Multi-Source Ingestion Feeds Prepared.")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Step 2: Unified Silver Transaction Conformance
+# MAGIC ### Step 2: Unified Silver Transaction Conformance
 # MAGIC Union all sales channels and enrich with CRM customer segmentation.
 
 # COMMAND ----------
@@ -97,7 +99,7 @@ df_silver_omnichannel.show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Step 3: Gold Customer Omnichannel Lifetime Value Summary
+# MAGIC ### Step 3: Gold Customer Omnichannel Lifetime Value Summary
 # MAGIC Calculate spend per channel and omnichannel behavior flags.
 
 # COMMAND ----------
@@ -126,12 +128,14 @@ df_gold_clv.show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **Omnichannel data pipelines reconcile disparate source systems into a unified Lakehouse schema.**
 # MAGIC - **`unionByName()` combines disparate streams while preserving column order and alignment.**
 # MAGIC - **Omnichannel customer classification identifies high-value hybrid shoppers for personalized marketing.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. How do you perform identity resolution across disparate retail channels without a universal user ID?
 # MAGIC 2. What is the difference between `union()` and `unionByName()` in PySpark?
 # MAGIC 3. How do you design a Delta Lake medallion architecture to handle multi-source CDC merges?

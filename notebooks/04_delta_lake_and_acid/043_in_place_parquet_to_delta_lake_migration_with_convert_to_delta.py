@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 043: In-Place Parquet to Delta Lake Migration with CONVERT TO DELTA
 # MAGIC
-# MAGIC **Module:** Module 04: Delta Lake Architecture, ACID Operations & Time Travel  
-# MAGIC **Difficulty:** `Intermediate`  
+# MAGIC **Module:** Module 04: Delta Lake Architecture, ACID Operations & Time Travel
+# MAGIC **Difficulty:** `Intermediate`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC An enterprise data platform has 100TB of historical data stored across partitioned Parquet directories in Amazon S3 or Azure ADLS. Re-writing all Parquet files into Delta would take days and cost thousands of dollars in cloud compute.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Perform a zero-copy, in-place migration of an existing Parquet table to Delta Lake using `CONVERT TO DELTA`. Preserve existing partition directory hierarchies and verify instant ACID transaction log generation without moving data files.
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC `CONVERT TO DELTA` reads the file metadata and directory structure of an existing Parquet directory and synthesizes commit `000000.json` in `_delta_log/` in seconds. It does not rewrite or copy underlying Parquet data files, making it a zero-copy instant operation.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_043_In_Place_Parquet_to_Delta_Lake_Migration_with_CONVERT_TO_DELTA")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_043_In-Place_Parquet_to_Delta_Lake_Migration_with_CONVERT_TO_DELTA")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Generating Partitioned Parquet Table
+# MAGIC ### Step 1: Generating Partitioned Parquet Table
 # MAGIC Create an unmanaged Parquet table partitioned by department.
 
 # COMMAND ----------
@@ -79,7 +81,7 @@ print(f"Subdirectories: {[d.name for d in Path(parquet_base_path).iterdir() if d
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Executing CONVERT TO DELTA In-Place
+# MAGIC ### Step 2: Executing CONVERT TO DELTA In-Place
 # MAGIC Convert Parquet directory to Delta Lake with zero file copies.
 
 # COMMAND ----------
@@ -93,7 +95,7 @@ print(f"Has _delta_log now: {(Path(parquet_base_path) / '_delta_log').exists()}"
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Verifying ACID Capabilities on Converted Table
+# MAGIC ### Step 3: Verifying ACID Capabilities on Converted Table
 # MAGIC Verify that UPDATE and ACID operations now function on the converted table.
 
 # COMMAND ----------
@@ -111,12 +113,14 @@ dt_converted.toDF().show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **`CONVERT TO DELTA` is a zero-copy metadata-only operation that constructs `_delta_log` instantly.**
 # MAGIC - **For partitioned tables, always specify `PARTITIONED BY (col TYPE)` matching the physical directory structure.**
 # MAGIC - **After conversion, you gain full ACID support, Time Travel, and MERGE capabilities without moving files.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. Does `CONVERT TO DELTA` duplicate or move any underlying Parquet data files?
 # MAGIC 2. What happens if an external system writes new Parquet files into the directory after conversion without going through Delta?
 # MAGIC 3. Can you run `CONVERT TO DELTA` on CSV or JSON files?

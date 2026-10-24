@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 078: Bucketing for Pre-Sorted Join Optimization and Shuffle Elimination
 # MAGIC
-# MAGIC **Module:** Module 08: Performance Tuning, Query Optimization & Skew Mitigation  
-# MAGIC **Difficulty:** `Advanced`  
+# MAGIC **Module:** Module 08: Performance Tuning, Query Optimization & Skew Mitigation
+# MAGIC **Difficulty:** `Advanced`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC Two multi-billion-row fact tables (Orders and Shipments) are joined hourly in a critical financial pipeline. Because both tables are huge, broadcast joins are impossible. Every run shuffles 5TB of data across the network, consuming 40 minutes of compute.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Eliminate shuffle using Spark Bucketing: create bucketed tables with `bucketBy()` and `sortBy()`, configure matching bucket counts on both tables, and verify the total elimination of the Exchange (shuffle) operator from Sort-Merge Joins.
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC Bucketing pre-shuffles and pre-sorts data on write according to a hash function of the bucket column. When two tables bucketed on the same key with identical (or multiple) bucket counts are joined, Spark reads matching bucket files directly without triggering any network shuffle (`Exchange` operator disappears).
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_078_Bucketing_for_Pre_Sorted_Join_Optimization_and_Shuffle_Elimination")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_078_Bucketing_for_Pre-Sorted_Join_Optimization_and_Shuffle_Elimination")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Creating Bucketed Orders and Shipments Tables
+# MAGIC ### Step 1: Creating Bucketed Orders and Shipments Tables
 # MAGIC Write tables bucketed into 4 buckets on join key 'order_id'.
 
 # COMMAND ----------
@@ -88,7 +90,7 @@ print("Both tables bucketed into 4 buckets and sorted on order_id.")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Verifying Shuffle Elimination in Physical Join Plan
+# MAGIC ### Step 2: Verifying Shuffle Elimination in Physical Join Plan
 # MAGIC Join bucketed tables and inspect physical plan.
 
 # COMMAND ----------
@@ -108,7 +110,7 @@ df_joined_bucket.show(5)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Clean Up Database
+# MAGIC ### Step 3: Clean Up Database
 # MAGIC Drop temporary bucketed tables.
 
 # COMMAND ----------
@@ -120,12 +122,14 @@ print("Cleaned up temporary tables.")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **Bucketing pre-sorts and pre-distributes data on write, eliminating network shuffle during downstream joins.**
 # MAGIC - **Both tables must be bucketed on the exact same join key and have matching or multiple bucket counts.**
 # MAGIC - **Bucketing requires managed tables (`saveAsTable`); it does not apply to unmanaged path-based writes.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. How does bucketing eliminate the `Exchange` operator in a Sort-Merge Join physical plan?
 # MAGIC 2. What happens if two bucketed tables are joined, but Table A has 8 buckets and Table B has 16 buckets?
 # MAGIC 3. Why is bucketing less common in modern Databricks compared to Z-Ordering and Liquid Clustering?

@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 030: Relational Joins Masterclass: Inner, Outer, Semi and Anti Joins
 # MAGIC
-# MAGIC **Module:** Module 03: Advanced SQL, Aggregations & Analytical Window Functions  
-# MAGIC **Difficulty:** `Intermediate`  
+# MAGIC **Module:** Module 03: Advanced SQL, Aggregations & Analytical Window Functions
+# MAGIC **Difficulty:** `Intermediate`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC An enterprise CRM data reconciler syncs accounts between Salesforce and a billing database. The reconciliation team needs to find: (1) Fully matched customer profiles, (2) Customers in CRM with zero billing records, and (3) Active billing records missing from CRM.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Implement and compare all relational join types in PySpark: `inner`, `left`, `right`, `full_outer`, `left_semi`, and `left_anti`. Explain why `left_semi` and `left_anti` are preferred over left joins with null checks.
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC `left_semi` join filters rows from the left table that have at least one match in the right table without duplicating left rows or including right columns. `left_anti` returns rows from the left table that have NO match in the right table. Both are far more memory-efficient than standard joins.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_030_Relational_Joins_Masterclass_Inner_Outer_Semi_and_Anti_Joins")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_030_Relational_Joins_Masterclass_Inner,_Outer,_Semi_and_Anti_Joins")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Generating CRM and Billing Datasets
+# MAGIC ### Step 1: Generating CRM and Billing Datasets
 # MAGIC Create overlapping CRM and billing customer tables.
 
 # COMMAND ----------
@@ -83,7 +85,7 @@ df_bill.show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Inner, Full Outer & Duplicate Key Avoidance
+# MAGIC ### Step 2: Inner, Full Outer & Duplicate Key Avoidance
 # MAGIC Execute standard relational joins and resolve duplicate join column names.
 
 # COMMAND ----------
@@ -101,7 +103,7 @@ df_outer.show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. High-Efficiency Left Semi and Left Anti Joins
+# MAGIC ### Step 3: High-Efficiency Left Semi and Left Anti Joins
 # MAGIC Filter without duplicating left-side rows or loading right-side columns.
 
 # COMMAND ----------
@@ -119,12 +121,14 @@ df_anti.show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **Use `on='col_name'` instead of `df1['col'] == df2['col']` to avoid producing duplicate join column names.**
 # MAGIC - **`left_semi` acts as an `EXISTS` filter: it does not duplicate left rows if multiple right rows match.**
 # MAGIC - **`left_anti` acts as a `NOT EXISTS` filter: highly optimized for finding orphaned or missing records.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. What is the difference between `left_semi` join and an `inner` join followed by `.select(df1['*']).distinct()`?
 # MAGIC 2. Why does `left_anti` outperform `left` join followed by `.filter(df2['key'].isNull())`?
 # MAGIC 3. How does Catalyst Optimizer choose between SortMergeJoin and ShuffleHashJoin?

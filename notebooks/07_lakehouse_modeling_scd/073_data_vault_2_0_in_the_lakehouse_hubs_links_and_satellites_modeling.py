@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 073: Data Vault 2.0 in the Lakehouse: Hubs, Links and Satellites Modeling
 # MAGIC
-# MAGIC **Module:** Module 07: Lakehouse Data Modeling, CDC & SCD Implementation  
-# MAGIC **Difficulty:** `Advanced`  
+# MAGIC **Module:** Module 07: Lakehouse Data Modeling, CDC & SCD Implementation
+# MAGIC **Difficulty:** `Advanced`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC A large banking institution integrates 30 disparate core banking, loan, and credit systems. Source systems change schemas frequently. The enterprise architecture mandates Data Vault 2.0 to provide 100% auditability, parallel loading, and agile schema evolution.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Implement the core entities of Data Vault 2.0 in PySpark: (1) Hubs (unique business keys and hash keys), (2) Links (relationships between business keys), and (3) Satellites (contextual descriptive attributes with load timestamps).
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC Data Vault 2.0 separates business keys (Hubs), relationships (Links), and descriptive attributes (Satellites). Hash keys (`sha2(natural_key)`) allow distributed parallel ingestion into Hubs, Links, and Satellites simultaneously without foreign key lookup bottlenecks.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_073_Data_Vault_20_in_the_Lakehouse_Hubs_Links_and_Satellites_Modeling")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_073_Data_Vault_2.0_in_the_Lakehouse_Hubs,_Links_and_Satellites_Modeling")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. 1. Building Hub Customer (Hubs: Unique Business Keys)
+# MAGIC ### Step 1: 1. Building Hub Customer (Hubs: Unique Business Keys)
 # MAGIC Create Hub table containing hash keys and business keys.
 
 # COMMAND ----------
@@ -75,7 +77,7 @@ hub_customer.show(truncate=False)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. 2. Building Link Customer-Account (Links: Relationships)
+# MAGIC ### Step 2: 2. Building Link Customer-Account (Links: Relationships)
 # MAGIC Create Link table capturing the relationship between Customer and Account hash keys.
 
 # COMMAND ----------
@@ -97,7 +99,7 @@ link_cust_acc.show(truncate=False)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. 3. Building Satellite Customer Details (Satellites: Descriptive Data)
+# MAGIC ### Step 3: 3. Building Satellite Customer Details (Satellites: Descriptive Data)
 # MAGIC Create Satellite capturing point-in-time descriptive attributes with hash diff.
 
 # COMMAND ----------
@@ -121,12 +123,14 @@ sat_customer.show(truncate=False)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **Data Vault 2.0 decomposes data into Hubs (business keys), Links (associations), and Satellites (context).**
 # MAGIC - **Hash keys (`sha2`) eliminate dependency bottlenecks, allowing Hubs, Links, and Satellites to load concurrently.**
 # MAGIC - **`hashdiff` columns enable instant change detection without checking every individual descriptive column.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. What problem does Data Vault 2.0 solve compared to traditional Inmon 3NF and Kimball Star Schemas?
 # MAGIC 2. Why are cryptographic hash keys used instead of database sequences in Data Vault 2.0?
 # MAGIC 3. What is the role of the `hashdiff` column in a Data Vault Satellite table?

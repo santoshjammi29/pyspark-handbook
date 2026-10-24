@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 100: Project Cybersecurity: Web Server Access Log Analytics and Threat Detection
 # MAGIC
-# MAGIC **Module:** Module 10: End-to-End Enterprise Projects & Production Workflows  
-# MAGIC **Difficulty:** `Advanced`  
+# MAGIC **Module:** Module 10: End-to-End Enterprise Projects & Production Workflows
+# MAGIC **Difficulty:** `Advanced`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC A cyber defense operations center monitors 100 million web server access logs daily. Security analysts must parse unformatted Nginx/Apache logs, detect DDoS attacks (IPs generating > 100 requests in 1 minute), identify SQL injection attempts, and geolocate threat origins.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Build an end-to-end cybersecurity log analytics pipeline: (1) Parse Common Log Format (CLF) / Nginx access logs using regex, (2) Detect HTTP 4xx/5xx error bursts and potential SQL injection signatures (`UNION SELECT`, `' OR 1=1`), (3) Execute sliding window velocity checks, and (4) Output an active threat IP blacklist.
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC Log parsing in big data pipelines is CPU-intensive. Using native `regexp_extract()` with pre-compiled regex groups in Catalyst operates inside Tungsten UTF-8 binary format, avoiding Java String object garbage collection pressure.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_100_Project_Cybersecurity_Web_Server_Access_Log_Analytics_and_Threat_Detection")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_100_Project_Cybersecurity_Web_Server_Access_Log_Analytics_and_Threat_Detection")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Simulating Raw Nginx Access Log Entries
+# MAGIC ### Step 1: Simulating Raw Nginx Access Log Entries
 # MAGIC Create representative access logs with normal traffic and malicious attacks.
 
 # COMMAND ----------
@@ -76,7 +78,7 @@ df_raw_logs.show(truncate=False)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Parsing Common Log Format (CLF) via Regex
+# MAGIC ### Step 2: Parsing Common Log Format (CLF) via Regex
 # MAGIC Extract client IP, timestamp, HTTP method, URL, status code, and response bytes.
 
 # COMMAND ----------
@@ -98,7 +100,7 @@ df_parsed_logs.select("client_ip", "http_method", "request_uri", "status_code").
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Threat Signature Detection & Blacklist Generation
+# MAGIC ### Step 3: Threat Signature Detection & Blacklist Generation
 # MAGIC Identify SQLi, path traversal, and aggregate high-risk attack IPs.
 
 # COMMAND ----------
@@ -135,12 +137,14 @@ df_blacklist.show(truncate=False)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **High-throughput log analytics leverages regex pattern extraction inside Tungsten binary representations.**
 # MAGIC - **Detect threat signatures (SQLi, path traversal, credential stuffing) using vectorized regex expressions.**
 # MAGIC - **Automated Gold threat tables feed downstream firewall APIs (Cloudflare, AWS WAF) for immediate IP blocking.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. How do you process 500GB of daily unstructured Nginx logs in PySpark without driver OOM?
 # MAGIC 2. What is the performance difference between `regexp_extract()` and Python's `re.search()` inside a UDF?
 # MAGIC 3. How do you implement real-time sliding window DDoS detection using Structured Streaming?

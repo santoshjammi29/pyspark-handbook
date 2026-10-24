@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 035: Delta Upsert and MERGE INTO Mastery with Multiple Conditions
 # MAGIC
-# MAGIC **Module:** Module 04: Delta Lake Architecture, ACID Operations & Time Travel  
-# MAGIC **Difficulty:** `Intermediate`  
+# MAGIC **Module:** Module 04: Delta Lake Architecture, ACID Operations & Time Travel
+# MAGIC **Difficulty:** `Intermediate`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC A retail inventory management system synchronizes daily inventory updates from 500 physical warehouses. If an item exists in the central inventory table, update stock quantity and last_restocked date; if missing, insert the new SKU; if stock drops to -999 (discontinued), delete the item.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Master the `MERGE INTO` API in Delta Lake: implement complex upserts with `whenMatchedUpdate`, `whenMatchedDelete`, `whenNotMatchedInsert`, and conditional update clauses to handle real-world CDC synchronization in a single atomic transaction.
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC Delta MERGE is an atomic operation that performs a full outer join between source updates and target Delta files to identify matching keys. It rewrites only the specific files containing matching rows, avoiding full table rewrites.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_035_Delta_Upsert_and_MERGE_INTO_Mastery_with_Multiple_Conditions")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_035_Delta_Upsert_and_MERGE_INTO_Mastery_with_Multiple_Conditions")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Initializing Current Warehouse Inventory (Target Delta Table)
+# MAGIC ### Step 1: Initializing Current Warehouse Inventory (Target Delta Table)
 # MAGIC Create target inventory table.
 
 # COMMAND ----------
@@ -82,7 +84,7 @@ target_table.toDF().show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Preparing Inbound Daily Warehouse Updates (Source Batch)
+# MAGIC ### Step 2: Preparing Inbound Daily Warehouse Updates (Source Batch)
 # MAGIC Create batch with updates, new SKUs, and a discontinued item (quantity = -999).
 
 # COMMAND ----------
@@ -100,7 +102,7 @@ df_updates.show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Executing Multi-Condition MERGE INTO
+# MAGIC ### Step 3: Executing Multi-Condition MERGE INTO
 # MAGIC Execute conditional update, conditional delete, and insert in a single atomic pass.
 
 # COMMAND ----------
@@ -139,12 +141,14 @@ target_table.toDF().orderBy("sku").show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **`MERGE INTO` executes inserts, updates, and deletes in a single unified atomic transaction.**
 # MAGIC - **Always ensure the source dataset is deduplicated on the merge condition key; duplicate source keys will throw a `DeltaAnalysisException`.**
 # MAGIC - **Specify partition pruning filters in the merge condition whenever merging into partitioned Delta tables to skip untouched partitions.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. What happens when the source table in a Delta `MERGE` statement contains duplicate keys?
 # MAGIC 2. How does Delta Lake's merge operation identify which Parquet files need to be rewritten?
 # MAGIC 3. How can you optimize a MERGE operation on a multi-terabyte partitioned Delta table?

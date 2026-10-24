@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 018: MapType Creation, Key Extraction and Dynamic Properties
 # MAGIC
-# MAGIC **Module:** Module 02: Complex Data Types & Nested Structures Handling  
-# MAGIC **Difficulty:** `Intermediate`  
+# MAGIC **Module:** Module 02: Complex Data Types & Nested Structures Handling
+# MAGIC **Difficulty:** `Intermediate`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC An advertising technology platform captures custom user ad-tracking attributes (cookies, campaign IDs, UTM tags, experiment variants) as dynamic key-value pairs where keys vary across partners and cannot be fixed into a static schema.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Master MapType operations: construct maps from column pairs (`create_map()`), extract keys (`map_keys()`), extract values (`map_values()`), build maps from paired arrays (`map_from_arrays()`), and query dynamic attributes safely without null pointer exceptions.
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC MapType represents key-value collections with arbitrary keys of identical data type. Unlike StructType (where field names are fixed in schema metadata), MapType allows dynamic runtime keys, making it ideal for sparse key-value attributes.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_018_MapType_Creation_Key_Extraction_and_Dynamic_Properties")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_018_MapType_Creation,_Key_Extraction_and_Dynamic_Properties")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Creating Ad-Tech Campaign Metadata with MapType
+# MAGIC ### Step 1: Creating Ad-Tech Campaign Metadata with MapType
 # MAGIC Construct maps using create_map and map_from_arrays.
 
 # COMMAND ----------
@@ -80,7 +82,7 @@ df_mapped.select("event_id", "attributes").show(truncate=False)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Querying Map Keys, Values & Dynamic Lookup
+# MAGIC ### Step 2: Querying Map Keys, Values & Dynamic Lookup
 # MAGIC Access map values by key name using bracket notation and inspect key catalogs.
 
 # COMMAND ----------
@@ -101,7 +103,7 @@ df_extracted.select("event_id", "source", "campaign", "all_keys").show(truncate=
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Exploding MapType into Relational Key-Value Rows
+# MAGIC ### Step 3: Exploding MapType into Relational Key-Value Rows
 # MAGIC Convert sparse key-value pairs into normalized relational rows.
 
 # COMMAND ----------
@@ -116,12 +118,14 @@ df_kv_pairs.show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **Use `MapType` for semi-structured data where keys are dynamic, variable, or unpredictable.**
 # MAGIC - **`map_from_arrays(keys_col, values_col)` builds maps from two parallel array columns.**
 # MAGIC - **Accessing non-existent map keys returns `NULL` safely rather than raising runtime errors.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. What is the difference between `MapType` and `StructType` in PySpark?
 # MAGIC 2. When should you choose `MapType` over a normalized child table in Lakehouse architecture?
 # MAGIC 3. How does `explode(map_col)` generate key and value columns simultaneously?

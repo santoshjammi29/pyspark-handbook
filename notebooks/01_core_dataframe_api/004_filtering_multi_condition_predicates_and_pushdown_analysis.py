@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 004: Filtering, Multi-Condition Predicates & Pushdown Analysis
 # MAGIC
-# MAGIC **Module:** Module 01: Core PySpark Foundations & DataFrame API  
-# MAGIC **Difficulty:** `Beginner`  
+# MAGIC **Module:** Module 01: Core PySpark Foundations & DataFrame API
+# MAGIC **Difficulty:** `Beginner`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC A logistics fleet management company needs to identify critical alerts: vehicles with engine temperatures exceeding safe thresholds, low tire pressure, or battery degradation across specific geographic territories.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Build complex multi-condition filters using bitwise operators (`&`, `|`, `~`), evaluate `isin()`, string regex matching (`rlike`), and inspect the Catalyst physical plan to verify predicate pushdown into the file reader.
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC Predicate pushdown allows the storage layer (Parquet/Delta) to skip entire row groups and data files using file-level min/max statistics without deserializing data into the JVM heap. Complex functions wrapped around columns can prevent pushdown, forcing full table scans.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_004_Filtering_Multi_Condition_Predicates_and_Pushdown_Analysis")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_004_Filtering,_Multi-Condition_Predicates_and_Pushdown_Analysis")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Creating Fleet Telemetry Records
+# MAGIC ### Step 1: Creating Fleet Telemetry Records
 # MAGIC Prepare sensor readings from IoT vehicle diagnostics.
 
 # COMMAND ----------
@@ -75,7 +77,7 @@ df_fleet.show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Executing Multi-Condition Logic
+# MAGIC ### Step 2: Executing Multi-Condition Logic
 # MAGIC Construct complex boolean predicates using bitwise syntax (`&`, `|`, `~`). Parentheses around each condition are mandatory in PySpark.
 
 # COMMAND ----------
@@ -86,7 +88,7 @@ target_regions = ["North America", "Europe"]
 severe_filter = (
     (F.col("region").isin(target_regions)) &
     (
-        (F.col("engine_temp") > 105.0) | 
+        (F.col("engine_temp") > 105.0) |
         (F.col("tire_pressure") < 28.0) |
         (F.col("battery_pct") < 60.0)
     ) &
@@ -103,7 +105,7 @@ df_critical.show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Inspecting Catalyst Physical Plan for Predicate Pushdown
+# MAGIC ### Step 3: Inspecting Catalyst Physical Plan for Predicate Pushdown
 # MAGIC Analyze the physical plan to verify Filter operator placement.
 
 # COMMAND ----------
@@ -114,12 +116,14 @@ df_severe_alerts.explain(mode="formatted")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **Always wrap individual filter conditions in parentheses `(cond1) & (cond2)` due to Python bitwise operator precedence.**
 # MAGIC - **Predicate pushdown relies on keeping column expressions clean—avoid `func(col) == val` which breaks pushdown; use `col == inverse_func(val)`.**
 # MAGIC - **`where()` and `filter()` are exact synonyms in the PySpark DataFrame API.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. Why do PySpark filter operations require bitwise operators (`&`, `|`) instead of Python keywords (`and`, `or`)?
 # MAGIC 2. How does Parquet row-group statistics enable predicate pushdown?
 # MAGIC 3. What is partition pruning versus data skipping via file-level stats?

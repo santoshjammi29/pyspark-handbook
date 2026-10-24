@@ -778,7 +778,7 @@ print("All distributed API calls verified successfully!")"""
             module_folder=MODULE_FOLDER,
             module_name=MODULE_NAME,
             difficulty=nb["difficulty"],
-            yt_ref=nb["yt_ref"],
+            yt_ref=nb.get("yt_ref"),
             business_scenario=nb["business_scenario"],
             problem_statement=nb["problem_statement"],
             architectural_notes=nb["architectural_notes"],

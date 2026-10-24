@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 056: Streaming Window Aggregations and Watermarking for Late-Arriving Events
 # MAGIC
-# MAGIC **Module:** Module 06: Streaming & Near Real-Time Processing  
-# MAGIC **Difficulty:** `Advanced`  
+# MAGIC **Module:** Module 06: Streaming & Near Real-Time Processing
+# MAGIC **Difficulty:** `Advanced`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC A mobile gaming platform aggregates player score events over 10-minute tumbling windows. Due to intermittent mobile connectivity and airplane mode, score events arrive up to 15 minutes late. The pipeline must incorporate late events without letting state size grow infinitely.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Implement streaming window aggregations with watermarking: configure `withWatermark('event_time', '10 minutes')`, compute tumbling and sliding window metrics, and explain how the watermark dictates state eviction from RocksDB memory.
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC A watermark specifies the maximum threshold by which event-time can lag behind the maximum event-time observed by the engine ($Watermark = Max(event\_time) - Delay$). Once a window's end time falls behind the watermark, Spark emits the final aggregate and purges the window's state from memory.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_056_Streaming_Window_Aggregations_and_Watermarking_for_Late_Arriving_Events")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_056_Streaming_Window_Aggregations_and_Watermarking_for_Late-Arriving_Events")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Understanding Watermark State Cleanup Mathematics
+# MAGIC ### Step 1: Understanding Watermark State Cleanup Mathematics
 # MAGIC Illustrate how watermarking bounds memory growth in stateful streaming.
 
 # COMMAND ----------
@@ -69,7 +71,7 @@ print("Watermark state eviction semantics mapped.")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Simulating Event Stream with Deliberate Late-Arriving Records
+# MAGIC ### Step 2: Simulating Event Stream with Deliberate Late-Arriving Records
 # MAGIC Create memory stream with varied event timestamps.
 
 # COMMAND ----------
@@ -96,7 +98,7 @@ df_events.show(truncate=False)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Configuring Window Aggregations with Watermark
+# MAGIC ### Step 3: Configuring Window Aggregations with Watermark
 # MAGIC Apply 10-minute tumbling window with 15-minute watermark delay.
 
 # COMMAND ----------
@@ -129,12 +131,14 @@ df_windowed.show(truncate=False)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **`withWatermark(time_col, delay)` informs Spark how long to retain intermediate aggregation state for late data.**
 # MAGIC - **Events arriving older than the current watermark are dropped without affecting state.**
 # MAGIC - **Watermarking is mandatory for stateful streaming aggregations in `append` mode to prevent infinite memory leaks.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. What is a Watermark in Spark Structured Streaming and how is it calculated?
 # MAGIC 2. What happens to an event if its `event_time` is strictly older than the current watermark?
 # MAGIC 3. Why can stateful streaming aggregations NOT run in `append` mode without a watermark?

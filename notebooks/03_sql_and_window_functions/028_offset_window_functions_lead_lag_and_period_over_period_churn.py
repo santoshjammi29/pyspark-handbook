@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 028: Offset Window Functions: lead, lag and Period-over-Period Churn
 # MAGIC
-# MAGIC **Module:** Module 03: Advanced SQL, Aggregations & Analytical Window Functions  
-# MAGIC **Difficulty:** `Intermediate`  
+# MAGIC **Module:** Module 03: Advanced SQL, Aggregations & Analytical Window Functions
+# MAGIC **Difficulty:** `Intermediate`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC A SaaS subscription billing service analyzes customer MRR (Monthly Recurring Revenue). Finance requires month-over-month revenue variance, detection of plan upgrades/downgrades, and churn identification when an active account drops subscription renewal.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Master offset window functions: implement `lag()` to retrieve previous month revenue and `lead()` to inspect subsequent renewal state. Calculate absolute and percentage period-over-period differences, and handle default fallback values on boundary rows.
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC Offset functions fetch values from neighboring rows within the same executor partition buffer without self-joining the table. Self-joins require a full Cartesian shuffle, whereas `lag()` operates in single-pass linear time $O(N)$ inside the partition.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_028_Offset_Window_Functions_lead_lag_and_Period_over_Period_Churn")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_028_Offset_Window_Functions_lead,_lag_and_Period-over-Period_Churn")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Generating Monthly SaaS Subscription History
+# MAGIC ### Step 1: Generating Monthly SaaS Subscription History
 # MAGIC Create monthly subscription charges per customer account.
 
 # COMMAND ----------
@@ -76,7 +78,7 @@ df_subs.show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Applying lag() and lead() with Default Values
+# MAGIC ### Step 2: Applying lag() and lead() with Default Values
 # MAGIC Fetch previous month and next month MRR.
 
 # COMMAND ----------
@@ -94,7 +96,7 @@ df_lag_lead.show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Calculating Month-over-Month Growth & Change Classification
+# MAGIC ### Step 3: Calculating Month-over-Month Growth & Change Classification
 # MAGIC Compute variance and classify subscription status.
 
 # COMMAND ----------
@@ -119,12 +121,14 @@ df_variance.select("sub_id", "billing_month", "prev_mrr", "mrr", "mrr_change", "
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **`lag(col, offset, default)` accesses preceding rows without requiring self-joins.**
 # MAGIC - **`lead(col, offset, default)` peeks forward into subsequent rows in the partition.**
 # MAGIC - **Always provide sensible `default` values to avoid propagating accidental nulls on boundary rows.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. Why is `lag()` significantly more efficient than joining a DataFrame to itself on `t.date = t_prev.date + 1`?
 # MAGIC 2. How do you calculate year-over-year growth for missing months using window functions?
 # MAGIC 3. What is the maximum offset value you can safely supply to `lag()` in PySpark?

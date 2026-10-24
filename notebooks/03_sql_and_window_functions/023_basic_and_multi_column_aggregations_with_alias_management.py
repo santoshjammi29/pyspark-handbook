@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 023: Basic and Multi-Column Aggregations with Alias Management
 # MAGIC
-# MAGIC **Module:** Module 03: Advanced SQL, Aggregations & Analytical Window Functions  
-# MAGIC **Difficulty:** `Beginner`  
+# MAGIC **Module:** Module 03: Advanced SQL, Aggregations & Analytical Window Functions
+# MAGIC **Difficulty:** `Beginner`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC A retail analytics engine calculates daily regional performance metrics across store departments: total gross revenue, average transaction value, maximum discount applied, and distinct active shoppers.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Perform multi-column aggregations using `groupBy()` paired with `agg()`. Demonstrate explicit column aliasing, combining multiple statistical functions (`sum`, `avg`, `min`, `max`, `countDistinct`, `approx_count_distinct`), and using dictionary-based aggregation syntax.
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC Spark executes aggregations via HashAggregate (when data types are mutable) or SortAggregate. In two-phase aggregation, Spark first performs partial local aggregation on each partition before shuffling partial sums across the network, reducing network traffic.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_023_Basic_and_Multi_Column_Aggregations_with_Alias_Management")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_023_Basic_and_Multi-Column_Aggregations_with_Alias_Management")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Generating Store Sales Transactions
+# MAGIC ### Step 1: Generating Store Sales Transactions
 # MAGIC Create a dataset of store transactions with departments and regions.
 
 # COMMAND ----------
@@ -77,7 +79,7 @@ df_sales.show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Multi-Column Aggregations with Explicit Aliasing
+# MAGIC ### Step 2: Multi-Column Aggregations with Explicit Aliasing
 # MAGIC Calculate comprehensive statistical metrics per region and department.
 
 # COMMAND ----------
@@ -96,7 +98,7 @@ df_regional_metrics.show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Performance Optimization: approx_count_distinct for HyperLogLog Scaling
+# MAGIC ### Step 3: Performance Optimization: approx_count_distinct for HyperLogLog Scaling
 # MAGIC Compare exact distinct count with approximate distinct count for massive datasets.
 
 # COMMAND ----------
@@ -113,12 +115,14 @@ df_approx.show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **Always alias aggregated expressions immediately using `.alias()` to prevent messy default column names.**
 # MAGIC - **Spark automatically leverages two-phase aggregation: partial aggregate on executors followed by final aggregate after shuffle.**
 # MAGIC - **Use `approx_count_distinct` for high-cardinality distinct counts on big data to eliminate severe shuffle spills.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. How does Spark's two-phase HashAggregate optimize network transfer during `groupBy()`?
 # MAGIC 2. What algorithm powers `approx_count_distinct` and when is it acceptable in business reporting?
 # MAGIC 3. What is the difference between HashAggregate and SortAggregate in Spark Catalyst execution plans?

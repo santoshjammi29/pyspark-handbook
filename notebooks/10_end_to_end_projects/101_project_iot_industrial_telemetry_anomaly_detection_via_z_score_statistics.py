@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 101: Project IoT: Industrial Telemetry Anomaly Detection via Z-Score Statistics
 # MAGIC
-# MAGIC **Module:** Module 10: End-to-End Enterprise Projects & Production Workflows  
-# MAGIC **Difficulty:** `Advanced`  
+# MAGIC **Module:** Module 10: End-to-End Enterprise Projects & Production Workflows
+# MAGIC **Difficulty:** `Advanced`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC A smart manufacturing plant operates 5,000 robotic welding arms. Bearings experience mechanical fatigue before catastrophic failure. Plant reliability engineers need a real-time statistical anomaly detector that computes moving Z-scores on vibration sensor streams.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Implement distributed statistical anomaly detection in PySpark: calculate rolling mean and standard deviation over temporal windows, compute the Z-score for vibration signals ($Z = \frac{x - \mu}{\sigma}$), flag readings where $|Z| > 3.0$ (three-sigma rule), and trigger predictive maintenance tickets.
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC The three-sigma ($3\sigma$) rule assumes sensor readings under normal operation follow an approximate Gaussian distribution. By computing dynamic moving baselines per machine rather than static thresholds, the pipeline adapts to normal operating temperature and load shifts.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_101_Project_IoT_Industrial_Telemetry_Anomaly_Detection_via_Z_Score_Statistics")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_101_Project_IoT_Industrial_Telemetry_Anomaly_Detection_via_Z-Score_Statistics")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Generating Sensor Vibration Telemetry
+# MAGIC ### Step 1: Generating Sensor Vibration Telemetry
 # MAGIC Create high-frequency vibration sensor logs with normal baseline and sudden spike.
 
 # COMMAND ----------
@@ -76,7 +78,7 @@ df_sensors.show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Calculating Moving Baseline (Mean & Standard Deviation)
+# MAGIC ### Step 2: Calculating Moving Baseline (Mean & Standard Deviation)
 # MAGIC Apply window functions over preceding readings per machine.
 
 # COMMAND ----------
@@ -94,7 +96,7 @@ df_stats.show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Computing Z-Scores & Flagging Critical Mechanical Anomalies
+# MAGIC ### Step 3: Computing Z-Scores & Flagging Critical Mechanical Anomalies
 # MAGIC Evaluate Z = (x - mean) / stddev and flag anomalies exceeding threshold.
 
 # COMMAND ----------
@@ -120,12 +122,14 @@ df_anomalies.select("machine_id", "reading_time", "vibration_mm", "moving_avg", 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **Statistical Z-score detection identifies anomalous values relative to a dynamic, per-machine baseline.**
 # MAGIC - **Using rolling window aggregates (`rowsBetween`) calculates moving statistics in linear distributed time.**
 # MAGIC - **Predictive maintenance models prevent multi-million dollar equipment breakdowns before catastrophic failure.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. How do you handle division-by-zero when computing Z-scores on sensor data with zero variance?
 # MAGIC 2. What is the difference between fixed threshold alerting and statistical Z-score anomaly detection?
 # MAGIC 3. How do you deploy this model to a Structured Streaming pipeline with watermarking?

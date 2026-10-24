@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 065: Medallion Architecture: Silver Transformation, Cleansing and Conformance
 # MAGIC
-# MAGIC **Module:** Module 07: Lakehouse Data Modeling, CDC & SCD Implementation  
-# MAGIC **Difficulty:** `Intermediate`  
+# MAGIC **Module:** Module 07: Lakehouse Data Modeling, CDC & SCD Implementation
+# MAGIC **Difficulty:** `Intermediate`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC Raw invoices from the Bronze layer contain duplicate entries, unstandardized status codes ('appr', 'APPROVED', 'approved'), missing tax codes, and stringified numeric values. The Silver layer must conform and cleanse these into enterprise-ready records.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Build the Silver layer transformation: filter and clean raw data, standardize categorical codes, enforce data quality rules (non-negative amounts), cast data to strict primitive types, and execute deterministic deduplication into a conformed Delta Silver table.
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC The Silver layer represents the enterprise-conformed, cleansed version of truth. It standardizes naming conventions, parses strings into structured types, deduplicates records using business keys, and joins disparate Bronze feeds into consolidated entity tables.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_065_Medallion_Architecture_Silver_Transformation_Cleansing_and_Conformance")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_065_Medallion_Architecture_Silver_Transformation,_Cleansing_and_Conformance")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Reading from Upstream Bronze Layer
+# MAGIC ### Step 1: Reading from Upstream Bronze Layer
 # MAGIC Read uncleaned records containing duplicates and messy categories.
 
 # COMMAND ----------
@@ -73,7 +75,7 @@ df_bronze_in.show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Applying Cleansing, Type Casting and Status Standardization
+# MAGIC ### Step 2: Applying Cleansing, Type Casting and Status Standardization
 # MAGIC Standardize uppercase status, clean currency strings, and enforce positive amounts.
 
 # COMMAND ----------
@@ -97,7 +99,7 @@ df_cleansed.show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Deterministic Deduplication and Silver Table Landing
+# MAGIC ### Step 3: Deterministic Deduplication and Silver Table Landing
 # MAGIC Retain only the latest update per invoice_no using window deduplication.
 
 # COMMAND ----------
@@ -130,12 +132,14 @@ spark.read.format("delta").load(silver_path).show(truncate=False)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **Silver layer provides conformed, cleansed, deduplicated data for cross-functional consumption.**
 # MAGIC - **Standardize categorical codes and parse strings into strictly typed columns.**
 # MAGIC - **Always filter out records violating fundamental business domain rules before landing in Silver.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. What transformations belong in the Silver layer versus the Gold layer?
 # MAGIC 2. How do you handle records that fail data quality rules during Silver transformation?
 # MAGIC 3. How do you ensure Silver tables maintain low query latency for analytical users?

@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 019: Parsing Raw JSON Payloads: from_json, to_json and schema_of_json
 # MAGIC
-# MAGIC **Module:** Module 02: Complex Data Types & Nested Structures Handling  
-# MAGIC **Difficulty:** `Intermediate`  
+# MAGIC **Module:** Module 02: Complex Data Types & Nested Structures Handling
+# MAGIC **Difficulty:** `Intermediate`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC A payment gateway streams raw JSON transaction events via Apache Kafka or cloud storage. Each record arrives as a single raw string column containing nested transaction data that must be parsed into typed columns.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Master JSON string handling: dynamically infer schema using `schema_of_json()`, parse stringified JSON into structured structs using `from_json()`, serialize DataFrames back to JSON using `to_json()`, and handle schema evolution options.
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC `from_json()` parses JSON strings inside JVM tasks using Jackson parser, avoiding Python serialization. Specifying an explicit schema avoids costly full-table scans to infer JSON structure.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_019_Parsing_Raw_JSON_Payloads_from_json_to_json_and_schema_of_json")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_019_Parsing_Raw_JSON_Payloads_from_json,_to_json_and_schema_of_json")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Generating Raw Kafka-like Message Strings
+# MAGIC ### Step 1: Generating Raw Kafka-like Message Strings
 # MAGIC Create sample DataFrame with raw JSON payload strings.
 
 # COMMAND ----------
@@ -71,7 +73,7 @@ df_kafka.show(truncate=False)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Inferring Schema via schema_of_json & Explicit Parsing
+# MAGIC ### Step 2: Inferring Schema via schema_of_json & Explicit Parsing
 # MAGIC Extract schema from a sample row and parse payloads into typed structs.
 
 # COMMAND ----------
@@ -99,7 +101,7 @@ df_parsed.select("kafka_offset", "data.order_id", "data.customer.email", "data.a
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Serializing Structs Back to JSON with to_json
+# MAGIC ### Step 3: Serializing Structs Back to JSON with to_json
 # MAGIC Serialize structured data back into JSON strings for downstream API dispatch.
 
 # COMMAND ----------
@@ -114,12 +116,14 @@ df_re_serialized.show(truncate=False)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **Always supply explicit schemas to `from_json()` to avoid driver-side inference bottlenecks.**
 # MAGIC - **`schema_of_json()` is a helpful utility for deriving schema DDL strings from representative payloads.**
 # MAGIC - **`to_json()` serializes complex structs and maps back into compact JSON strings.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. What happens when a JSON payload contains keys that are not defined in the `from_json` schema?
 # MAGIC 2. How does `from_json` performance compare to parsing JSON with Python's built-in `json.loads` UDF?
 # MAGIC 3. How do you handle schema evolution when incoming JSON payloads gain new fields over time?

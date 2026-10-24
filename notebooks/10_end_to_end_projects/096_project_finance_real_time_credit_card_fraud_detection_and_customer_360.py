@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 096: Project Finance: Real-Time Credit Card Fraud Detection and Customer 360
 # MAGIC
-# MAGIC **Module:** Module 10: End-to-End Enterprise Projects & Production Workflows  
-# MAGIC **Difficulty:** `Advanced`  
+# MAGIC **Module:** Module 10: End-to-End Enterprise Projects & Production Workflows
+# MAGIC **Difficulty:** `Advanced`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC A tier-1 retail bank processes 50 million credit card swipe transactions daily. Risk engineering must build an end-to-end Medallion pipeline that ingests raw swipes, calculates real-time risk scores (geographical velocity, transaction spikes > 3x average, rapid successive swipes within 2 minutes), and flags fraudulent transactions for real-time card blocking.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Build an end-to-end financial data engineering project: (1) Ingest raw swipes into Bronze Delta table with audit columns, (2) Cleanse, parse timestamps, and join against customer profiles in Silver, (3) Apply window-based fraud detection rules (swipes within 2 minutes in different cities), and (4) Publish a Gold Customer 360 Risk Summary table.
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC Financial fraud detection requires low latency and high consistency. Combining Delta Lake ACID guarantees with window-based temporal heuristics allows detecting impossible geographic travel velocities and abnormal spend spikes without complex external ML infrastructure.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_096_Project_Finance_Real_Time_Credit_Card_Fraud_Detection_and_Customer_360")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_096_Project_Finance_Real-Time_Credit_Card_Fraud_Detection_and_Customer_360")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Step 1: Ingesting Raw Swipes into Bronze Delta Table
+# MAGIC ### Step 1: Ingesting Raw Swipes into Bronze Delta Table
 # MAGIC Create raw card swipe feed and land into an append-only Bronze Delta table.
 
 # COMMAND ----------
@@ -80,7 +82,7 @@ print("Step 1 Complete: Raw card swipes landed in Bronze Delta table.")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Step 2: Silver Cleansing & Velocity-Based Fraud Scoring
+# MAGIC ### Step 2: Silver Cleansing & Velocity-Based Fraud Scoring
 # MAGIC Enrich with previous swipe city/time using window functions and identify geographical fraud velocity.
 
 # COMMAND ----------
@@ -97,8 +99,8 @@ df_silver_fraud = (
     .withColumn(
         "is_geo_velocity_fraud",
         F.when(
-            (F.col("prev_city").isNotNull()) & 
-            (F.col("city") != F.col("prev_city")) & 
+            (F.col("prev_city").isNotNull()) &
+            (F.col("city") != F.col("prev_city")) &
             (F.col("elapsed_minutes") < 30.0),
             True
         ).otherwise(False)
@@ -121,7 +123,7 @@ df_silver_fraud.select("swipe_id", "card_id", "amount", "city", "prev_city", "el
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Step 3: Gold Customer 360 Risk Summary
+# MAGIC ### Step 3: Gold Customer 360 Risk Summary
 # MAGIC Aggregate fraud metrics to produce a card-level risk scorecard.
 
 # COMMAND ----------
@@ -149,12 +151,14 @@ df_gold_card360.show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **Medallion architecture provides clear separation between raw append (Bronze), enriched logic (Silver), and aggregates (Gold).**
 # MAGIC - **Temporal window functions (`lag`) detect velocity-based fraud without external ML inference.**
 # MAGIC - **Gold summary tables drive automated real-time action systems like card locking.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. How do you design a real-time fraud pipeline that processes 50,000 transactions/second with sub-second latency?
 # MAGIC 2. How does the Medallion Architecture ensure auditability during financial regulatory reviews?
 # MAGIC 3. What is the difference between rule-based fraud detection in Spark and ML-based fraud detection?

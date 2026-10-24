@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 011: Custom PySpark UDFs vs Vectorized Pandas UDFs (PyArrow)
 # MAGIC
-# MAGIC **Module:** Module 01: Core PySpark Foundations & DataFrame API  
-# MAGIC **Difficulty:** `Intermediate`  
+# MAGIC **Module:** Module 01: Core PySpark Foundations & DataFrame API
+# MAGIC **Difficulty:** `Intermediate`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC A credit scoring model applies complex non-linear mathematical risk adjustments to customer accounts. The current implementation uses standard Python UDFs and causes severe CPU throttling and worker memory spikes.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Implement the calculation using: (1) Standard Python UDF (`@udf`), (2) Native Spark SQL built-in expressions, and (3) Vectorized Pandas UDF (`@pandas_udf`). Compare execution time, serialization behavior, and memory footprint.
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC Standard Python UDFs serialize JVM row data to a Python worker process row-by-row via Py4J, incurring massive serialization and deserialization overhead and disabling Catalyst optimizations. Vectorized Pandas UDFs use Apache Arrow to transfer columnar batches into Pandas Series, achieving near-native C-speed vectorization.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_011_Custom_PySpark_UDFs_vs_Vectorized_Pandas_UDFs_PyArrow")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_011_Custom_PySpark_UDFs_vs_Vectorized_Pandas_UDFs_(PyArrow)")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Creating Benchmark Financial Dataset
+# MAGIC ### Step 1: Creating Benchmark Financial Dataset
 # MAGIC Prepare 50,000 accounts for algorithmic risk scoring.
 
 # COMMAND ----------
@@ -71,7 +73,7 @@ df_accounts.show(5)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Method 1: Standard Python UDF (Row-by-Row Serialization)
+# MAGIC ### Step 2: Method 1: Standard Python UDF (Row-by-Row Serialization)
 # MAGIC Define a standard Python function and wrap it with `@F.udf`.
 
 # COMMAND ----------
@@ -94,7 +96,7 @@ print(f"Standard UDF Count: {c1} in {t1:.3f} seconds")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Method 2: Vectorized Pandas UDF via PyArrow
+# MAGIC ### Step 3: Method 2: Vectorized Pandas UDF via PyArrow
 # MAGIC Define a vectorized Arrow function operating over Pandas Series batches.
 
 # COMMAND ----------
@@ -116,12 +118,14 @@ print(f"Vectorized Pandas UDF Count: {c2} in {t2:.3f} seconds (Speedup factor: {
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **Always favor native Spark SQL functions first before writing custom functions.**
 # MAGIC - **If custom Python logic is unavoidable, always use `@pandas_udf` instead of standard `@udf`.**
 # MAGIC - **Standard UDFs serialize data row-by-row through a Python subprocess, while Pandas UDFs batch data via shared Arrow memory.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. Why are standard Python UDFs considered a major performance bottleneck in PySpark?
 # MAGIC 2. How does Apache Arrow enable zero-copy data transfer in Pandas UDFs?
 # MAGIC 3. Can Catalyst Optimizer optimize or push down predicates past a Python UDF?

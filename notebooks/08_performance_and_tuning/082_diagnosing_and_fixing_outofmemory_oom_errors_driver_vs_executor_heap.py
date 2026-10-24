@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 082: Diagnosing and Fixing OutOfMemory (OOM) Errors: Driver vs Executor Heap
 # MAGIC
-# MAGIC **Module:** Module 08: Performance Tuning, Query Optimization & Skew Mitigation  
-# MAGIC **Difficulty:** `Advanced`  
+# MAGIC **Module:** Module 08: Performance Tuning, Query Optimization & Skew Mitigation
+# MAGIC **Difficulty:** `Advanced`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC A production ETL job intermittently crashes with `java.lang.OutOfMemoryError: Java heap space`. On-call engineers arbitrarily double the cluster size, increasing cloud costs by $10,000 without resolving the root cause.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Diagnose and resolve Spark OutOfMemory (OOM) failures: differentiate between Driver OOM and Executor OOM, identify anti-patterns (e.g. `df.collect()` on big data, unconstrained broadcast joins, key skew in `groupBy`), and apply memory-safe architectural fixes.
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC Driver OOM occurs when the master node runs out of memory, usually caused by collecting large DataFrames (`collect()`, `toPandas()`), broadcasting tables larger than driver memory, or accumulating massive lineage DAGs. Executor OOM occurs when worker tasks process partitions exceeding available JVM heap or off-heap memory.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_082_Diagnosing_and_Fixing_OutOfMemory_OOM_Errors_Driver_vs_Executor_Heap")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_082_Diagnosing_and_Fixing_OutOfMemory_(OOM)_Errors_Driver_vs_Executor_Heap")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Driver OOM vs Executor OOM Root Cause Diagnostic Matrix
+# MAGIC ### Step 1: Driver OOM vs Executor OOM Root Cause Diagnostic Matrix
 # MAGIC Review architectural causes and solutions for memory crashes.
 
 # COMMAND ----------
@@ -75,7 +77,7 @@ df_oom_matrix.show(truncate=False)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Demonstrating Memory-Safe Sampling vs Unsafe collect()
+# MAGIC ### Step 2: Demonstrating Memory-Safe Sampling vs Unsafe collect()
 # MAGIC Replace dangerous full collect with safe streaming limit and take.
 
 # COMMAND ----------
@@ -96,7 +98,7 @@ print("First 3 items via streaming iterator:", first_three)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Breaking Deep Lineage Trees with Checkpoint
+# MAGIC ### Step 3: Breaking Deep Lineage Trees with Checkpoint
 # MAGIC Truncate deep Catalyst DAG execution graphs to prevent driver stack overflows.
 
 # COMMAND ----------
@@ -115,12 +117,14 @@ print("Lineage graph successfully truncated with checkpoint()!")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **Driver OOM is caused by `.collect()`, `.toPandas()`, oversized broadcast tables, or deep Catalyst plans.**
 # MAGIC - **Executor OOM is caused by key skew, insufficient shuffle partitions, or large in-memory window buffers.**
 # MAGIC - **Use `checkpoint()` to truncate deep lineage graphs in iterative ML or recursive algorithms.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. How do you determine from Spark UI whether an OOM error occurred on the Driver or on an Executor?
 # MAGIC 2. What is the difference between `df.cache()` and `df.checkpoint()` in terms of lineage truncation?
 # MAGIC 3. How does off-heap memory (`spark.memory.offHeap.enabled`) prevent JVM garbage collection pauses?

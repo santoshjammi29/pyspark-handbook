@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 002: Schema Enforcement, Safe Type Casting & Try-Cast Handling
 # MAGIC
-# MAGIC **Module:** Module 01: Core PySpark Foundations & DataFrame API  
-# MAGIC **Difficulty:** `Beginner`  
+# MAGIC **Module:** Module 01: Core PySpark Foundations & DataFrame API
+# MAGIC **Difficulty:** `Beginner`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC A payments processor receives raw transaction dumps where numeric amounts contain currency symbols, timestamps are in non-standard formats, and corrupted text entries cause pipeline aborts on type casting.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Implement resilient schema transformations: safely cast string columns to numeric/date types, handle malformed rows using `try_cast` (or regex sanitization), and separate valid records from corrupted data without halting execution.
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC In ANSI SQL mode (`spark.sql.ansi.enabled = true`), standard `.cast()` throws runtime exceptions on invalid values (e.g. casting 'INVALID' to INT). Using `try_cast` or `when` expressions ensures invalid values convert to NULL rather than failing long-running batch jobs.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_002_Schema_Enforcement_Safe_Type_Casting_and_Try_Cast_Handling")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_002_Schema_Enforcement,_Safe_Type_Casting_and_Try-Cast_Handling")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Mocking Raw Unclean Ingestion Feed
+# MAGIC ### Step 1: Mocking Raw Unclean Ingestion Feed
 # MAGIC We simulate an external vendor feed with varied formatting, currency signs, and corrupt values.
 
 # COMMAND ----------
@@ -73,7 +75,7 @@ df_raw.show(truncate=False)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Sanitization & Resilient Type Casting
+# MAGIC ### Step 2: Sanitization & Resilient Type Casting
 # MAGIC Strip currency symbols, commas, and employ `regexp_replace` paired with safe casting.
 
 # COMMAND ----------
@@ -102,7 +104,7 @@ df_typed.show(truncate=False)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Quarantine Corrupted Records vs Clean Silver Stream
+# MAGIC ### Step 3: Quarantine Corrupted Records vs Clean Silver Stream
 # MAGIC Split data into valid records and a quarantine/dead-letter dataset for investigation.
 
 # COMMAND ----------
@@ -120,12 +122,14 @@ df_quarantine.show(truncate=False)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **In Spark 3.2+, `F.expr('try_cast(col AS TYPE)')` safely converts invalid strings to NULL without raising runtime exceptions.**
 # MAGIC - **Always quarantine records where mission-critical keys or metrics fail type validation.**
 # MAGIC - **Combine `F.coalesce` with multiple date format strings to parse heterogeneous date inputs in a single distributed pass.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. What is the impact of `spark.sql.ansi.enabled` on type casting in Spark 3.x?
 # MAGIC 2. How does `try_cast` differ from standard `cast` in terms of pipeline failure recovery?
 # MAGIC 3. How do you design a Silver layer to capture unparseable rows without failing the entire stream?

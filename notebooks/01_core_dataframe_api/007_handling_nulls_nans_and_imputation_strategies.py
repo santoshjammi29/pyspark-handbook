@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 007: Handling Nulls, NaNs & Imputation Strategies
 # MAGIC
-# MAGIC **Module:** Module 01: Core PySpark Foundations & DataFrame API  
-# MAGIC **Difficulty:** `Beginner`  
+# MAGIC **Module:** Module 01: Core PySpark Foundations & DataFrame API
+# MAGIC **Difficulty:** `Beginner`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC A medical diagnostics platform aggregates clinical lab test results. Missing biomarker readings occur due to machine sensor dropouts or patient cancellations. The pipeline must differentiate between true NULLs, NaN values, and impute baseline values.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Detect and quantify missing values across all columns. Compare `coalesce`, `fillna`/`na.fill`, and `dropna`/`na.drop` with thresholds. Implement statistical imputation (replacing missing numerical values with category medians).
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC In PySpark, `NULL` (unknown value) and `NaN` (IEEE 754 Not-a-Number float) have distinct semantics. `isnan()` only applies to Double/Float columns, while `isNull()` applies to all types. Functions like `count()` ignore NULLs, but `count(*)` counts all rows.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_007_Handling_Nulls_NaNs_and_Imputation_Strategies")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_007_Handling_Nulls,_NaNs_and_Imputation_Strategies")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Creating Clinical Dataset with Nulls and NaNs
+# MAGIC ### Step 1: Creating Clinical Dataset with Nulls and NaNs
 # MAGIC Create sample medical records with missing patient readings.
 
 # COMMAND ----------
@@ -75,7 +77,7 @@ df_clinical.show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Auditing Missing Values Across All Columns
+# MAGIC ### Step 2: Auditing Missing Values Across All Columns
 # MAGIC Compute a comprehensive null and NaN count audit in a single aggregation pass.
 
 # COMMAND ----------
@@ -94,7 +96,7 @@ df_audit.show(truncate=False)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Threshold Dropping and Imputation
+# MAGIC ### Step 3: Threshold Dropping and Imputation
 # MAGIC Drop records with too many missing values, then impute departmental averages for remaining gaps.
 
 # COMMAND ----------
@@ -123,12 +125,14 @@ df_imputed.select("patient_id", "dept", "systolic_bp", "systolic_bp_imputed", "a
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **`F.isnan()` applies strictly to Float/Double types, while `F.isNull()` applies universally.**
 # MAGIC - **Use `dropna(thresh=k)` to enforce a minimum number of valid non-null columns per row.**
 # MAGIC - **`F.coalesce(*cols)` returns the first non-null expression in evaluation order.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. What is the difference between `NULL` and `NaN` in Spark SQL, and how does `count(col)` treat them?
 # MAGIC 2. How does `F.coalesce()` differ from `DataFrame.coalesce()` in PySpark?
 # MAGIC 3. How do you implement categorical mode imputation in a single Spark transformation pass?

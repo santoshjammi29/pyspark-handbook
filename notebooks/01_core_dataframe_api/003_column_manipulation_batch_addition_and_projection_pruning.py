@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 003: Column Manipulation, Batch Addition & Projection Pruning
 # MAGIC
-# MAGIC **Module:** Module 01: Core PySpark Foundations & DataFrame API  
-# MAGIC **Difficulty:** `Beginner`  
+# MAGIC **Module:** Module 01: Core PySpark Foundations & DataFrame API
+# MAGIC **Difficulty:** `Beginner`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC A SaaS telemetry service needs to enrich raw session events with calculated duration, derived flags, normalized client identifiers, and drop redundant legacy headers without incurring multiple Catalyst plan rebuilds.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Compare single `withColumn` chaining against Spark 3.3+ `withColumns` batch operations. Rename multiple columns dynamically using dictionary mapping, drop unwanted columns, and explain projection pruning optimizations.
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC Chaining dozens of `.withColumn()` calls produces a deep Catalyst logical plan tree that can drastically increase driver planning and compilation time. Using `withColumns` (or a single `select` projection with all expressions) flattens the project node into a single Catalyst Project operation.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_003_Column_Manipulation_Batch_Addition_and_Projection_Pruning")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_003_Column_Manipulation,_Batch_Addition_and_Projection_Pruning")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Mocking Telemetry Events
+# MAGIC ### Step 1: Mocking Telemetry Events
 # MAGIC Create a dataset of client telemetry logs with raw attributes.
 
 # COMMAND ----------
@@ -73,7 +75,7 @@ df_telemetry.show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. High-Performance Batch Column Addition (withColumns)
+# MAGIC ### Step 2: High-Performance Batch Column Addition (withColumns)
 # MAGIC In Spark 3.3+, `withColumns` accepts a dictionary of column names to expressions, constructing a single Project plan.
 
 # COMMAND ----------
@@ -92,7 +94,7 @@ df_enriched.show(truncate=False)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Dynamic Column Renaming via Dictionary Mapping
+# MAGIC ### Step 3: Dynamic Column Renaming via Dictionary Mapping
 # MAGIC Rename multiple fields programmatically using `toDF` or comprehension projections.
 
 # COMMAND ----------
@@ -116,12 +118,14 @@ df_final.show(truncate=False)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **Avoid chaining 20+ `.withColumn()` calls in loops; use `withColumns()` (Spark 3.3+) or `.select()` projections.**
 # MAGIC - **Projection pruning ensures Catalyst only reads and transmits requested columns from Parquet/Delta storage.**
 # MAGIC - **`withColumnRenamed()` is a metadata operation that doesn't trigger shuffles.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. Why is chaining many `.withColumn()` calls considered an anti-pattern in PySpark?
 # MAGIC 2. How does Catalyst Optimizer optimize a single `.select()` containing multiple expressions compared to multiple `.withColumn()` steps?
 # MAGIC 3. What is projection pruning and how does it leverage columnar storage like Parquet/Delta?

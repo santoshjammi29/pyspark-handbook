@@ -1,51 +1,53 @@
 # Databricks notebook source
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Notebook 058: Stream-Stream Dual Watermark Joins with Interval Conditions
 # MAGIC
-# MAGIC **Module:** Module 06: Streaming & Near Real-Time Processing  
-# MAGIC **Difficulty:** `Advanced`  
+# MAGIC **Module:** Module 06: Streaming & Near Real-Time Processing
+# MAGIC **Difficulty:** `Advanced`
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Business Scenario & Real-World Context
+# MAGIC ### Business Scenario & Real-World Context
 # MAGIC An online retail logistics platform matches checkout order events with payment confirmation events arriving from Stripe/PayPal across separate event streams. Orders and payments can arrive seconds or minutes apart.
 # MAGIC
-# MAGIC ## 2. Technical Requirement & Problem Statement
+# MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Implement Stream-Stream joins in PySpark: configure dual watermarks on both streaming sides, specify mandatory time-range interval join constraints (`payment_time BETWEEN order_time AND order_time + INTERVAL 1 HOUR`), and explain how state retention boundaries are enforced.
 # MAGIC
-# MAGIC ## 3. Spark & Databricks Architecture Notes
+# MAGIC ### Spark & Databricks Architecture Notes
 # MAGIC In a stream-stream join, both datasets are unbounded. Spark must buffer incoming rows from stream A in state store until a matching row arrives from stream B. To prevent state store memory from growing infinitely, Spark strictly requires both a watermark on each stream and a time interval constraint.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 4. Environment Setup & SparkSession Initialization
-# MAGIC We configure a resilient `SparkSession` compatible with Databricks runtime, local PySpark development, or CI/CD test runners.
+# MAGIC ### Environment Setup & SparkSession Initialization
+# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
+# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
 
 # COMMAND ----------
 
 import os
 import sys
-from pyspark.sql import SparkSession
+
+# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
+# For local PySpark / CI execution, initialize a local session with Delta Lake support:
+try:
+    spark
+except NameError:
+    from pyspark.sql import SparkSession
+    spark = (
+        SparkSession.builder
+        .appName("UseCase_058_Stream_Stream_Dual_Watermark_Joins_with_Interval_Conditions")
+        .master("local[*]")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .getOrCreate()
+    )
+
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
-
-# Initialize SparkSession with Delta Lake support and optimized local configs
-spark = (
-    SparkSession.builder
-    .appName("UseCase_058_Stream-Stream_Dual_Watermark_Joins_with_Interval_Conditions")
-    .master("local[*]")
-    .config("spark.sql.shuffle.partitions", "4")
-    .config("spark.default.parallelism", "4")
-    .config("spark.sql.adaptive.enabled", "true")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
-)
 
 spark.sparkContext.setLogLevel("WARN")
 print(f"Spark Version: {spark.version}")
@@ -54,7 +56,7 @@ print(f"Session Active: {spark.sparkContext.appName}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Stream-Stream Join Architectural Requirements Blueprint
+# MAGIC ### Step 1: Stream-Stream Join Architectural Requirements Blueprint
 # MAGIC Detail the three mandatory requirements for stream-stream joins in PySpark.
 
 # COMMAND ----------
@@ -72,7 +74,7 @@ print("Stream-Stream state retention constraints blueprint mapped.")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 6. Simulating Dual Order and Payment Streams
+# MAGIC ### Step 2: Simulating Dual Order and Payment Streams
 # MAGIC Create representative streams with varied timestamp offsets.
 
 # COMMAND ----------
@@ -107,7 +109,7 @@ df_pay.show(truncate=False)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 7. Executing Stream-Stream Join with Interval Condition
+# MAGIC ### Step 3: Executing Stream-Stream Join with Interval Condition
 # MAGIC Join with time range boundary constraints.
 
 # COMMAND ----------
@@ -134,12 +136,14 @@ df_matched_orders.show(truncate=False)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 9. Key Architectural Takeaways
+# MAGIC ### Key Architectural Takeaways
 # MAGIC - **Stream-Stream joins require both watermarks AND time interval boundaries to limit state store retention.**
 # MAGIC - **Without interval constraints, Spark would need to buffer every un-joined order forever in memory.**
 # MAGIC - **Outer stream-stream joins (left/right outer) emit null records only after the watermark passes the interval window.**
 # MAGIC
-# MAGIC ## 10. Senior Data Engineering Interview Questions
+# MAGIC ---
+# MAGIC
+# MAGIC ### Senior Data Engineering Interview Questions
 # MAGIC 1. Why are time interval constraints mandatory for stream-stream joins in Apache Spark?
 # MAGIC 2. When does an outer stream-stream join emit a row with NULLs for the missing side?
 # MAGIC 3. How does RocksDB state store manage memory across dual-stream joins?
