@@ -37,6 +37,8 @@ jobs:
   validate:
     name: Validate Bundle Syntax & Assets
     runs-on: ubuntu-latest
+    outputs:
+      configured: ${{ steps.check-creds.outputs.configured }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -44,7 +46,22 @@ jobs:
       - name: Setup Databricks CLI
         uses: databricks/setup-cli@main
 
+      - name: Check Databricks credentials
+        id: check-creds
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_DEV_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_DEV_TOKEN }}
+        run: |
+          if [ -n "$DATABRICKS_HOST" ] && [ -n "$DATABRICKS_TOKEN" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+            echo "Databricks credentials detected in repository secrets."
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::DATABRICKS_DEV_HOST and/or DATABRICKS_DEV_TOKEN are not set in GitHub repository secrets. Skipping remote Databricks bundle validation."
+          fi
+
       - name: Validate Databricks Asset Bundle (Dev Target)
+        if: steps.check-creds.outputs.configured == 'true'
         run: |
           databricks bundle validate -t dev
         env:
@@ -57,7 +74,7 @@ jobs:
   deploy_staging:
     name: Deploy to Staging Lakehouse
     needs: [validate]
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.target == 'staging'))
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.target == 'staging')) && needs.validate.outputs.configured == 'true'
     runs-on: ubuntu-latest
     environment: staging
     steps:
@@ -81,7 +98,7 @@ jobs:
   deploy_prod:
     name: Deploy to Production Lakehouse
     needs: [validate]
-    if: github.event_name == 'workflow_dispatch' && inputs.target == 'prod'
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'prod' && needs.validate.outputs.configured == 'true'
     runs-on: ubuntu-latest
     environment: production
     steps:
