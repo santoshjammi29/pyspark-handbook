@@ -296,11 +296,11 @@ flowchart TD
 ```mermaid
 flowchart TD
     API["SQL Query / DataFrame API"] --> ULP["Unresolved Logical Plan"]
-    ULP -->|Analyzer + Catalog| RLP["Resolved Logical Plan"]
-    RLP -->|Optimizer (Predicate Pushdown, Pruning)| OLP["Optimized Logical Plan"]
-    OLP -->|Planner (Cost Model)| PP["Selected Physical Plan"]
-    PP -->|Whole-Stage CodeGen| RDD["Tungsten / RDD Bytecode Execution"]
-    RDD -.->|Runtime Shuffle Stats| AQE["Adaptive Query Execution (AQE)<br/>• Dynamic Partition Coalescing<br/>• SortMergeJoin to BroadcastHashJoin<br/>• Skew Join Optimization"]
+    ULP -->|"Analyzer + Catalog"| RLP["Resolved Logical Plan"]
+    RLP -->|"Optimizer (Predicate Pushdown, Pruning)"| OLP["Optimized Logical Plan"]
+    OLP -->|"Planner (Cost Model)"| PP["Selected Physical Plan"]
+    PP -->|"Whole-Stage CodeGen"| RDD["Tungsten / RDD Bytecode Execution"]
+    RDD -.->|"Runtime Shuffle Stats"| AQE["Adaptive Query Execution (AQE)<br/>• Dynamic Partition Coalescing<br/>• SortMergeJoin to BroadcastHashJoin<br/>• Skew Join Optimization"]
 ```
 
 ---

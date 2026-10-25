@@ -14,7 +14,7 @@
 # MAGIC Build an enterprise Recommendation Engine using Spark MLlib: prepare implicit user-item interaction matrices (user_id, item_id, rating), train an Alternating Least Squares (ALS) matrix factorization model, generate top-5 personalized recommendations per user, and evaluate model performance.
 # MAGIC
 # MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC Spark MLlib ALS (Alternating Least Squares) factorizes the sparse user-item interaction matrix $R$ into low-rank user matrix $U$ and item matrix $V$ ($R pprox U 	imes V^T$). It runs in distributed memory, scaling to hundreds of millions of user-item ratings across cluster nodes.
+# MAGIC Spark MLlib ALS (Alternating Least Squares) factorizes the sparse user-item interaction matrix R into low-rank user matrix U and item matrix V (R ≈ U × Vᵀ). It runs in distributed memory, scaling to hundreds of millions of user-item ratings across cluster nodes.
 
 # COMMAND ----------
 

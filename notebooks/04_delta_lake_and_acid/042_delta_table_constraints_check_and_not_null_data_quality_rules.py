@@ -8,7 +8,7 @@
 # MAGIC ---
 # MAGIC
 # MAGIC ### Business Scenario & Real-World Context
-# MAGIC A banking compliance application requires strict data quality invariants on account records: account balances must never drop below -$500, customer email addresses must contain '@', and account IDs must never be null.
+# MAGIC A banking compliance application requires strict data quality invariants on account records: account balances must never drop below -$500 USD, customer email addresses must contain '@', and account IDs must never be null.
 # MAGIC
 # MAGIC ### Technical Requirement & Problem Statement
 # MAGIC Apply data quality constraints to Delta tables: configure `NOT NULL` constraints, add boolean `CHECK` constraints using `ALTER TABLE ADD CONSTRAINT`, verify constraint enforcement on writes, and handle constraint violation exceptions.
