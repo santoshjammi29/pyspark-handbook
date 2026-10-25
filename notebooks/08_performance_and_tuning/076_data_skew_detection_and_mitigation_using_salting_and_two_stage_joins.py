@@ -27,6 +27,8 @@
 
 import os
 import sys
+import shutil
+from pathlib import Path
 
 # In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
 # For local PySpark / CI execution, initialize a local session with Delta Lake support:
@@ -77,7 +79,7 @@ df_skewed.withColumn("pid", F.spark_partition_id()).groupBy("pid").count().order
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### Step 1: Adding Salt to Skewed Table
+# MAGIC ### Step 2: Adding Salt to Skewed Table
 # MAGIC Append a random salt integer between 0 and 3 to customer_id.
 
 # COMMAND ----------
@@ -99,7 +101,7 @@ df_salted.filter(F.col("customer_id") == "HOT_KEY").show(5)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### Step 2: Exploding Customer Lookup Table and Executing Balanced Join
+# MAGIC ### Step 3: Exploding Customer Lookup Table and Executing Balanced Join
 # MAGIC Replicate dimension keys across all salt values and execute join with even distribution.
 
 # COMMAND ----------

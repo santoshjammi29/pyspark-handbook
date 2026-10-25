@@ -1,0 +1,100 @@
+name: Databricks Asset Bundles (DAB) CI/CD Deployment
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'databricks.yml'
+      - 'resources/**'
+      - 'notebooks/**'
+      - 'apps/**'
+      - '.github/workflows/deploy_bundles.yml'
+
+  push:
+    branches: [ main ]
+    paths:
+      - 'databricks.yml'
+      - 'resources/**'
+      - 'notebooks/**'
+      - 'apps/**'
+
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Deployment Target Environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+
+jobs:
+  # --------------------------------------------------------------------------
+  # 1. Validation & Linting (Runs on every PR)
+  # --------------------------------------------------------------------------
+  validate:
+    name: Validate Bundle Syntax & Assets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Databricks CLI
+        uses: databricks/setup-cli@main
+
+      - name: Validate Databricks Asset Bundle (Dev Target)
+        run: |
+          databricks bundle validate -t dev
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_DEV_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_DEV_TOKEN }}
+
+  # --------------------------------------------------------------------------
+  # 2. Deploy to Staging (Runs on merge to main)
+  # --------------------------------------------------------------------------
+  deploy_staging:
+    name: Deploy to Staging Lakehouse
+    needs: [validate]
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.target == 'staging'))
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Databricks CLI
+        uses: databricks/setup-cli@main
+
+      - name: Deploy Bundle to Staging
+        run: |
+          databricks bundle deploy -t staging
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_STAGING_HOST }}
+          DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_STAGING_CLIENT_ID }}
+          DATABRICKS_CLIENT_SECRET: ${{ secrets.DATABRICKS_STAGING_CLIENT_SECRET }}
+
+  # --------------------------------------------------------------------------
+  # 3. Deploy to Production (Manual approval / release dispatch)
+  # --------------------------------------------------------------------------
+  deploy_prod:
+    name: Deploy to Production Lakehouse
+    needs: [validate]
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'prod'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Databricks CLI
+        uses: databricks/setup-cli@main
+
+      - name: Deploy Bundle to Production
+        run: |
+          databricks bundle deploy -t prod
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_PROD_HOST }}
+          DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_PROD_CLIENT_ID }}
+          DATABRICKS_CLIENT_SECRET: ${{ secrets.DATABRICKS_PROD_CLIENT_SECRET }}

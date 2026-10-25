@@ -27,6 +27,8 @@
 
 import os
 import sys
+import shutil
+from pathlib import Path
 
 # In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
 # For local PySpark / CI execution, initialize a local session with Delta Lake support:
@@ -65,7 +67,7 @@ raw_logs = [
     ('192.168.1.10 - - [20/Nov/2023:12:00:01 +0000] "GET /index.html HTTP/1.1" 200 4500'),
     ('192.168.1.10 - - [20/Nov/2023:12:00:05 +0000] "GET /about.html HTTP/1.1" 200 2300'),
     # Attack 1: SQL Injection attempt
-    ('10.0.0.99 - - [20/Nov/2023:12:01:00 +0000] "GET /login?user=admin'%20OR%201=1-- HTTP/1.1" 401 520'),
+    ('10.0.0.99 - - [20/Nov/2023:12:01:00 +0000] "GET /login?user=admin\'%20OR%201=1-- HTTP/1.1" 401 520'),
     # Attack 2: Directory traversal attempt
     ('10.0.0.99 - - [20/Nov/2023:12:01:02 +0000] "GET /../../etc/passwd HTTP/1.1" 403 310'),
     # Attack 3: High-frequency brute force

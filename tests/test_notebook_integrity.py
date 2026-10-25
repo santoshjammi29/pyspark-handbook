@@ -2,6 +2,7 @@
 Test Suite: Databricks Python Notebook Integrity & Standards Verification
 """
 
+import ast
 from pathlib import Path
 
 def test_notebook_count():
@@ -19,6 +20,29 @@ def test_notebook_databricks_format():
         assert "# MAGIC %md" in content, f"{nb.name}: Missing markdown documentation cells"
         # Ensure no video references remain
         assert "Video " not in content, f"{nb.name}: Contains leftover video reference"
+
+def test_notebook_python_ast_syntax():
+    base_dir = Path(__file__).parent.parent
+    nb_files = sorted(list((base_dir / "notebooks").glob("*/*.py")))
+    syntax_errors = []
+    for nb in nb_files:
+        content = nb.read_text(encoding="utf-8")
+        commands = content.split("# COMMAND ----------")
+        for idx, cmd in enumerate(commands):
+            cmd_stripped = cmd.strip()
+            if not cmd_stripped or cmd_stripped.startswith("# MAGIC %md") or "# MAGIC %md" in cmd_stripped:
+                continue
+            code_lines = [
+                line for line in cmd_stripped.splitlines()
+                if not line.strip().startswith("# MAGIC") and not line.strip().startswith("%")
+            ]
+            code_clean = "\n".join(code_lines).strip()
+            if code_clean:
+                try:
+                    ast.parse(code_clean)
+                except SyntaxError as se:
+                    syntax_errors.append(f"{nb.name} (cell {idx}): {se}")
+    assert not syntax_errors, f"Python SyntaxErrors detected in notebooks:\n" + "\n".join(syntax_errors)
 
 def test_all_ten_modules_present():
     base_dir = Path(__file__).parent.parent
@@ -44,5 +68,6 @@ if __name__ == "__main__":
     print("Running test suite...")
     test_notebook_count()
     test_notebook_databricks_format()
+    test_notebook_python_ast_syntax()
     test_all_ten_modules_present()
     print("[PASS] All automated tests passed successfully!")

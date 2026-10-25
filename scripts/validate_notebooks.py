@@ -53,8 +53,7 @@ def validate_all_notebooks(base_dir: Path) -> bool:
                         try:
                             ast.parse(code_clean)
                         except SyntaxError as se:
-                            # Allow syntax in documentation snippets or SQL strings
-                            pass
+                            errors.append(f"{rel_path} command {idx}: Python SyntaxError: {se}")
 
             if code_cell_count < 1 or markdown_cell_count < 1:
                 errors.append(

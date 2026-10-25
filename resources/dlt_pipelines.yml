@@ -1,0 +1,30 @@
+# Databricks Asset Bundle Resource: Delta Live Tables (DLT) Declarative Pipelines
+# Specification: https://docs.databricks.com/dev-tools/bundles/settings.html#resources-pipelines
+
+resources:
+  pipelines:
+    pyspark_handbook_dlt_pipeline:
+      name: "[${bundle.target}] PySpark Handbook DLT Pipeline"
+      target: "${var.schema}"
+      catalog: "${var.catalog}"
+      continuous: false
+      development: "${bundle.target == 'dev'}"
+      channel: "current"
+      edition: "ADVANCED"
+      photon: true
+
+      libraries:
+        - notebook:
+            path: "../notebooks/09_unity_catalog_and_security/093_lakeflow_declarative_pipelines_and_delta_live_tables_dlt_expectations.py"
+
+      configuration:
+        "bundle.environment": "${bundle.target}"
+        "pipelines.useDeltaLiveTables": "true"
+        "spark.sql.streaming.forceDeleteTempCheckpointLocation": "true"
+
+      clusters:
+        - label: "default"
+          node_type_id: "${var.node_type_id}"
+          autoscale:
+            min_workers: 1
+            max_workers: 3

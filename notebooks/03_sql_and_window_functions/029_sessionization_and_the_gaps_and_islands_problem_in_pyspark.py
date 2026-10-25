@@ -27,6 +27,8 @@
 
 import os
 import sys
+import shutil
+from pathlib import Path
 
 # In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
 # For local PySpark / CI execution, initialize a local session with Delta Lake support:
@@ -78,7 +80,7 @@ df_raw_clicks.show(truncate=False)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### Step 1: Calculate Elapsed Inactivity & Identify New Session Boundaries
+# MAGIC ### Step 2: Calculate Elapsed Inactivity & Identify New Session Boundaries
 # MAGIC Calculate difference in minutes from previous click.
 
 # COMMAND ----------
@@ -100,7 +102,7 @@ df_gaps.select("user_id", "event_time", "inactivity_minutes", "is_new_session").
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### Step 2: Cumulative Sum to Form Session IDs & Aggregate
+# MAGIC ### Step 3: Cumulative Sum to Form Session IDs & Aggregate
 # MAGIC Cumulative sum of is_new_session produces a persistent session number.
 
 # COMMAND ----------

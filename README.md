@@ -18,7 +18,7 @@
 *The definitive enterprise reference repository of 105 battle-tested Apache Spark & Databricks Lakehouse coding use cases.*  
 *Structured in the official **Databricks Source Notebook format (`.py`)** for seamless 1-click sync with **Databricks Repos / Git Folders**, **Databricks Asset Bundles (DABs)**, **VS Code**, and local PySpark / CI runtimes.*
 
-[📖 Curriculum Catalog](#-master-curriculum-catalog-of-105-use-cases) • [⚡ Quick Cheat Sheet](#-quick-cheat-sheet--tldr) • [🎯 Interview Matrix](#-senior-data-engineer-interview-matrix) • [🚀 Quickstart](#-databricks--local-quickstart)
+[📖 Curriculum Catalog](#-master-curriculum-catalog-of-105-use-cases) • [📦 DAB Prod Deployment](#-enterprise-production-deployment-with-databricks-asset-bundles-dabs) • [⚡ Quick Cheat Sheet](#-quick-cheat-sheet--tldr) • [🎯 Interview Matrix](#-senior-data-engineer-interview-matrix) • [🚀 Quickstart](#-databricks--local-quickstart)
 
 ---
 
@@ -202,6 +202,124 @@ If you prefer viewing in Jupyter Lab or Jupyter Notebook:
 python scripts/export_to_ipynb.py
 ```
 This generates standard `.ipynb` files under the `jupyter_exports/` directory.
+
+---
+
+## 📦 Enterprise Production Deployment with Databricks Asset Bundles (DABs)
+
+Modern enterprise lakehouses require robust, reproducible **Infrastructure as Code (IaC)**. Manual workspace notebook execution and UI-configured jobs inevitably cause configuration drift, broken paths, and untracked changes across development, staging, and production environments.
+
+This repository natively integrates **Databricks Asset Bundles (DABs)** — the official declarative standard for building, deploying, and managing **all Databricks object types** from a single version-controlled codebase.
+
+---
+
+### 1. DAB Architecture & Continuous Delivery (CI/CD) Workflow
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                   DATABRICKS ASSET BUNDLES (DABs) DEPLOYMENT PIPELINE                                            │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+   Developer Machine (VS Code / CLI)              GitHub Remote (CI/CD)                  Databricks Lakehouse Workspaces
+  ┌─────────────────────────────────┐       ┌───────────────────────────────┐       ┌──────────────────────────────────────────────┐
+  │ • databricks.yml                │       │ 🛡️ PULL REQUEST:              │       │ 🧑‍💻 DEV TARGET:                             │
+  │ • resources/jobs.yml            │ ────> │   └── databricks bundle       │ ────> │    • Workspace: /Users/${user}/.bundle/     │
+  │ • resources/dlt_pipelines.yml   │       │       validate -t dev         │       │    • Isolated schemas & rapid iteration      │
+  │ • resources/unity_catalog.yml   │       ├───────────────────────────────┤       ├──────────────────────────────────────────────┤
+  │ • resources/model_serving.yml   │       │ 🧪 MERGE TO MAIN:             │       │ 🧪 STAGING TARGET:                           │
+  │ • resources/apps.yml            │       │   └── databricks bundle       │ ────> │    • Workspace: /Shared/.bundle/staging      │
+  │ • resources/dashboards.yml      │       │       deploy -t staging       │       │    • Automated integration & QA tests        │
+  │ • notebooks/ & apps/            │       ├───────────────────────────────┤       ├──────────────────────────────────────────────┤
+  └─────────────────────────────────┘       │ 🚀 PRODUCTION RELEASE:        │       │ 🚀 PROD TARGET:                              │
+                                            │   └── databricks bundle       │ ────> │    • Workspace: /Shared/.bundle/prod         │
+                                            │       deploy -t prod          │       │    • Non-human Service Principal (OAuth M2M) │
+                                            └───────────────────────────────┘       │    • Live alerts & strict SLA execution      │
+                                                                                    └──────────────────────────────────────────────┘
+```
+
+---
+
+### 2. Full Matrix of Databricks Objects Deployed via This Codebase
+
+Every major Databricks resource type is defined declaratively under [`resources/`](resources/) and root [`databricks.yml`](databricks.yml):
+
+| Object Type | Resource Config | Description & Production Behavior |
+|:---|:---|:---|
+| ⚡ **Multi-Task Workflows & Jobs** | [`resources/jobs.yml`](resources/jobs.yml) | Multi-stage orchestration DAG: Auto Loader ingestion → JSON quarantine → SCD Type 2 dimension merge → Data skew salting join → Gold analytics rollup → Master pipeline audit. Features autoscaling job clusters (1..4 nodes), AQE tuning, retry policies, and email alerting. |
+| 🧱 **Delta Live Tables (DLT) Pipelines** | [`resources/dlt_pipelines.yml`](resources/dlt_pipelines.yml) | Declarative medallion ETL pipeline implementing data quality expectations (`@dlt.expect`, `@dlt.expect_or_drop`), Photon engine acceleration, and continuous/triggered lakehouse ingestion. |
+| 🏛️ **Unity Catalog Schemas & Volumes** | [`resources/unity_catalog.yml`](resources/unity_catalog.yml) | Provisions conformed schemas (`${var.catalog}.${var.schema}`) and managed volumes (`raw_landing` for landing files and `streaming_checkpoints` for state storage) across target environments. |
+| 🤖 **Serverless Model Serving Endpoints** | [`resources/model_serving.yml`](resources/model_serving.yml) | Deploys scalable REST endpoints for Unity Catalog registered models (`credit_card_fraud_model`) with automatic scale-to-zero capabilities for cost efficiency. |
+| 📱 **Databricks Apps (Streamlit / Dash)** | [`resources/apps.yml`](resources/apps.yml) | Deploys the internal Lakehouse Quality & Cost Monitor web application ([`apps/lakehouse_monitor/`](apps/lakehouse_monitor/)) directly onto Databricks serverless compute with workspace SSO. |
+| 📊 **AI/BI Lakeview Dashboards** | [`resources/dashboards.yml`](resources/dashboards.yml) | Declarative executive analytics dashboard synchronized into workspace paths as version-controlled code. |
+
+---
+
+### 3. Step-by-Step Production Deployment Guide
+
+#### Step 1: Install and Authenticate Databricks CLI
+Install the modern Databricks CLI (v0.200.0+) and log into your workspace via OAuth:
+
+```bash
+# Install Databricks CLI
+curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh
+
+# Authenticate with your Databricks workspace
+databricks auth login --host https://<your-workspace-instance>.cloud.databricks.com
+```
+
+#### Step 2: Validate Bundle Syntax & Configurations
+Verify that all bundle variables, notebook dependencies, and YAML schemas are valid:
+
+```bash
+# Validate against development target
+databricks bundle validate -t dev
+
+# Validate against staging or production targets
+databricks bundle validate -t staging
+databricks bundle validate -t prod
+```
+
+#### Step 3: Deploy to Your Personal Development Sandbox
+Deploy your workspace notebooks, jobs, pipelines, and apps into your isolated user sandbox without touching shared production assets:
+
+```bash
+databricks bundle deploy -t dev
+```
+
+> **How it works:** Under `mode: development`, DAB automatically prefixes your resources with `[dev ${workspace.current_user.userName}]`, isolates all files under `/Users/${workspace.current_user.userName}/.bundle/pyspark-handbook/dev`, and sets workflows to `PAUSED` so test jobs never fire unexpectedly.
+
+#### Step 4: Run the Master Pipeline On-Demand
+Trigger a test execution of the multi-task Lakehouse workflow directly from your terminal:
+
+```bash
+databricks bundle run pyspark_handbook_master_pipeline -t dev
+```
+
+#### Step 5: Inspect Deployed Resources or Teardown
+```bash
+# List all deployed resources in the target environment
+databricks bundle summary -t dev
+
+# Clean up all deployed development sandbox resources
+databricks bundle destroy -t dev
+```
+
+---
+
+### 4. Automated CI/CD with GitHub Actions
+
+This repository includes a production-ready GitHub Actions workflow ([`.github/workflows/deploy_bundles.yml`](.github/workflows/deploy_bundles.yml)):
+1. **Pull Requests:** Automatically executes `databricks bundle validate -t dev` on every PR affecting notebooks, resources, or configurations.
+2. **Main Branch Merges:** Deploys assets directly to the **Staging** workspace (`databricks bundle deploy -t staging`).
+3. **Release Promotion:** Deploys assets to **Production** (`databricks bundle deploy -t prod`) using dedicated **Service Principal credentials** (`DATABRICKS_CLIENT_ID` and `DATABRICKS_CLIENT_SECRET`) with OAuth M2M authentication.
+
+---
+
+### 5. Enterprise Governance & Security Best Practices
+- 🔒 **Service Principal Execution (`run_as`):** Never run production scheduled workflows under individual human user accounts. Production targets run strictly under a governed Databricks Service Principal.
+- 🌐 **Catalog Isolation:** Development runs target `dev_catalog`, staging runs target `staging_catalog`, and production targets `prod_catalog`, preventing accidental data corruption.
+- ⚙️ **Dynamic Variable Substitution:** Zero hardcoded URLs or database names. Everything leverages `${var.catalog}`, `${var.schema}`, and `${bundle.target}` for seamless multi-cloud, multi-workspace portability.
+- 🧹 **Orphan Prevention:** Deleting an object in `resources/*.yml` and running `databricks bundle deploy` automatically deletes the corresponding remote workspace resource.
 
 ---
 
@@ -468,7 +586,13 @@ The table below maps real-world production challenges and frequently asked Staff
 pyspark-handbook/
 ├── .github/
 │   └── workflows/
-│       └── ci.yml                     # Automated GitHub Actions CI workflow
+│       ├── ci.yml                     # Automated GitHub Actions CI workflow
+│       └── deploy_bundles.yml         # Databricks Asset Bundles (DAB) CI/CD deployment
+├── apps/
+│   └── lakehouse_monitor/             # Databricks App: Streamlit Lakehouse monitor
+│       ├── app.py                     # Streamlit application entrypoint
+│       ├── app.yaml                   # Databricks App definition manifest
+│       └── requirements.txt           # App dependencies (streamlit, databricks-sdk)
 ├── notebooks/
 │   ├── 01_core_dataframe_api/         # 001 - 012: Core DataFrame API, Schemas, Arrow Pandas UDFs, DBUtils
 │   ├── 02_complex_data_types/         # 013 - 022: Arrays, Higher-Order Functions, Nested Structs, JSON, XML
@@ -480,6 +604,13 @@ pyspark-handbook/
 │   ├── 08_performance_and_tuning/     # 074 - 085: Catalyst Optimizer, AQE, Salting Skew, Bucketing, Photon, OOM Fixes
 │   ├── 09_unity_catalog_and_security/ # 086 - 095: 3-Tier Namespace, Volumes, RLS, Column Masking, FinOps, DABs
 │   └── 10_end_to_end_projects/        # 096 - 105: Finance Fraud, Omnichannel Retail, Healthcare, IoT, RAG, Alerts
+├── resources/                         # Modular Databricks Asset Bundle definitions
+│   ├── apps.yml                       # Databricks Apps resource specification
+│   ├── dashboards.yml                 # Lakeview AI/BI dashboards specification
+│   ├── dlt_pipelines.yml              # Delta Live Tables (DLT) declarative pipelines
+│   ├── jobs.yml                       # Multi-task orchestration workflows & clusters
+│   ├── model_serving.yml              # Serverless real-time model serving endpoints
+│   └── unity_catalog.yml              # Unity Catalog schemas, volumes, and grants
 ├── scripts/
 │   ├── notebook_builder.py            # Core engine for generating clean Databricks .py notebooks
 │   ├── generate_all.py                # Master CLI tool to rebuild all 105 notebooks
@@ -487,7 +618,9 @@ pyspark-handbook/
 │   ├── validate_notebooks.py          # Structural integrity, syntax, and Databricks compliance checker
 │   └── export_to_ipynb.py             # Converts .py notebooks to Jupyter .ipynb format
 ├── tests/
+│   ├── test_bundle_integrity.py       # Validates DAB configs, resources, and object paths
 │   └── test_notebook_integrity.py     # Automated integrity test suite (count, format, no video traces)
+├── databricks.yml                     # Root Databricks Asset Bundle (DAB) configuration
 ├── .gitignore
 ├── LICENSE                            # MIT Open Source License
 ├── pyproject.toml

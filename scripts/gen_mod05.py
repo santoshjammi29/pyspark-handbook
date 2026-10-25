@@ -58,7 +58,7 @@ df_csv = (
     .option("header", "true")
     .option("sep", "|")
     .option("multiLine", "true")
-    .option("quote", "\"")
+    .option("quote", "\\\"")
     .option("escape", "\\\\")
     .option("inferSchema", "true")
     .csv(str(csv_dir))

@@ -1,0 +1,79 @@
+# Databricks Asset Bundle (DAB) Configuration
+# Project: The PySpark Handbook & Lakehouse Masterclass
+# Specification: https://docs.databricks.com/dev-tools/bundles/index.html
+
+bundle:
+  name: pyspark-handbook
+
+include:
+  - resources/*.yml
+
+variables:
+  catalog:
+    description: "Target Unity Catalog name"
+    default: "main"
+  schema:
+    description: "Target Unity Catalog schema name"
+    default: "pyspark_handbook"
+  notification_email:
+    description: "Primary notification email for job alerts"
+    default: "data-engineering-alerts@example.com"
+  compute_spark_version:
+    description: "Databricks Runtime version for workflow job clusters"
+    default: "15.4.x-scala2.12"
+  node_type_id:
+    description: "Worker and driver cloud VM node type"
+    default: "Standard_D4ds_v5"
+
+targets:
+  # --------------------------------------------------------------------------
+  # 1. Developer Sandbox (Personal Workspace Deployments)
+  # --------------------------------------------------------------------------
+  dev:
+    mode: development
+    default: true
+    workspace:
+      root_path: /Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      catalog: "dev_catalog"
+      schema: "dev_${workspace.current_user.short_name}"
+    sync:
+      include:
+        - notebooks/**
+        - apps/**
+        - resources/**
+
+  # --------------------------------------------------------------------------
+  # 2. Staging / Pre-Production Environment
+  # --------------------------------------------------------------------------
+  staging:
+    mode: production
+    workspace:
+      root_path: /Shared/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      catalog: "staging_catalog"
+      schema: "staging_lakehouse"
+    permissions:
+      - level: CAN_MANAGE
+        group_name: "data-engineers"
+      - level: CAN_VIEW
+        group_name: "qa-engineers"
+
+  # --------------------------------------------------------------------------
+  # 3. Production Environment (Automated CI/CD Service Principal)
+  # --------------------------------------------------------------------------
+  prod:
+    mode: production
+    workspace:
+      root_path: /Shared/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      catalog: "prod_catalog"
+      schema: "prod_lakehouse"
+    run_as:
+      # In production, workflows execute under a dedicated governed Service Principal
+      service_principal_name: 00000000-0000-0000-0000-000000000000
+    permissions:
+      - level: CAN_MANAGE
+        service_principal_name: 00000000-0000-0000-0000-000000000000
+      - level: CAN_VIEW
+        group_name: "all-users"

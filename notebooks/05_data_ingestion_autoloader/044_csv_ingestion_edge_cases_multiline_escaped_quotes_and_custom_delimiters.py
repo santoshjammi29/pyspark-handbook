@@ -27,6 +27,8 @@
 
 import os
 import sys
+import shutil
+from pathlib import Path
 
 # In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
 # For local PySpark / CI execution, initialize a local session with Delta Lake support:
@@ -94,7 +96,7 @@ df_csv = (
     .option("header", "true")
     .option("sep", "|")
     .option("multiLine", "true")
-    .option("quote", """)
+    .option("quote", "\"")
     .option("escape", "\\")
     .option("inferSchema", "true")
     .csv(str(csv_dir))

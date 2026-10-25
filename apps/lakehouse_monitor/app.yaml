@@ -1,0 +1,7 @@
+# Databricks App Manifest
+# Specification: https://docs.databricks.com/en/dev-tools/databricks-apps/app-structure.html
+
+command:
+  - "streamlit"
+  - "run"
+  - "app.py"

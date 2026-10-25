@@ -98,6 +98,8 @@ If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we init
 
     setup_code = f"""import os
 import sys
+import shutil
+from pathlib import Path
 
 # In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
 # For local PySpark / CI execution, initialize a local session with Delta Lake support:
@@ -131,11 +133,12 @@ print(f"Session Active: {{spark.sparkContext.appName}}")"""
         sec_expl = sec.get("explanation", "").strip()
         sec_code = sec.get("code", "").strip()
 
-        # Format title cleanly without duplicated step prefixes
-        if re.match(r"^(Step|Strategy|Part|Phase|Section)\s+\d+[:\.]?", sec_title, re.IGNORECASE):
-            heading = f"### {sec_title}"
+        # Clean title and format cleanly without duplicated step prefixes
+        clean_title = re.sub(r"^Step\s+\d+[:\.]?\s*", "", sec_title, flags=re.IGNORECASE).strip()
+        if re.match(r"^(Strategy|Part|Phase|Section)\s+\d+[:\.]?", clean_title, re.IGNORECASE):
+            heading = f"### {clean_title}"
         else:
-            heading = f"### Step {idx}: {sec_title}"
+            heading = f"### Step {idx}: {clean_title}" if clean_title else f"### Step {idx}"
 
         sec_md = f"{heading}\n{sec_expl}" if sec_expl else heading
         cells.append(format_markdown_cell(sec_md))
