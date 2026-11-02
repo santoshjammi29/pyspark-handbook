@@ -1,6 +1,6 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Notebook 094: Databricks Asset Bundles (DABs) for Multi-Environment CI/CD Automation
+# MAGIC # Notebook 094: Declarative Automation Bundles (DABs / Asset Bundles) for Multi-Environment CI/CD
 # MAGIC
 # MAGIC **Module:** Module 09: Databricks Platform, Unity Catalog, Security & FinOps
 # MAGIC **Difficulty:** `Advanced`
@@ -11,10 +11,10 @@
 # MAGIC An enterprise development team deploys 50 Databricks workflows and pipelines across development, staging, and production workspaces. Manual UI deployments cause configuration drift, broken paths, and deployment bugs.
 # MAGIC
 # MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Master Databricks Asset Bundles (DABs): configure `databricks.yml`, define multi-environment deployment targets (dev, staging, prod), configure parameterized workflows, and automate CI/CD validation (`bundle validate`, `bundle deploy`, `bundle run`).
+# MAGIC Master **Declarative Automation Bundles** (officially standardized by Databricks, historically known as Databricks Asset Bundles / DABs): configure `databricks.yml`, define multi-environment deployment targets (dev, staging, prod), configure parameterized workflows, and automate CI/CD validation (`bundle validate`, `bundle deploy`, `bundle run`).
 # MAGIC
 # MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC Databricks Asset Bundles (DABs) provide Infrastructure-as-Code (IaC) for Databricks projects. A YAML bundle definition (`databricks.yml`) manages notebooks, pipelines, jobs, and permissions, allowing automated deployments via GitHub Actions or GitLab CI.
+# MAGIC Declarative Automation Bundles (DABs) provide declarative Infrastructure-as-Code (IaC) for Databricks Lakehouse assets. A YAML bundle definition (`databricks.yml`) manages notebooks, pipelines, jobs, and permissions, allowing automated deployments via GitHub Actions or Azure DevOps with target isolation (`mode: development` vs `mode: production`).
 
 # COMMAND ----------
 
@@ -150,8 +150,70 @@ for cmd, desc in commands:
 # COMMAND ----------
 
 # MAGIC %md
+# MAGIC ### Step 4: Executable Bundle Linting, Schema Validation & DAG Dependency Verification
+# MAGIC Demonstrate offline programmatic bundle validation: write the bundle structure, parse and validate YAML syntax, assert schema constraints, and verify task dependencies form a valid acyclic execution graph (DAG).
+
+# COMMAND ----------
+
+import yaml
+from collections import defaultdict, deque
+
+# 1. Parse and validate databricks.yml
+parsed_bundle = yaml.safe_load(bundle_yaml_content)
+assert "bundle" in parsed_bundle, "Bundle definition missing root 'bundle' key"
+assert parsed_bundle["bundle"]["name"] == "enterprise_spark_masterclass", "Bundle name mismatch"
+assert "targets" in parsed_bundle, "Bundle missing deployment targets"
+assert "dev" in parsed_bundle["targets"] and "prod" in parsed_bundle["targets"], "Missing dev/prod targets"
+
+print("✓ databricks.yml schema validated successfully!")
+print(f"  Bundle Name: {parsed_bundle['bundle']['name']}")
+print(f"  Targets Configured: {list(parsed_bundle['targets'].keys())}")
+
+# 2. Parse and validate resources/jobs.yml
+parsed_jobs = yaml.safe_load(job_resource_yaml)
+assert "resources" in parsed_jobs and "jobs" in parsed_jobs["resources"], "Invalid jobs resource schema"
+
+job_def = parsed_jobs["resources"]["jobs"]["nightly_etl_pipeline"]
+tasks = job_def["tasks"]
+print(f"\n✓ Workflow Job Validated: {job_def['name']}")
+print(f"  Total Tasks Declared: {len(tasks)}")
+
+# 3. Topological Sort: Verify task dependencies form an acyclic DAG (no circular deadlocks)
+adj_list = defaultdict(list)
+in_degree = defaultdict(int)
+all_task_keys = {t["task_key"] for t in tasks}
+
+for t in tasks:
+    t_key = t["task_key"]
+    in_degree[t_key] = in_degree.get(t_key, 0)
+    for dep in t.get("depends_on", []):
+        parent_key = dep["task_key"]
+        assert parent_key in all_task_keys, f"Invalid dependency: {parent_key} not found in task graph"
+        adj_list[parent_key].append(t_key)
+        in_degree[t_key] += 1
+
+# Execute Kahn's algorithm for topological sorting
+queue = deque([k for k, deg in in_degree.items() if deg == 0])
+execution_order = []
+
+while queue:
+    node = queue.popleft()
+    execution_order.append(node)
+    for neighbor in adj_list[node]:
+        in_degree[neighbor] -= 1
+        if in_degree[neighbor] == 0:
+            queue.append(neighbor)
+
+assert len(execution_order) == len(all_task_keys), "CIRCULAR DEPENDENCY DETECTED: Tasks form an invalid cyclic graph!"
+print(f"\n✓ Task Dependency Graph Verified (Acyclic DAG):")
+for idx, task_name in enumerate(execution_order, 1):
+    print(f"  Stage {idx}: {task_name}")
+
+# COMMAND ----------
+
+# MAGIC %md
 # MAGIC ### Key Architectural Takeaways
-# MAGIC - **Databricks Asset Bundles (DABs) implement Infrastructure-as-Code (IaC) for Databricks projects.**
+# MAGIC - **Declarative Automation Bundles (DABs / Asset Bundles) implement Infrastructure-as-Code (IaC) for Databricks Lakehouse assets.**
 # MAGIC - **Target environments (dev, staging, prod) enable seamless promotion via GitHub Actions CI/CD.**
 # MAGIC - **DABs eliminate manual workspace UI changes, preventing configuration drift.**
 # MAGIC

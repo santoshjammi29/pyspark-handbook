@@ -1,4 +1,7 @@
-name: Databricks Asset Bundles (DAB) CI/CD Deployment
+name: Declarative Automation Bundles (DAB) CI/CD Deployment
+# Note: Formerly known as Databricks Asset Bundles (DABs).
+# Production Recommendation: Use keyless OIDC Workload Identity Federation with Azure/AWS 
+# rather than long-lived client secrets.
 
 on:
   pull_request:

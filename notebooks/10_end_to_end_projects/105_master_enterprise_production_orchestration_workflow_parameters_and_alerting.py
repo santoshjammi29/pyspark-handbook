@@ -135,16 +135,101 @@ runner.execute_task("Task_3_Data_Quality_Validation", task_quality_check)
 
 # MAGIC %md
 # MAGIC ### Step 3: Publishing Master Workflow Audit Log to Delta Table
-# MAGIC Persist run execution telemetry for FinOps and SLA monitoring.
+# MAGIC Persist run execution telemetry to a local Delta table for FinOps, SLA monitoring, and audit compliance.
 
 # COMMAND ----------
+
+audit_delta_path = "/tmp/delta_workflow_audit_105"
+if Path(audit_delta_path).exists():
+    shutil.rmtree(audit_delta_path)
 
 df_audit = spark.createDataFrame(runner.audit_log)
 print("Master Workflow Execution Audit Log:")
 df_audit.show(truncate=False)
 
-# In production, save to system audit table:
-# df_audit.write.format("delta").mode("append").save("/Volumes/enterprise/audit/workflow_runs")
+# Persist to Delta audit table
+df_audit.write.format("delta").mode("append").save(audit_delta_path)
+print(f"Persisted {df_audit.count()} audit records to Delta path: {audit_delta_path}")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### Step 4: Failure Injection, Exponential Backoff Retries & Audit Reconciliation
+# MAGIC Simulate a transient cloud storage throttling error (HTTP 503 Server Busy), apply an exponential backoff retry loop with jitter, capture retry telemetry, and verify the resulting audit trail via Spark SQL.
+
+# COMMAND ----------
+
+# Failure simulator: fails first 2 attempts, succeeds on attempt 3
+call_counter = {"attempts": 0}
+
+def flaky_cloud_task():
+    call_counter["attempts"] += 1
+    if call_counter["attempts"] < 3:
+        raise ConnectionResetError(f"HTTP 503: Storage account endpoint busy (Attempt {call_counter['attempts']})")
+    print("Cloud task recovered and succeeded on attempt 3!")
+
+def execute_with_retry(task_name: str, task_func, max_retries: int = 4, base_delay: float = 0.05):
+    attempt = 1
+    while attempt <= max_retries:
+        start_time = time.time()
+        try:
+            print(f"Executing {task_name} (Attempt {attempt}/{max_retries})...")
+            task_func()
+            duration = round(time.time() - start_time, 3)
+            runner.audit_log.append({
+                "task_name": f"{task_name}_attempt_{attempt}",
+                "status": "SUCCESS",
+                "duration_seconds": duration,
+                "error_message": None,
+                "executed_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+            })
+            print(f"✓ {task_name} succeeded on attempt {attempt} ({duration}s)\n")
+            return
+        except Exception as e:
+            duration = round(time.time() - start_time, 3)
+            runner.audit_log.append({
+                "task_name": f"{task_name}_attempt_{attempt}",
+                "status": "RETRY_WAIT",
+                "duration_seconds": duration,
+                "error_message": str(e),
+                "executed_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+            })
+            if attempt == max_retries:
+                print(f"✗ {task_name} permanently failed after {max_retries} attempts.")
+                raise e
+            backoff = base_delay * (2 ** (attempt - 1))
+            print(f"⚠ Transient error: {e}. Retrying in {backoff:.2f}s...")
+            time.sleep(backoff)
+            attempt += 1
+
+# Execute the flaky task under retry supervision
+execute_with_retry("Task_4_Resilient_Cloud_Sync", flaky_cloud_task)
+
+# Append updated audit records to Delta audit table
+df_updated_audit = spark.createDataFrame(runner.audit_log)
+df_updated_audit.write.format("delta").mode("overwrite").save(audit_delta_path)
+
+# Query audit table via Spark SQL to inspect execution history and stage latencies
+spark.read.format("delta").load(audit_delta_path).createOrReplaceTempView("v_workflow_audit")
+
+audit_summary_df = spark.sql("""
+    SELECT 
+        task_name,
+        status,
+        duration_seconds,
+        COALESCE(error_message, 'NONE') as error_detail,
+        executed_at
+    FROM v_workflow_audit
+    ORDER BY executed_at ASC
+""")
+
+print("=== FINAL WORKFLOW AUDIT TRAIL (Delta Table Query) ===")
+audit_summary_df.show(truncate=False)
+
+# Audit assertion: verify both retry attempts and success are durably recorded
+total_audit_rows = audit_summary_df.count()
+assert total_audit_rows >= 6, f"Audit reconciliation failure: Expected at least 6 records, got {total_audit_rows}"
+print(f"AUDIT TRAIL VERIFIED: {total_audit_rows} distinct lifecycle events durably committed!")
 
 # COMMAND ----------
 

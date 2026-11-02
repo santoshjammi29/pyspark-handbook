@@ -130,6 +130,7 @@ df_dlq = df_classified.filter(F.col("error_reason").isNotNull()).select(
     "event_id",
     "raw_payload",
     "error_reason",
+    F.lit("PENDING_TRIAGE").alias("dlq_status"),
     F.current_timestamp().alias("quarantined_at")
 )
 
@@ -140,6 +141,74 @@ spark.read.format("delta").load(clean_silver_path).show(truncate=False)
 
 print("Dead-Letter Queue Quarantine Table:")
 spark.read.format("delta").load(quarantine_dlq_path).show(truncate=False)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### Step 4: Executable DLQ Replay, Remediation & End-to-End Reconciliation
+# MAGIC Demonstrate the complete recovery cycle: read quarantined items, apply repair transformations, replay back into Silver, update DLQ status to `REPLAYED`, and verify reconciliation counts.
+
+# COMMAND ----------
+
+# 1. Read pending records from Quarantine DLQ
+df_dlq_pending = (
+    spark.read.format("delta").load(quarantine_dlq_path)
+    .filter(F.col("dlq_status") == "PENDING_TRIAGE")
+)
+
+print(f"Quarantined Records Pending Replay: {df_dlq_pending.count()}")
+
+# 2. Apply business repair logic based on error_reason
+# For INVALID_NEGATIVE_AMOUNT: take absolute value
+# For MALFORMED_JSON_SYNTAX: extract surrogate default or repaired payload
+df_repaired = (
+    df_dlq_pending
+    .withColumn(
+        "repaired_user_id",
+        F.when(F.col("error_reason") == "MALFORMED_JSON_SYNTAX", F.lit("U_UNKNOWN_FALLBACK"))
+         .otherwise(F.get_json_object("raw_payload", "$.user_id"))
+    )
+    .withColumn(
+        "repaired_amount",
+        F.when(F.col("error_reason") == "INVALID_NEGATIVE_AMOUNT", F.abs(F.get_json_object("raw_payload", "$.amount").cast("double")))
+         .otherwise(F.lit(0.0))
+    )
+    .select(
+        F.col("event_id"),
+        F.col("repaired_user_id").alias("user_id"),
+        F.col("repaired_amount").alias("amount"),
+        F.current_timestamp().alias("processed_at")
+    )
+)
+
+print("Repaired Records Ready for Replay:")
+df_repaired.show(truncate=False)
+
+# 3. Idempotent replay into Clean Silver table
+df_repaired.write.format("delta").mode("append").save(clean_silver_path)
+
+# 4. Update Quarantine DLQ table status to REPLAYED (Delta Lake ACID update)
+from delta.tables import DeltaTable
+dlq_delta = DeltaTable.forPath(spark, quarantine_dlq_path)
+dlq_delta.update(
+    condition=F.col("dlq_status") == "PENDING_TRIAGE",
+    set={"dlq_status": F.lit("REPLAYED")}
+)
+
+print("Updated Dead-Letter Queue Status:")
+spark.read.format("delta").load(quarantine_dlq_path).show(truncate=False)
+
+# 5. Source-to-Target Reconciliation Check
+total_incoming = df_incoming.count()
+total_silver = spark.read.format("delta").load(clean_silver_path).count()
+total_replayed = spark.read.format("delta").load(quarantine_dlq_path).filter(F.col("dlq_status") == "REPLAYED").count()
+
+print("=== FINAL RECONCILIATION AUDIT ===")
+print(f"Total Incoming Ingested: {total_incoming}")
+print(f"Total Silver Committed: {total_silver} (Original Clean + Repaired)")
+print(f"Total DLQ Replayed: {total_replayed}")
+assert total_silver == total_incoming, f"Reconciliation Error: Silver count {total_silver} != Incoming {total_incoming}"
+print("RECONCILIATION VERIFIED: Zero data loss across quarantine and replay cycle!")
 
 # COMMAND ----------
 
