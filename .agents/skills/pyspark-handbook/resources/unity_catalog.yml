@@ -1,0 +1,24 @@
+# Databricks Asset Bundle Resource: Unity Catalog Schemas & Volumes
+# Specification: https://docs.databricks.com/dev-tools/bundles/settings.html#resources-schemas
+
+resources:
+  schemas:
+    lakehouse_schema:
+      catalog_name: "${var.catalog}"
+      name: "${var.schema}"
+      comment: "Production Lakehouse schema managed by Databricks Asset Bundles (DABs)"
+
+  volumes:
+    raw_landing_volume:
+      catalog_name: "${var.catalog}"
+      schema_name: "${var.schema}"
+      name: "raw_landing"
+      volume_type: "MANAGED"
+      comment: "Landing volume for incoming raw Lakehouse files (JSON, CSV, Parquet)"
+
+    streaming_checkpoints_volume:
+      catalog_name: "${var.catalog}"
+      schema_name: "${var.schema}"
+      name: "streaming_checkpoints"
+      volume_type: "MANAGED"
+      comment: "Dedicated volume for Auto Loader and Structured Streaming state & checkpoints"

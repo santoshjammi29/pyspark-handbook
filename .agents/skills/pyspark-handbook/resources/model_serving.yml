@@ -1,0 +1,19 @@
+# Databricks Asset Bundle Resource: Model Serving Endpoints
+# Specification: https://docs.databricks.com/dev-tools/bundles/settings.html#resources-model_serving_endpoints
+
+resources:
+  model_serving_endpoints:
+    fraud_detection_model_serving:
+      name: "fraud-detection-serving-${bundle.target}"
+      description: "Serverless real-time model serving endpoint for Lakehouse credit card fraud inference"
+      config:
+        served_entities:
+          - name: "fraud-classifier-v1"
+            entity_name: "${var.catalog}.${var.schema}.credit_card_fraud_model"
+            entity_version: "1"
+            workload_size: "Small"
+            scale_to_zero_enabled: true
+        traffic_config:
+          routes:
+            - served_model_name: "fraud-classifier-v1"
+              traffic_percentage: 100

@@ -1,20 +1,9 @@
 ---
 name: spark-performance-and-memory-triage
-description: |
-  Specialized operational runbook and triage skill for diagnosing and resolving Apache Spark and Databricks production bottlenecks, memory errors, and query execution failures.
-  Activate when:
-  - Diagnosing Spark Driver OutOfMemoryError (`java.lang.OutOfMemoryError: Java heap space`, GC overhead limit exceeded)
-  - Diagnosing Executor OOM / Exit Code 137 / container killed by YARN or Kubernetes for exceeding memory limits
-  - Investigating Tungsten Shuffle Disk Spill (`Spill (Memory)` and `Spill (Disk)` in Spark UI) and tuning partition sizing
-  - Detecting and eliminating Data Skew using two-phase key salting, AQE skew join splitting, and skewed key isolation
-  - Analyzing Spark execution plans (`explain(mode="formatted")`), eliminating BroadcastNestedLoopJoin and accidental Cartesian products
-  - Tuning Garbage Collection (GC) pauses and G1GC parameters (`-XX:+UseG1GC`, `-XX:InitiatingHeapOccupancyPercent=45`)
-  - Configuring Adaptive Query Execution (AQE) dynamic partition coalescing, join switching, and skew mitigation
-  - Resolving small file problems and storage metadata latency in Delta Lake tables
-
-  DO NOT trigger for:
-  - General non-distributed database tuning (Postgres, MySQL)
-  - Basic Python script errors unrelated to Apache Spark / Databricks
+description: >
+  Operational runbook and triage skill for diagnosing and fixing Apache Spark and Databricks performance bottlenecks. Use for Driver OutOfMemoryError (heap space, GC limits), Executor OOM (Exit code 137 / container killed), Tungsten shuffle disk spill, partition sizing calculations, data skew mitigation via two-phase key salting and AQE skew join, execution plan analysis (BroadcastNestedLoopJoin and Cartesian product traps), G1GC pauses, and Delta Lake small file hygiene.
+metadata:
+  short-description: Spark & Databricks performance and memory bottleneck triage
 ---
 
 # Spark Performance & Production Memory Triage Skill

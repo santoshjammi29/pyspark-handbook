@@ -1,0 +1,8 @@
+# Databricks Asset Bundle Resource: Lakeview / AI/BI Dashboards
+# Specification: https://docs.databricks.com/dev-tools/bundles/settings.html#resources-dashboards
+
+resources:
+  dashboards:
+    lakehouse_executive_dashboard:
+      display_name: "[${bundle.target}] Lakehouse Executive Sales & Performance Dashboard"
+      parent_path: "/Shared/Dashboards/${bundle.target}"

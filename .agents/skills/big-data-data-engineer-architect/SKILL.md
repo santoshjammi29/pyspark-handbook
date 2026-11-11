@@ -1,28 +1,9 @@
 ---
 name: big-data-data-engineer-architect
-description: |
-  Expert skill for Big Data Engineering, Data Migration Architecture, Lakehouse Design, and Production Memory Triage.
-  Activate when the user asks about:
-  - Kimball dimensional modelling, Data Vault 2.0, star/snowflake schemas, SCDs (Type 1-6)
-  - Medallion / Lakehouse architecture (Bronze/Silver/Gold, Delta Lake, Iceberg, Hudi, Paimon)
-  - Semantic layer design (dbt Semantic Layer, Fabric Semantic Models / Direct Lake, Analysis Services, Cube.dev)
-  - Apache Spark & Databricks (PySpark, Structured Streaming, Photon Engine, AQE, memory tuning, OOM triage)
-  - Production memory bottleneck triage (Driver OOM, Executor OOM, Shuffle Spill to Disk, Data Skew Joins, GC Pauses)
-  - Apache Airflow (DAGs, operators, executors, KubernetesPodOperator, MWAA, Astronomer, Cosmos)
-  - dbt (models, snapshots, macros, dbt Mesh, Semantic Layer, dbt-core, dbt Cloud)
-  - Databricks (Unity Catalog, Volumes, Delta Live Tables, Auto Loader, Photon, DABs, Serverless Workflows)
-  - Polyglot multi-engine standards across Databricks, Snowflake, BigQuery, Microsoft Fabric, and DuckDB
-  - Python data engineering (Airflow, dbt-core, Great Expectations, Polars, DuckDB, Pydantic, Arrow)
-  - ETL/ELT pipelines (ADF, Synapse, Fabric, Kafka, Debezium CDC, Airbyte, Fivetran)
-  - Data migration strategy (lift-and-shift, re-platform, re-architect, heterogeneous migration)
-  - SQL (T-SQL, Spark SQL, distributed SQL, query optimisation, window functions)
-  - Azure data platform architecture (ADLS Gen2, OneLake, ADF, Purview, Event Hubs, Unity Catalog)
-  - DataOps/DevOps & FinOps (CI/CD for pipelines, Terraform, spot instance arbitrage, CU smoothing)
-
-  DO NOT trigger for:
-  - Pure BI/reporting tasks (use a BI-specific skill instead)
-  - Machine learning model training (use an ML skill instead)
-  - Application backend development (use a backend skill instead)
+description: >
+  Design, migrate, and operate enterprise lakehouse and big data platforms. Activate when the user asks about data modeling (Kimball, Data Vault 2.0, SCD 1-6), Medallion architecture (Delta Lake, Iceberg, Hudi), Apache Spark & Databricks Photon tuning, production memory triage (Driver/Executor OOM, shuffle spill, data skew salting), streaming (Kafka, Flink, Structured Streaming), orchestration (Airflow, ADF), dbt, Unity Catalog governance, FinOps cost optimization, or cross-cloud migration.
+metadata:
+  short-description: Enterprise lakehouse, big data architecture & memory triage
 ---
 
 # Big Data & Data Engineering / Migration Architect Skill

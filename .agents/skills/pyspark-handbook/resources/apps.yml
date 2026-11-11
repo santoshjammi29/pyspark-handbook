@@ -1,0 +1,9 @@
+# Databricks Asset Bundle Resource: Databricks Apps
+# Specification: https://docs.databricks.com/en/dev-tools/databricks-apps/index.html
+
+resources:
+  apps:
+    lakehouse_monitor_app:
+      name: "lakehouse-monitor-${bundle.target}"
+      description: "Interactive Streamlit operations dashboard for Lakehouse data quality, Delta tables, and cost tracking"
+      source_code_path: "../apps/lakehouse_monitor"

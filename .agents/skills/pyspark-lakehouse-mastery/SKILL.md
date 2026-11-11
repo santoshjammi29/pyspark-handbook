@@ -1,22 +1,9 @@
 ---
 name: pyspark-lakehouse-mastery
-description: |
-  Comprehensive skill for Apache Spark 3.5+, Databricks Runtime 15.4+ LTS, Delta Lake 3.2, and PySpark Lakehouse Engineering.
-  Distills 105 production coding use cases across 10 specialized modules from The PySpark Handbook:
-  - Core DataFrame API, PyArrow Pandas UDFs, explicit StructType schemas, safe type casting, try_cast
-  - Complex nested structures, Arrays, Maps, Higher-Order Functions (transform, filter, aggregate, zip_with), JSON/XML shredding
-  - Advanced analytical SQL, window functions (rank, dense_rank, lead/lag, moving averages, range vs rows), OLAP cubes, broadcast joins
-  - Delta Lake 3.2 ACID architecture, transaction log (_delta_log), MERGE INTO upserts, Time Travel, VACUUM, Liquid Clustering (CLUSTER BY), CDF
-  - Ingestion patterns, Databricks Auto Loader (cloudFiles), schema inference/evolution, rescued data column (_rescued_data), parallel JDBC partitioning
-  - Structured Streaming, AvailableNow triggers, event-time watermarking, stateful stream-stream joins, deduplication, Dead Letter Queues (DLQ)
-  - Medallion architecture (Bronze/Silver/Gold), Slowly Changing Dimensions (SCD Type 1-4) with Delta MERGE, Debezium CDC replay, Data Vault 2.0
-  - Performance tuning, Catalyst optimizer (Logical & Physical plans), Adaptive Query Execution (AQE), Salting data skew, Hive bucketing, Photon
-  - Unity Catalog 3-tier namespace (catalog.schema.table), Managed/External Volumes, Row Filters, Dynamic Column Masking, PII encryption, DABs
-  - End-to-end enterprise capstones: FinTech fraud detection, retail lakehouse, healthcare FHIR, IoT streaming, RAG vector embeddings
-
-  DO NOT trigger for:
-  - Frontend web development
-  - Non-Spark data engineering (unless translating from/to Spark)
+description: >
+  Mastery skill for Apache Spark 3.5+, Databricks Runtime 15.4+ LTS, Delta Lake 3.2, and PySpark Lakehouse Engineering. Use for DataFrame APIs, PyArrow Pandas UDFs, higher-order functions, analytical window functions, Delta Lake ACID mechanics (MERGE INTO, Liquid Clustering, Deletion Vectors, VACUUM, CDF), Auto Loader (cloudFiles) ingestion, Structured Streaming with watermarking, Medallion modeling (Bronze/Silver/Gold), Catalyst optimization, and Unity Catalog 3-tier governance.
+metadata:
+  short-description: PySpark 3.5+, Delta Lake 3.2 & Databricks Lakehouse mastery
 ---
 
 # PySpark & Databricks Lakehouse Mastery Skill
