@@ -1,0 +1,125 @@
+# Databricks Asset Bundle Resource: Workflows & Multi-Task Orchestration Jobs
+# Specification: https://docs.databricks.com/dev-tools/bundles/settings.html#resources-jobs
+
+resources:
+  jobs:
+    pyspark_handbook_master_pipeline:
+      name: "[${bundle.target}] PySpark Handbook Master Lakehouse Pipeline"
+      description: "Production end-to-end multi-task Lakehouse orchestration: Auto Loader -> Quarantine -> SCD2 -> Skew Mitigation -> Aggregations -> Enterprise Audit"
+      
+      tags:
+        project: "pyspark-handbook"
+        environment: "${bundle.target}"
+        managed_by: "databricks-asset-bundles"
+
+      schedule:
+        quartz_cron_expression: "0 0 6 * * ?" # Run daily at 06:00 UTC
+        timezone_id: "UTC"
+        pause_status: "${bundle.target == 'prod' ? 'UNPAUSED' : 'PAUSED'}"
+
+      email_notifications:
+        on_failure:
+          - "${var.notification_email}"
+
+      max_concurrent_runs: 1
+      timeout_seconds: 7200
+
+      job_clusters:
+        - job_cluster_key: "primary_lakehouse_compute"
+          new_cluster:
+            spark_version: "${var.compute_spark_version}"
+            node_type_id: "${var.node_type_id}"
+            autoscale:
+              min_workers: 1
+              max_workers: 4
+            spark_conf:
+              "spark.sql.adaptive.enabled": "true"
+              "spark.sql.adaptive.coalescePartitions.enabled": "true"
+              "spark.sql.adaptive.skewJoin.enabled": "true"
+              "spark.databricks.delta.optimizeWrite.enabled": "true"
+              "spark.databricks.delta.autoCompact.enabled": "true"
+              "spark.sql.shuffle.partitions": "auto"
+
+      parameters:
+        - name: "target_catalog"
+          default: "${var.catalog}"
+        - name: "target_schema"
+          default: "${var.schema}"
+        - name: "environment"
+          default: "${bundle.target}"
+
+      tasks:
+        # -------------------------------------------------------------
+        # Task 1: Incremental Ingestion via Auto Loader
+        # -------------------------------------------------------------
+        - task_key: "01_ingest_raw_files_autoloader"
+          job_cluster_key: "primary_lakehouse_compute"
+          notebook_task:
+            notebook_path: "../notebooks/05_data_ingestion_autoloader/048_databricks_auto_loader_directory_mode_cloudfiles_schema_inference_and_checkpointing.py"
+            base_parameters:
+              source_volume: "/Volumes/${var.catalog}/${var.schema}/raw_landing"
+              checkpoint_path: "/Volumes/${var.catalog}/${var.schema}/streaming_checkpoints/autoloader"
+              target_table: "${var.catalog}.${var.schema}.bronze_ingestion"
+
+        # -------------------------------------------------------------
+        # Task 2: Data Cleansing, Schema Validation & Malformed Quarantine
+        # -------------------------------------------------------------
+        - task_key: "02_cleanse_and_quarantine_records"
+          depends_on:
+            - task_key: "01_ingest_raw_files_autoloader"
+          job_cluster_key: "primary_lakehouse_compute"
+          notebook_task:
+            notebook_path: "../notebooks/02_complex_data_types/020_handling_corrupted_and_malformed_json_permissive_vs_dropmalformed_vs_failfast.py"
+            base_parameters:
+              bronze_table: "${var.catalog}.${var.schema}.bronze_ingestion"
+              silver_clean_table: "${var.catalog}.${var.schema}.silver_validated_events"
+              dlq_quarantine_table: "${var.catalog}.${var.schema}.silver_quarantine_dlq"
+
+        # -------------------------------------------------------------
+        # Task 3: Slowly Changing Dimensions (SCD Type 2) Upserts
+        # -------------------------------------------------------------
+        - task_key: "03_upsert_scd_type_2_dimensions"
+          depends_on:
+            - task_key: "02_cleanse_and_quarantine_records"
+          job_cluster_key: "primary_lakehouse_compute"
+          notebook_task:
+            notebook_path: "../notebooks/07_lakehouse_modeling_scd/069_slowly_changing_dimension_type_2_scd_type_2_historical_tracking_with_effective_dates.py"
+            base_parameters:
+              silver_source_table: "${var.catalog}.${var.schema}.silver_validated_events"
+              target_dimension_table: "${var.catalog}.${var.schema}.silver_dim_customer_scd2"
+
+        # -------------------------------------------------------------
+        # Task 4: Skew Mitigation & Balanced Two-Stage Distributed Join
+        # -------------------------------------------------------------
+        - task_key: "04_mitigate_skew_and_join"
+          depends_on:
+            - task_key: "03_upsert_scd_type_2_dimensions"
+          job_cluster_key: "primary_lakehouse_compute"
+          notebook_task:
+            notebook_path: "../notebooks/08_performance_and_tuning/076_data_skew_detection_and_mitigation_using_salting_and_two_stage_joins.py"
+            base_parameters:
+              salt_factor: "16"
+
+        # -------------------------------------------------------------
+        # Task 5: Gold Analytics Mart & Cumulative Window Rollups
+        # -------------------------------------------------------------
+        - task_key: "05_calculate_gold_analytics_marts"
+          depends_on:
+            - task_key: "04_mitigate_skew_and_join"
+          job_cluster_key: "primary_lakehouse_compute"
+          notebook_task:
+            notebook_path: "../notebooks/03_sql_and_window_functions/027_aggregate_and_cumulative_window_functions_running_totals_and_moving_averages.py"
+            base_parameters:
+              gold_mart_table: "${var.catalog}.${var.schema}.gold_executive_daily_sales"
+
+        # -------------------------------------------------------------
+        # Task 6: Master Pipeline Orchestration, Parameter Audit & Verification
+        # -------------------------------------------------------------
+        - task_key: "06_master_orchestration_audit"
+          depends_on:
+            - task_key: "05_calculate_gold_analytics_marts"
+          job_cluster_key: "primary_lakehouse_compute"
+          notebook_task:
+            notebook_path: "../notebooks/10_end_to_end_projects/105_master_enterprise_production_orchestration_workflow_parameters_and_alerting.py"
+            base_parameters:
+              pipeline_status: "SUCCESS"
