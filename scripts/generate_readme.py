@@ -21,10 +21,12 @@ def first_sentence(text: str) -> str:
 def get_difficulty_badge(diff_str: str) -> str:
     d = diff_str.lower()
     if "beginner" in d:
-        return "🟢 `Beginner`"
+        return "🟢<br>Beginner"
     elif "advanced" in d:
-        return "🔴 `Advanced`"
-    return "🟡 `Intermediate`"
+        return "🔴<br>Advanced"
+    elif "principal" in d or "architect" in d or "capstone" in d:
+        return "🟣<br>Principal"
+    return "🟡<br>Intermediate"
 
 def extract_notebook_meta(filepath: Path, base_dir: Path):
     with open(filepath, "r", encoding="utf-8") as f:
@@ -64,6 +66,7 @@ def generate_readme(base_dir: Path):
             "title": "Module 01: Core PySpark Foundations & DataFrame API",
             "range": "001 – 012",
             "icon": "📊",
+            "level": "🟢<br>Beginner",
             "difficulty": "🟢 Beginner – 🟡 Intermediate",
             "coverage": "DataFrame creation, explicit StructType schemas, PyArrow Pandas UDFs, safe type casting, column projections, and DBUtils emulation."
         },
@@ -73,6 +76,7 @@ def generate_readme(base_dir: Path):
             "title": "Module 02: Complex Data Types & Nested Structures",
             "range": "013 – 022",
             "icon": "🧩",
+            "level": "🟡<br>Intermediate",
             "difficulty": "🟡 Intermediate",
             "coverage": "Nested StructTypes, Arrays, Maps, Higher-Order Functions (transform, filter, aggregate), JSON parsing, XML shredding, and schema evolution."
         },
@@ -82,6 +86,7 @@ def generate_readme(base_dir: Path):
             "title": "Module 03: Advanced SQL & Analytical Window Functions",
             "range": "023 – 032",
             "icon": "🪟",
+            "level": "🟡<br>Intermediate",
             "difficulty": "🟡 Intermediate – 🔴 Advanced",
             "coverage": "Ranking, lead/lag, rolling moving averages, cumulative distribution, OLAP cubes, pivots, broadcast hash joins, and range vs rows framing."
         },
@@ -91,6 +96,7 @@ def generate_readme(base_dir: Path):
             "title": "Module 04: Delta Lake Architecture & ACID Operations",
             "range": "033 – 043",
             "icon": "🧱",
+            "level": "🔴<br>Advanced",
             "difficulty": "🟡 Intermediate – 🔴 Advanced",
             "coverage": "Delta transaction log (_delta_log), ACID CRUD, high-throughput MERGE INTO, time travel, VACUUM retention, and Liquid Clustering."
         },
@@ -100,6 +106,7 @@ def generate_readme(base_dir: Path):
             "title": "Module 05: Data Ingestion Patterns & Auto Loader",
             "range": "044 – 053",
             "icon": "📥",
+            "level": "🔴<br>Advanced",
             "difficulty": "🟡 Intermediate – 🔴 Advanced",
             "coverage": "Databricks Auto Loader (cloudFiles), notification modes, rescued data column, parallel JDBC partitioning, and multi-format lakehouse ingestion."
         },
@@ -109,6 +116,7 @@ def generate_readme(base_dir: Path):
             "title": "Module 06: Structured Streaming & Real-Time Processing",
             "range": "054 – 063",
             "icon": "⚡",
+            "level": "🔴<br>Advanced",
             "difficulty": "🟡 Intermediate – 🔴 Advanced",
             "coverage": "AvailableNow triggers, event-time watermarking, stateful stream-stream joins, deduplication, and Dead Letter Queues (DLQ)."
         },
@@ -118,6 +126,7 @@ def generate_readme(base_dir: Path):
             "title": "Module 07: Lakehouse Data Modeling, CDC & SCD Implementation",
             "range": "064 – 073",
             "icon": "🏛️",
+            "level": "🔴<br>Advanced",
             "difficulty": "🔴 Advanced",
             "coverage": "Medallion Architecture (Bronze/Silver/Gold), Slowly Changing Dimensions (SCD Types 1, 2, 3, 4), Debezium CDC replay, and Data Vault 2.0."
         },
@@ -127,6 +136,7 @@ def generate_readme(base_dir: Path):
             "title": "Module 08: Performance Tuning, AQE & Skew Mitigation",
             "range": "074 – 085",
             "icon": "🏎️",
+            "level": "🔴<br>Advanced",
             "difficulty": "🔴 Advanced",
             "coverage": "Catalyst Logical & Physical Plans, Adaptive Query Execution (AQE), Salting join skew, Hive-style bucketing, OOM diagnosis, and Photon."
         },
@@ -136,6 +146,7 @@ def generate_readme(base_dir: Path):
             "title": "Module 09: Unity Catalog Governance, Security & FinOps",
             "range": "086 – 095",
             "icon": "🛡️",
+            "level": "🔴<br>Advanced",
             "difficulty": "🟡 Intermediate – 🔴 Advanced",
             "coverage": "Unity Catalog 3-tier namespace, Managed & External Volumes, Row-Level Security, Dynamic Column Masking, Secret Scopes, and DABs."
         },
@@ -145,6 +156,7 @@ def generate_readme(base_dir: Path):
             "title": "Module 10: End-to-End Enterprise Production Projects",
             "range": "096 – 105",
             "icon": "🚀",
+            "level": "🟣<br>Principal",
             "difficulty": "🔴 Advanced Capstone",
             "coverage": "Full capstones: FinTech Fraud Detection, Omnichannel Retail Lakehouse, Healthcare FHIR Ingestion, IoT Telemetry, RAG Embeddings, and Workflows."
         }
@@ -166,7 +178,7 @@ def generate_readme(base_dir: Path):
     for mod, _ in modules_detail:
         anchor = mod["folder"].replace("_", "-")
         nav_table_rows.append(
-            f"| {mod['icon']} **[{mod['title']}](#{anchor})** | `{mod['range']}` | {mod['difficulty']} | {mod['coverage']} |"
+            f"| {mod['icon']} **[{mod['title']}](#{anchor})** | `{mod['range']}` | {mod['level']} | {mod['coverage']} |"
         )
     nav_table_md = "\n".join(nav_table_rows)
 
@@ -187,8 +199,8 @@ def generate_readme(base_dir: Path):
 
 > 💡 **Core Focus:** {mod['coverage']}
 
-| # | Databricks Notebook (.py) | Difficulty | Business Scenario | Key Architectural Focus |
-|:---:|:---|:---:|:---|:---|
+| # | Databricks Notebook (.py) | Level | Business Scenario | Key Architectural Focus |
+| :---: | :--- | :---: | :--- | :--- |
 {table_body}
 
 </details>
@@ -340,8 +352,8 @@ python notebooks/01_core_dataframe_api/001_sparksession_initialization_and_dataf
 
 Click any module below to inspect its individual notebooks, real-world business scenarios, and architectural takeaways:
 
-| Learning Track & Module | Range | Difficulty | Core Topics & Architectural Coverage |
-|:---|:---:|:---:|:---|
+| Learning Track & Module | Range | Level | Core Topics & Architectural Coverage |
+| :--- | :---: | :---: | :--- |
 {nav_table_md}
 
 ---
