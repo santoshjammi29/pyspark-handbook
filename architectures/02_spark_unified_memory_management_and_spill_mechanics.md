@@ -1,5 +1,15 @@
 # 🏛️ Architecture 02: Spark Unified Memory Management & Spill Mechanics
 
+
+![Apache Spark Memory Architecture & Shuffle Mechanics](../assets/whiteboards/spark_shuffle_memory_execution.webp)
+> *Architectural Blueprint: [Apache Spark Memory Architecture & Shuffle Mechanics](../docs/whiteboard_diagrams/README.md#spark-shuffle-memory-execution). View full multi-persona breakdown and engine mechanisms in the master index.*
+
+
+![Apache Spark Memory Management & Shuffle Spilling Mechanics](../assets/whiteboards/spark_memory_management_spill_diagram.webp)
+> *Architectural Blueprint: [Apache Spark Memory Management & Shuffle Spilling Mechanics](../docs/whiteboard_diagrams/README.md#spark-memory-management-spill). View full multi-persona breakdown and engine mechanisms in the master index.*
+
+
+
 > **Focus**: JVM Heap Partitioning, Execution vs. Storage Dynamic Borrowing, Off-Heap Memory, Tungsten Shuffle Disk Spill, and Garbage Collection (G1GC) Tuning.
 
 ---

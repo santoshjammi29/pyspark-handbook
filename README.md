@@ -61,16 +61,80 @@ flowchart LR
 
 ---
 
-## 🖼️ Whiteboard Blueprints
+## 🖼️ Master Whiteboard Architecture Blueprints
 
-The repository includes **52 publication-grade architectural whiteboard blueprints** mirrored under `assets/whiteboards/` and cataloged in [docs/whiteboard_diagrams/README.md](docs/whiteboard_diagrams/README.md), illustrating:
-- **Catalyst Optimizer & Photon Engine** execution pipelines
-- **Spark Unified Memory Pool** (Execution vs Storage dynamic borrowing)
-- **Shuffle Skew & Two-Phase Salting** distribution flows
-- **Structured Streaming RocksDB** state store and watermark lifecycles
-- **Delta Lake 3.x ACID** transaction log mechanics and Liquid Clustering
+The repository includes **52 publication-grade architectural whiteboard blueprints** mirrored under [`assets/whiteboards/`](assets/whiteboards) and cataloged with comprehensive multi-persona breakdowns, failure modes, and engine internals in [`docs/whiteboard_diagrams/README.md`](docs/whiteboard_diagrams/README.md).
 
----
+### 📐 Visual Blueprints Showcase
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/whiteboard_diagrams/README.md#spark-catalyst-photon-engine">
+        <img src="assets/whiteboards/catalyst_photon_engine.webp" alt="Databricks Compute: Catalyst Optimizer, AQE & Photon" width="100%" />
+      </a>
+      <br><strong>Databricks Compute: Catalyst Optimizer, AQE & Photon</strong><br>
+      <em>Physical and logical query optimization pipeline with adaptive runtime plan restructuring.</em>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/whiteboard_diagrams/README.md#spark-shuffle-memory-execution">
+        <img src="assets/whiteboards/spark_shuffle_memory_execution.webp" alt="Apache Spark Memory Architecture & Shuffle Mechanics" width="100%" />
+      </a>
+      <br><strong>Apache Spark Memory Architecture & Shuffle Mechanics</strong><br>
+      <em>Unified memory manager, execution vs storage allocation, and Tungsten off-heap structures.</em>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/whiteboard_diagrams/README.md#spark-memory-management-spill">
+        <img src="assets/whiteboards/spark_memory_management_spill_diagram.webp" alt="Apache Spark Memory Management & Shuffle Spilling Mechanics" width="100%" />
+      </a>
+      <br><strong>Apache Spark Memory Management & Shuffle Spilling Mechanics</strong><br>
+      <em>Driver and executor memory pool sizing and spill-to-disk disk triage.</em>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/whiteboard_diagrams/README.md#spark-data-skew-aqe-optimization">
+        <img src="assets/whiteboards/spark_data_skew_aqe_optimization.webp" alt="Apache Spark Data Skew Remediation & AQE Optimization" width="100%" />
+      </a>
+      <br><strong>Apache Spark Data Skew Remediation & AQE Optimization</strong><br>
+      <em>Two-phase key salting, split-range joins, and adaptive partition coalescing.</em>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/whiteboard_diagrams/README.md#spark-join-decision-tree">
+        <img src="assets/whiteboards/spark_join_decision_tree.webp" alt="Apache Spark Join Strategy Selection Decision Tree" width="100%" />
+      </a>
+      <br><strong>Apache Spark Join Strategy Selection Decision Tree</strong><br>
+      <em>Broadcast Hash, Shuffled Hash, Sort-Merge, and Broadcast Nested Loop selection algorithm.</em>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/whiteboard_diagrams/README.md#spark-aqe-dynamic-optimization">
+        <img src="assets/whiteboards/spark_aqe_architecture_diagram.webp" alt="Apache Spark Adaptive Query Execution (AQE) Architecture" width="100%" />
+      </a>
+      <br><strong>Apache Spark Adaptive Query Execution (AQE) Architecture</strong><br>
+      <em>Runtime statistics aggregation and dynamic shuffle partition coalescing.</em>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/whiteboard_diagrams/README.md#spark-streaming-state-store">
+        <img src="assets/whiteboards/spark_streaming_state_store.webp" alt="Spark Structured Streaming State Store & Watermarking Mechanics" width="100%" />
+      </a>
+      <br><strong>Spark Structured Streaming State Store & Watermarking Mechanics</strong><br>
+      <em>RocksDB state backend, event-time watermarking, and incremental state commit checkpoints.</em>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/whiteboard_diagrams/README.md#photon-engine-vs-jvm">
+        <img src="assets/whiteboards/photon_engine_vs_jvm.webp" alt="Databricks Photon Native C++ Engine vs Classic Spark JVM" width="100%" />
+      </a>
+      <br><strong>Databricks Photon Native C++ Engine vs Classic Spark JVM</strong><br>
+      <em>Vectorized SIMD instruction pipelining and JVM JIT compilation comparison.</em>
+    </td>
+  </tr>
+</table>
+
+> 🔍 **Explore all 52 blueprints with 5-persona breakdowns, failure modes, and engine internals in [docs/whiteboard_diagrams/README.md](docs/whiteboard_diagrams/README.md)**.
 
 ## 💻 Interactive CLI Explorer
 

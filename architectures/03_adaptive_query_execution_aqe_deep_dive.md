@@ -1,5 +1,19 @@
 # 🏛️ Architecture 03: Adaptive Query Execution (AQE) Deep Dive
 
+
+![Apache Spark Adaptive Query Execution (AQE) Architecture](../assets/whiteboards/spark_aqe_architecture_diagram.webp)
+> *Architectural Blueprint: [Apache Spark Adaptive Query Execution (AQE) Architecture](../docs/whiteboard_diagrams/README.md#spark-aqe-dynamic-optimization). View full multi-persona breakdown and engine mechanisms in the master index.*
+
+
+![Apache Spark Data Skew Remediation & AQE Optimization](../assets/whiteboards/spark_data_skew_aqe_optimization.webp)
+> *Architectural Blueprint: [Apache Spark Data Skew Remediation & AQE Optimization](../docs/whiteboard_diagrams/README.md#spark-data-skew-aqe-optimization). View full multi-persona breakdown and engine mechanisms in the master index.*
+
+
+![Apache Spark Join Strategy Selection Decision Tree](../assets/whiteboards/spark_join_decision_tree.webp)
+> *Architectural Blueprint: [Apache Spark Join Strategy Selection Decision Tree](../docs/whiteboard_diagrams/README.md#spark-join-decision-tree). View full multi-persona breakdown and engine mechanisms in the master index.*
+
+
+
 > **Focus**: Runtime Re-optimization, Dynamic Partition Coalescing, Join Strategy Switching (Sort-Merge to Broadcast), Skew Join Splitting, and Stage Materialization.
 
 ---

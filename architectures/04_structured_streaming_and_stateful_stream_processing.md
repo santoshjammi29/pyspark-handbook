@@ -1,5 +1,15 @@
 # 🏛️ Architecture 04: Structured Streaming & Stateful Stream Processing
 
+
+![Spark Structured Streaming State Store & Watermarking Mechanics](../assets/whiteboards/spark_streaming_state_store.webp)
+> *Architectural Blueprint: [Spark Structured Streaming State Store & Watermarking Mechanics](../docs/whiteboard_diagrams/README.md#spark-streaming-state-store). View full multi-persona breakdown and engine mechanisms in the master index.*
+
+
+![Real-Time Event Streaming & Kafka Architecture](../assets/whiteboards/kafka_event_streaming_pipeline.webp)
+> *Architectural Blueprint: [Real-Time Event Streaming & Kafka Architecture](../docs/whiteboard_diagrams/README.md#kafka-event-streaming-pipeline). View full multi-persona breakdown and engine mechanisms in the master index.*
+
+
+
 > **Focus**: Micro-Batch vs. Continuous Processing, Event-Time Watermarking, Stateful Aggregations & Stream-Stream Joins, RocksDB State Store, Checkpointing, and Exactly-Once Guarantees.
 
 ---
