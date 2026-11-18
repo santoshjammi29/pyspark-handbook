@@ -182,3 +182,55 @@ df.explain(mode="formatted")
 #       +- FileScan parquet [customer_id#1,amount#2] Batched: true, DataFilters: [isnotnull(amount#2)...]
 # Asterisk (*) indicates Whole-Stage CodeGen
 ```
+
+---
+
+## 4. Spark Connect Decoupled Architecture & Photon Native Engine
+
+Apache Spark 4.0 and Databricks Runtime 15.4+ introduce **Spark Connect**, decoupling client-side DataFrame API execution from the distributed Spark Driver and cluster JVM via an open gRPC protocol.
+
+```mermaid
+flowchart LR
+    subgraph ClientLayer["Lightweight Client Plane (Zero Local Spark JVM)"]
+        IDE["VS Code / PyCharm (pyspark-client 1.5MB)"]
+        Microservice["FastAPI / Streamlit Application"]
+        CLI["Interactive CLI Explorer"]
+    end
+
+    subgraph Proto["Open gRPC Transport Protocol"]
+        AST["Unresolved Logical Plan (Protobuf)"]
+    end
+
+    subgraph RemoteCluster["Distributed Spark & Photon Engine"]
+        Server["Spark Connect Server Daemon (Driver)"]
+        Catalyst["Catalyst Optimizer & AQE Planner"]
+        Photon["Photon Native C++ Engine (SIMD Vectorization)"]
+    end
+
+    ClientLayer --> AST --> Server --> Catalyst --> Photon
+```
+
+### Production Implementation: Remote DataFrame Execution via Spark Connect
+```python
+from pyspark.sql import SparkSession
+
+# Initialize remote Spark Connect session via gRPC
+spark = (SparkSession.builder
+    .remote("sc://adb-cluster.internal:15002/;token=xxx")
+    .appName("ServerlessDataPipeline")
+    .getOrCreate())
+
+# Compute runs remotely on Photon C++ engine
+df = (spark.read.table("prod_catalog.gold.transactions")
+    .filter("amount > 1000.00")
+    .groupBy("customer_id")
+    .sum("amount"))
+
+# Client receives only final computed result partitions
+df.show(5)
+```
+
+### Key Performance Invariants:
+- **Zero Classpath Collisions**: Client environments do not require matching Java/Scala runtime versions, eliminating local JVM dependency hell.
+- **Photon SIMD Vectorization**: Native C++ kernel processes data in register-sized columnar vectors, eliminating JVM bytecode interpretation.
+- **Fail-Fast Protocol**: Protobuf serialization validates DataFrame schemas before dispatching jobs to the remote cluster.

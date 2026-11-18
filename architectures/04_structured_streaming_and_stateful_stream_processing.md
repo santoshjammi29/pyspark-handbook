@@ -175,3 +175,51 @@ flowchart LR
    )
    ```
    Without this time window constraint, Spark cannot determine when an impression will never receive a click, causing the state store to **leak memory indefinitely until executor OOM crash**!
+
+---
+
+## 4. Stateful Streaming with RocksDB Changelog Checkpointing & Vector Search
+
+For high-state streaming queries ($> 100	ext{ GB}$ of window state), modern Structured Streaming employs the **RocksDB state store provider with changelog checkpointing** and real-time vector embedding generation.
+
+```mermaid
+flowchart LR
+    subgraph StreamIn["Real-Time Streaming Stream"]
+        Kafka["Apache Kafka Event Topic"]
+    end
+
+    subgraph StatefulWorker["Spark Stateful Streaming Executor"]
+        Watermark["10-Minute Allowed Watermark Delay"]
+        StateStore["RocksDB State Store (Out-of-Heap SSD)"]
+        Changelog["Continuous Changelog Checkpointing (Zero Stop-the-World)"]
+    end
+
+    subgraph LakehouseSync["Lakehouse Vector Ingestion"]
+        DeltaSink["Delta Lake 3.x Streaming Table (Append Mode)"]
+        VectorIdx["Mosaic AI Vector Search (Delta Sync Index)"]
+    end
+
+    Kafka --> Watermark --> StateStore --> Changelog
+    StateStore --> DeltaSink --> VectorIdx
+```
+
+### Production Implementation: RocksDB Changelog Checkpointing
+```python
+# Configure RocksDB state store with changelog checkpointing
+(spark.readStream
+    .format("kafka")
+    .option("kafka.bootstrap.servers", "kafka:9092")
+    .option("subscribe", "customer-telemetry")
+    .load()
+    .writeStream
+    .format("delta")
+    .outputMode("append")
+    .option("checkpointLocation", "abfss://checkpoints@datalake.dfs.core.windows.net/streaming_rocksdb")
+    .option("spark.sql.streaming.stateStore.providerClass", "org.apache.spark.sql.execution.streaming.state.RocksDBStateStoreProvider")
+    .option("spark.sql.streaming.stateStore.rocksdb.changelogCheckpointing.enabled", "true")
+    .toTable("prod_catalog.silver.streaming_events"))
+```
+
+### Key Streaming Invariants:
+- **Changelog Checkpointing**: Emits small incremental changelog deltas to cloud storage, eliminating micro-batch freeze times during SST file snapshots.
+- **State Store Eviction**: State TTL policies automatically purge inactive keys after the watermark window elapses, preventing infinite disk consumption.

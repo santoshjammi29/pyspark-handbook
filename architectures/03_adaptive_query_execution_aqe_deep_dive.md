@@ -151,3 +151,47 @@ While AQE is transformative, senior distributed systems engineers must recognize
 1. **Cartesian Product / Non-Equi Joins**: AQE skew join splitting only applies to equi-joins (`A.key = B.key`). Joins with inequality (`A.start < B.end`) cannot be split and fall back to Broadcast Nested Loop Join.
 2. **Extreme Data Skew on Single Duplicate Keys**: If a single distinct key has 200 million rows, AQE can split Sort-Merge Join, but aggregations (`groupBy("skewed_key").count()`) cannot be split without manual two-phase key salting!
 3. **Driver Memory Pressure on Broadcast Conversion**: If `autoBroadcastJoinThreshold` is set too high (e.g. 2GB), the driver will attempt to collect and serialize the 2GB table to broadcast to 500 executors, causing an immediate **Driver OutOfMemoryError**.
+
+---
+
+## 4. Spark 4.0 ANSI SQL Mode & Dynamic Runtime Skew Join Split-Range
+
+Apache Spark 4.0 mandates **ANSI SQL mode by default** (`spark.sql.ansi.enabled = true`), enforcing strict runtime data integrity, complemented by AQE 2.0 dynamic sub-partition split-range optimization.
+
+```mermaid
+flowchart TD
+    subgraph CompileStage["Compilation & Strict ANSI Validation"]
+        Query["User SQL Query"]
+        ANSI["ANSI Validator (Fail-Fast Overflow / Bad Cast)"]
+    end
+
+    subgraph Stage1["Shuffle Stage 1 (Map Output Generation)"]
+        T1["Tasks Execute & Write Shuffle Files"]
+        Stats["Shuffle Map Output Statistics Aggregated"]
+    end
+
+    subgraph AQEDecision["AQE 2.0 Dynamic Re-Planning"]
+        Coalesce["Coalesce 200 Partitions -> 14 Large Partitions"]
+        JoinSwitch["Convert SortMergeJoin -> BroadcastHashJoin"]
+        SkewSplit["Split Skewed Partition into 5 Sub-Range Slices"]
+    end
+
+    Query --> ANSI --> Stage1 --> Stats --> AQEDecision
+```
+
+### Production Configuration: Spark 4.0 ANSI Mode & AQE 2.0 Skew Tuning
+```python
+# Spark 4.0 configuration for strict data integrity and AQE 2.0
+spark.conf.set("spark.sql.ansi.enabled", "true") # Strict ANSI standard
+spark.conf.set("spark.sql.adaptive.enabled", "true")
+spark.conf.set("spark.sql.adaptive.skewJoin.enabled", "true")
+spark.conf.set("spark.sql.adaptive.skewJoin.skewedPartitionFactor", "3.0")
+spark.conf.set("spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes", "134217728") # 128MB
+
+# Malformed casts fail fast with compile/runtime exception instead of silent NULLs
+# spark.sql("SELECT CAST('invalid_integer' AS INT)").show() -> Throws SparkUpgradeException
+```
+
+### Key Adaptive Invariants:
+- **Fail-Fast Integrity**: ANSI mode eliminates silent data corruption by throwing runtime exceptions on arithmetic overflow and bad casts.
+- **Split-Range Skew Mitigation**: AQE automatically splits partitions exceeding 128MB into multiple sub-ranges without requiring manual application salting.

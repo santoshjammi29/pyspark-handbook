@@ -165,3 +165,48 @@ print(f"--executor-cores {cores_per_executor}")
 print(f"--executor-memory {int(executor_memory)}g")
 print(f"--conf spark.executor.memoryOverhead={int(memory_overhead)}g")
 ```
+
+---
+
+## 4. Apache Arrow Vectorized IPC & Zero-Copy Off-Heap Processing
+
+To eliminate Python worker serialization bottlenecks, modern PySpark leverages **Apache Arrow** for zero-copy inter-process communication (IPC) between the JVM executor and Python daemon processes.
+
+```mermaid
+flowchart LR
+    subgraph JVMExecutor["JVM / Tungsten Executor Memory"]
+        RowData["Tungsten Row Format (Binary Off-Heap)"]
+        ArrowBatch["Arrow RecordBatch (Columnar Memory)"]
+    end
+
+    subgraph ZeroCopyBridge["Shared Memory / UNIX Domain Socket"]
+        SharedMem["Shared Memory IPC Buffer (Zero JVM Serialization)"]
+    end
+
+    subgraph PythonDaemon["Python Worker Daemon"]
+        PyArrow["PyArrow Table / NumPy Contiguous Array"]
+        PandasUDF["Vectorized Pandas / Polars Kernel"]
+    end
+
+    RowData --> ArrowBatch --> SharedMem --> PyArrow --> PandasUDF
+```
+
+### Production Implementation: High-Throughput Vectorized Arrow Processing
+```python
+from pyspark.sql.functions import pandas_udf
+import pandas as pd
+
+# Define vectorized scalar UDF with Apache Arrow execution
+@pandas_udf("double")
+def calculate_risk_index(score: pd.Series, exposure: pd.Series) -> pd.Series:
+    # Operations execute directly on contiguous NumPy C-arrays
+    return (score * 0.65) + (exposure * 0.35)
+
+# Leverage Arrow vectorized UDF inside DataFrame transformation
+processed_df = (spark.read.table("prod_catalog.gold.credit_assessments")
+    .withColumn("risk_score", calculate_risk_index("base_score", "credit_exposure")))
+```
+
+### Key Memory Invariants:
+- **Zero-Copy Deserialization**: Arrow RecordBatches eliminate Python pickle serialization overhead, accelerating Python UDFs up to $100	imes$.
+- **Off-Heap Safety**: Vectorized memory allocations reside in off-heap buffers outside JVM garbage collection sweeps.
