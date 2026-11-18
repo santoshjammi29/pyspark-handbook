@@ -1,8 +1,9 @@
 """
-Master README Generator
-Scans all 105 Databricks Python notebooks (.py) and builds an enterprise-grade,
-clean, GitHub-native documentation with Mermaid diagrams, collapsible curriculum
-modules, and zero bloat.
+Master README Generator for The PySpark Handbook
+Scans all 105 Databricks Python notebooks (.py) and builds enterprise-grade,
+clean, GitHub-native documentation with Mermaid diagrams, interactive shell instructions,
+whiteboard blueprints, deep-dive architectures, production incident runbooks,
+4-tier interview guides, and sister repository cross-links.
 """
 
 import os
@@ -98,27 +99,27 @@ def generate_readme(base_dir: Path):
             "icon": "🧱",
             "level": "🔴<br>Advanced",
             "difficulty": "🟡 Intermediate – 🔴 Advanced",
-            "coverage": "Delta transaction log (_delta_log), ACID CRUD, high-throughput MERGE INTO, time travel, VACUUM retention, and Liquid Clustering."
+            "coverage": "Transaction Log internals (_delta_log), ACID CRUD, MERGE INTO optimizations, Time Travel, VACUUM safety, and Deletion Vectors."
         },
         {
             "folder": "05_data_ingestion_autoloader",
             "num": "05",
-            "title": "Module 05: Data Ingestion Patterns & Auto Loader",
+            "title": "Module 05: Data Ingestion, Auto Loader & Cloud Formats",
             "range": "044 – 053",
             "icon": "📥",
-            "level": "🔴<br>Advanced",
+            "level": "🟡<br>Intermediate",
             "difficulty": "🟡 Intermediate – 🔴 Advanced",
-            "coverage": "Databricks Auto Loader (cloudFiles), notification modes, rescued data column, parallel JDBC partitioning, and multi-format lakehouse ingestion."
+            "coverage": "Databricks Auto Loader (cloudFiles), schema inference, _rescued_data poison pill quarantine, Parquet, Avro, and parallel JDBC ingestion."
         },
         {
             "folder": "06_streaming_realtime",
             "num": "06",
-            "title": "Module 06: Structured Streaming & Real-Time Processing",
+            "title": "Module 06: Structured Streaming & Near Real-Time Processing",
             "range": "054 – 063",
             "icon": "⚡",
             "level": "🔴<br>Advanced",
-            "difficulty": "🟡 Intermediate – 🔴 Advanced",
-            "coverage": "AvailableNow triggers, event-time watermarking, stateful stream-stream joins, deduplication, and Dead Letter Queues (DLQ)."
+            "difficulty": "🔴 Advanced",
+            "coverage": "Streaming micro-batches, AvailableNow triggers, event-time watermarking, stateful window aggregations, stream-stream joins, and DLQ sinks."
         },
         {
             "folder": "07_lakehouse_modeling_scd",
@@ -127,7 +128,7 @@ def generate_readme(base_dir: Path):
             "range": "064 – 073",
             "icon": "🏛️",
             "level": "🔴<br>Advanced",
-            "difficulty": "🔴 Advanced",
+            "difficulty": "🟡 Intermediate – 🔴 Advanced",
             "coverage": "Medallion Architecture (Bronze/Silver/Gold), Slowly Changing Dimensions (SCD Types 1, 2, 3, 4), Debezium CDC replay, and Data Vault 2.0."
         },
         {
@@ -199,32 +200,32 @@ def generate_readme(base_dir: Path):
 
 > 💡 **Core Focus:** {mod['coverage']}
 
-| # | Databricks Notebook (.py) | Level | Business Scenario | Key Architectural Focus |
+| Recipe | Notebook Title | Level | Real-World Scenario | Spark Architecture Key Concept |
 | :---: | :--- | :---: | :--- | :--- |
 {table_body}
 
-</details>
-"""
+[⬆️ Back to Curriculum Overview](#-curriculum-overview)
+</details>"""
         details_md_list.append(details_md)
 
-    detailed_catalog_md = "\n".join(details_md_list)
+    collapsible_catalog_md = "\n\n".join(details_md_list)
 
     readme_content = f"""# ⚡ The PySpark Handbook
 
-**105 Production Coding Use Cases, Performance Tuning Recipes & Lakehouse Masterclass**
+**105 Production Coding Use Cases, Performance Tuning Recipes, Lakehouse Masterclass & Incident Runbooks**
 
 [![CI Validation](https://github.com/santoshjammi29/pyspark-handbook/actions/workflows/ci.yml/badge.svg)](https://github.com/santoshjammi29/pyspark-handbook/actions)
-[![Apache Spark](https://img.shields.io/badge/Apache_Spark-3.5%2B-E25A1C?style=flat-square&logo=apachespark&logoColor=white)](https://spark.apache.org/)
+[![Apache Spark](https://img.shields.io/badge/Apache_Spark-3.5%2B_--_4.0-E25A1C?style=flat-square&logo=apachespark&logoColor=white)](https://spark.apache.org/)
 [![Databricks](https://img.shields.io/badge/Databricks-Runtime_15.4%2B_LTS-FF3621?style=flat-square&logo=databricks&logoColor=white)](https://www.databricks.com/)
 [![Delta Lake](https://img.shields.io/badge/Delta_Lake-3.2_ACID-00ADD8?style=flat-square&logo=delta&logoColor=white)](https://delta.io/)
 [![Python](https://img.shields.io/badge/Python-3.9_--_3.12-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![DABs](https://img.shields.io/badge/Deploy-Databricks_Asset_Bundles-008080?style=flat-square&logo=databricks&logoColor=white)](databricks.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
 
-*The definitive enterprise reference repository of 105 battle-tested Apache Spark & Databricks Lakehouse coding use cases.*  
-*Structured in the official **Databricks Source Notebook format (`.py`)** for seamless 1-click sync with **Databricks Repos / Git Folders**, **Databricks Asset Bundles (DABs)**, **VS Code**, and local PySpark / CI runtimes.*
+*The definitive enterprise reference repository of 105 battle-tested Apache Spark & Databricks Lakehouse coding use cases, architectural blueprints, disaster recovery incident runbooks, and 4-tier technical interview preparation guide.*  
+*Structured in the official **Databricks Source Notebook format (`.py`)** for seamless 1-click sync with **Databricks Repos / Git Folders**, **Databricks Asset Bundles (DABs)**, **VS Code / Databricks Connect v2**, and CI/CD runtimes.*
 
-[Curriculum Overview](#-curriculum-overview) • [Lakehouse Architecture](#-lakehouse-architecture) • [Quickstart](#-quickstart) • [DAB Deployment](#-production-deployment-with-dabs) • [Interview Matrix](#-senior-data-engineer-interview-matrix) • [Cheat Sheet](#-performance-tuning-cheat-sheet)
+[Curriculum Overview](#-curriculum-overview) • [Lakehouse Architecture](#-lakehouse-architecture) • [Whiteboard Blueprints](#-whiteboard-blueprints) • [Interactive CLI](#-interactive-cli-explorer) • [Quickstart](#-quickstart) • [Architectures](#️-architectural-deep-dives) • [Runbooks](#-production-incident-runbooks) • [Interview Matrix](#-4-tier-interview-preparation-matrix) • [Sister Repositories](#-sister-repositories--knowledge-base)
 
 ---
 
@@ -237,6 +238,7 @@ This repository provides **105 end-to-end, runnable, modular use cases** coverin
 - **Lakehouse Storage & ACID Transactions:** Delta Lake transaction log, MERGE INTO, Time Travel, VACUUM, and Liquid Clustering (`CLUSTER BY`).
 - **Streaming & Ingestion:** Databricks Auto Loader (`cloudFiles`), event-time watermarking, stream-stream joins, and Dead Letter Queues (DLQ).
 - **Enterprise Governance & DevOps:** Unity Catalog 3-tier namespace, Row Filters, Dynamic Column Masking, and Databricks Asset Bundles (DABs) IaC.
+- **Operational Triage & Reliability:** 6 production incident runbooks covering Driver/Executor OOMs, Shuffle Disk Spill, Skew Salting, State Store Leaks, and PyArrow serialization crashes.
 
 ---
 
@@ -271,289 +273,141 @@ flowchart LR
 
 ---
 
-### 2. Databricks Unity Catalog 3-Tier Governance Namespace
+## 🖼️ Whiteboard Blueprints
 
-```mermaid
-flowchart TD
-    UC["Unity Catalog Metastore<br/><i>(Centralized Governance, Lineage & Access Control)</i>"]
-
-    subgraph Catalogs["Catalogs"]
-        C1["dev_catalog"]
-        C2["staging_catalog"]
-        C3["prod_catalog"]
-    end
-
-    subgraph Schemas["Schemas"]
-        S1["raw_ingest"]
-        S2["silver_conformed"]
-        S3["gold_analytics"]
-    end
-
-    subgraph Objects["Securable Objects"]
-        O1["Managed & External Tables"]
-        O2["Managed & External Volumes"]
-        O3["Row Filters & Dynamic Column Masks"]
-        O4["Registered Models & Functions"]
-    end
-
-    UC --> C1 & C2 & C3
-    C3 --> S1 & S2 & S3
-    S2 --> O1 & O2 & O3 & O4
-```
+The repository includes **52 publication-grade architectural whiteboard blueprints** mirrored under `assets/whiteboards/` and cataloged in [docs/whiteboard_diagrams/README.md](docs/whiteboard_diagrams/README.md), illustrating:
+- **Catalyst Optimizer & Photon Engine** execution pipelines
+- **Spark Unified Memory Pool** (Execution vs Storage dynamic borrowing)
+- **Shuffle Skew & Two-Phase Salting** distribution flows
+- **Structured Streaming RocksDB** state store and watermark lifecycles
+- **Delta Lake 3.x ACID** transaction log mechanics and Liquid Clustering
 
 ---
 
-### 3. Spark Catalyst Optimization & Adaptive Query Execution (AQE)
+## 💻 Interactive CLI Explorer
 
-```mermaid
-flowchart TD
-    API["SQL Query / DataFrame API"] --> ULP["Unresolved Logical Plan"]
-    ULP -->|"Analyzer + Catalog"| RLP["Resolved Logical Plan"]
-    RLP -->|"Optimizer (Predicate Pushdown, Pruning)"| OLP["Optimized Logical Plan"]
-    OLP -->|"Planner (Cost Model)"| PP["Selected Physical Plan"]
-    PP -->|"Whole-Stage CodeGen"| RDD["Tungsten / RDD Bytecode Execution"]
-    RDD -.->|"Runtime Shuffle Stats"| AQE["Adaptive Query Execution (AQE)<br/>• Dynamic Partition Coalescing<br/>• SortMergeJoin to BroadcastHashJoin<br/>• Skew Join Optimization"]
+Explore recipes, search code patterns, inspect incident runbooks, and study interview guides directly from your terminal:
+
+```bash
+# Search by recipe number (e.g. Recipe 025: Window Functions)
+python scripts/interactive_shell.py 025
+
+# Search by topic or concept keyword
+python scripts/interactive_shell.py "pandas udf"
+python scripts/interactive_shell.py "two phase salting"
+
+# List all available recipes, runbooks, and interview tiers
+python scripts/interactive_shell.py --list
+python scripts/interactive_shell.py --runbooks
+python scripts/interactive_shell.py --architectures
+python scripts/interactive_shell.py --interview
 ```
 
 ---
 
 ## 🚀 Quickstart
 
-### Option 1: 1-Click Sync into Databricks Workspaces
-Every notebook is written in the native Databricks `.py` format (`# Databricks notebook source`):
-1. In your **Databricks Workspace**, navigate to **Workspace** > **Repos** (or **Git Folders**).
-2. Click **Add Repo** (or **Create Git Folder**) and enter:
-   ```text
-   https://github.com/santoshjammi29/pyspark-handbook.git
-   ```
-3. Open any notebook under `notebooks/`, attach an active cluster, and click **Run All**!
+### Prerequisites
+- Python 3.9, 3.10, 3.11, or 3.12
+- PySpark 3.5.0+ (`pip install -r requirements.txt`)
+- Java 11 or 17 (required for local Spark execution)
 
----
-
-### Option 2: Local Execution in VS Code or Terminal
-Each notebook auto-detects its environment; if run locally without an active cluster, it automatically bootstraps a local SparkSession with Delta Lake support:
-
+### 1. Clone the Repository
 ```bash
-# 1. Clone repository
 git clone https://github.com/santoshjammi29/pyspark-handbook.git
 cd pyspark-handbook
+```
 
-# 2. Set up virtual environment & install dependencies
-python3 -m venv venv && source venv/bin/activate
+### 2. Local Environment Setup
+```bash
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
+```
 
-# 3. Execute any notebook directly as a standard Python script
-python notebooks/01_core_dataframe_api/001_sparksession_initialization_and_dataframe_creation_strategies.py
+### 3. Run Validation Tests
+```bash
+python scripts/run_tests.py
 ```
 
 ---
 
-## 🧭 Curriculum Overview
+## 🗺️ Curriculum Overview
 
-Click any module below to inspect its individual notebooks, real-world business scenarios, and architectural takeaways:
+The 105 recipes progress systematically across **4 difficulty tiers**:
+- **Level 100 (Beginner):** Core DataFrame transformations, StructType schemas, basic actions, file I/O.
+- **Level 200 (Intermediate):** Complex types, explode, analytical window functions, Auto Loader ingestion.
+- **Level 300 (Advanced):** Catalyst plan inspection, AQE skew join optimization, stateful streaming watermarks.
+- **Level 400 (Principal/Architect):** Memory sizing calculations, disaster recovery, end-to-end multi-tenant capstones.
 
-| Learning Track & Module | Range | Level | Core Topics & Architectural Coverage |
+| Module | Recipes | Difficulty | Core Topics & Competencies |
 | :--- | :---: | :---: | :--- |
 {nav_table_md}
 
 ---
 
-## 📚 Master Curriculum Catalog (105 Use Cases)
+## 📚 Complete 105 Recipe Catalog
 
-{detailed_catalog_md}
-
----
-
-## 📦 Production Deployment with DABs
-
-This repository natively integrates **Databricks Asset Bundles (DABs)** — the declarative standard for Infrastructure as Code (IaC) across Databricks environments.
-
-### DAB Deployment Flow
-
-```mermaid
-flowchart LR
-    subgraph Dev["Developer Environment"]
-        DAB["databricks.yml<br/>resources/*.yml<br/>notebooks/"]
-    end
-
-    subgraph CI["GitHub Actions CI/CD"]
-        PR["PR: bundle validate -t dev"]
-        Merge["Merge: bundle deploy -t staging"]
-        Release["Tag: bundle deploy -t prod"]
-    end
-
-    subgraph Workspaces["Databricks Lakehouse"]
-        W_dev["Dev Sandbox<br/>/Users/${{user}}/.bundle/"]
-        W_stage["Staging Workspace<br/>Automated Testing"]
-        W_prod["Production Workspace<br/>Service Principal (OAuth M2M)"]
-    end
-
-    Dev --> PR
-    PR --> Merge --> Release
-    Dev -.->|"bundle deploy -t dev"| W_dev
-    Merge --> W_stage
-    Release --> W_prod
-```
-
-### Deployed Resource Specifications
-
-All resources are defined declaratively in [`resources/`](resources/) and root [`databricks.yml`](databricks.yml):
-
-| Object Type | Resource Config | Production Behavior & SLA |
-|:---|:---|:---|
-| ⚡ **Multi-Task Workflows & Jobs** | [`resources/jobs.yml`](resources/jobs.yml) | Multi-stage orchestration DAG: Auto Loader ingestion → JSON quarantine → SCD Type 2 dimension merge → Salting join → Gold rollup → Pipeline audit. Includes autoscaling clusters, AQE tuning, retry policies, and email alerts. |
-| 🧱 **Delta Live Tables (DLT) Pipelines** | [`resources/dlt_pipelines.yml`](resources/dlt_pipelines.yml) | Declarative medallion ETL pipeline implementing data quality expectations (`@dlt.expect`, `@dlt.expect_or_drop`), Photon engine acceleration, and continuous/triggered lakehouse ingestion. |
-| 🏛️ **Unity Catalog Schemas & Volumes** | [`resources/unity_catalog.yml`](resources/unity_catalog.yml) | Provisions conformed schemas (`${{var.catalog}}.${{var.schema}}`) and managed volumes (`raw_landing` for landing files and `streaming_checkpoints` for state storage). |
-| 🤖 **Serverless Model Serving** | [`resources/model_serving.yml`](resources/model_serving.yml) | Deploys scalable REST endpoints for Unity Catalog registered models (`credit_card_fraud_model`) with automatic scale-to-zero capabilities for cost efficiency. |
-| 📱 **Databricks Apps** | [`resources/apps.yml`](resources/apps.yml) | Deploys the Lakehouse Quality & Cost Monitor Streamlit app ([`apps/lakehouse_monitor/`](apps/lakehouse_monitor/)) directly onto Databricks serverless compute with workspace SSO. |
-| 📊 **AI/BI Lakeview Dashboards** | [`resources/dashboards.yml`](resources/dashboards.yml) | Declarative executive analytics dashboard synchronized into workspace paths as version-controlled code. |
-
-### Quick DAB Commands
-
-```bash
-# Validate bundle configurations across environments
-databricks bundle validate -t dev
-
-# Deploy to your isolated personal development sandbox
-databricks bundle deploy -t dev
-
-# Run the master pipeline on-demand
-databricks bundle run pyspark_handbook_master_pipeline -t dev
-
-# Clean up all deployed sandbox resources
-databricks bundle destroy -t dev
-```
+{collapsible_catalog_md}
 
 ---
 
-## 🎯 Senior Data Engineer Interview Matrix
+## 🏛️ Architectural Deep Dives
 
-Common production challenges mapped directly to their reference notebook implementations:
+Four production-tested architectural specifications located under `architectures/`:
 
-| Interview Topic & Challenge | Core Technical Problem | Architectural Solution | Reference Notebook |
-|:---|:---|:---|:---:|
-| **Severe Data Skew in Distributed Joins** | One partition holds 90% of data, straggler tasks trigger job timeouts. | Key salting, synthetic repartitioning, and two-stage skew aggregation. | [`076_data_skew_mitigation`](notebooks/08_performance_and_tuning/076_data_skew_detection_and_mitigation_using_salting_and_two_stage_joins.py) |
-| **ACID Concurrency & Write Conflicts** | Concurrent batch updates and streaming writes cause `ConcurrentAppendException`. | Optimistic Concurrency Control (OCC), transaction log mechanics, and partition isolation. | [`034_acid_crud_operations`](notebooks/04_delta_lake_and_acid/034_acid_crud_operations_on_delta_insert_update_and_delete_mechanics.py) |
-| **SCD Type 2 Historical Tracking** | Track point-in-time attribute changes without rewriting whole tables. | Two-stage Delta `MERGE INTO` with effective date intervals and `is_current` flags. | [`069_scd_type_2_tracking`](notebooks/07_lakehouse_modeling_scd/069_slowly_changing_dimension_type_2_scd_type_2_historical_tracking_with_effective_dates.py) |
-| **Streaming Late-Arriving Data & Watermarks** | Real-time streams receive delayed events; unbounded state memory growth. | Event-time watermarking with appropriate drop tolerances and window aggregations. | [`056_streaming_watermarking`](notebooks/06_streaming_realtime/056_streaming_window_aggregations_and_watermarking_for_late_arriving_events.py) |
-| **Incremental File Ingestion at Scale** | S3/ADLS bucket with 1,000,000+ files causes file listing timeouts. | Databricks Auto Loader (`cloudFiles`) with RocksDB state and checkpointing. | [`048_auto_loader_cloudfiles`](notebooks/05_data_ingestion_autoloader/048_databricks_auto_loader_directory_mode_cloudfiles_schema_inference_and_checkpointing.py) |
-| **Adaptive Query Execution (AQE) Dynamic Tuning** | Static Spark configurations fail to adapt to unpredictable runtime shuffle sizes. | AQE dynamic shuffle partition coalescing, join switching, and skew joins. | [`075_adaptive_query_execution`](notebooks/08_performance_and_tuning/075_adaptive_query_execution_aqe_dynamic_coalescing_join_switching_and_skew_joins.py) |
-| **Fine-Grained Governance & PII Protection** | Multi-tenant users require dynamic masking for PII without duplicate tables. | Unity Catalog Row Filters and Dynamic Column Masking functions. | [`089_dynamic_column_masking`](notebooks/09_unity_catalog_and_security/089_dynamic_column_masking_for_pii_protection_and_compliance.py) |
-| **Delta Lake Small Files & Compaction** | Thousands of micro-batch commits degrade query planning and metadata I/O. | Bin-packing compaction, `OPTIMIZE`, `auto_compaction`, and `VACUUM`. | [`038_delta_optimize_compaction`](notebooks/04_delta_lake_and_acid/038_delta_optimize_file_compaction_and_auto_compaction_strategies.py) |
+| Spec ID | Document Title | Target Level | Core Architectural Focus |
+| :---: | :--- | :---: | :--- |
+| **01** | **[The Catalyst Optimizer & Project Tungsten](architectures/01_catalyst_optimizer_and_tungsten_engine.md)** | `Level 300-400` | Query optimization pipeline, UnsafeRow binary format, Whole-Stage Code Generation, and CPU register-level execution. |
+| **02** | **[Unified Memory Management & Spill Mechanics](architectures/02_spark_unified_memory_management_and_spill_mechanics.md)** | `Level 300-400` | JVM Heap partitioning, Execution vs Storage dynamic borrowing, Tungsten disk spill math, and G1GC configuration. |
+| **03** | **[Adaptive Query Execution (AQE) Deep Dive](architectures/03_adaptive_query_execution_aqe_deep_dive.md)** | `Level 300-400` | Dynamic partition coalescing, runtime join switching to BHJ, and automatic partition splitting for skewed joins. |
+| **04** | **[Structured Streaming & Stateful Stream Processing](architectures/04_structured_streaming_and_stateful_stream_processing.md)** | `Level 300-400` | Micro-batch vs continuous processing, event-time watermarking, RocksDB off-heap state store, and WAL exactly-once semantics. |
 
 ---
 
-## ⚡ Performance Tuning Cheat Sheet
+## 🚨 Production Incident Runbooks
 
-### 1. Salting Skewed Keys in PySpark
-```python
-import pyspark.sql.functions as F
+Six operational disaster recovery runbooks located under `runbooks/`:
 
-SALT_BUCKETS = 8
-
-# Step 1: Add salt to skewed DataFrame
-df_salted = df_large.withColumn("salt", F.concat(F.col("skewed_key"), F.lit("_"), F.floor(F.rand() * SALT_BUCKETS)))
-
-# Step 2: Replicate the lookup dimension table to match salt keys
-df_lookup_replicated = (
-    df_small
-    .withColumn("salt_array", F.array([F.lit(i) for i in range(SALT_BUCKETS)]))
-    .withColumn("salt_id", F.explode("salt_array"))
-    .withColumn("salt", F.concat(F.col("join_key"), F.lit("_"), F.col("salt_id")))
-)
-
-# Step 3: Perform balanced join
-df_result = df_salted.join(df_lookup_replicated, on="salt", how="inner")
-```
-
-### 2. Production AQE Configurations (Apache Spark 3.5+)
-```python
-# Essential production configurations for Apache Spark 3.5+
-spark.conf.set("spark.sql.adaptive.enabled", "true")
-spark.conf.set("spark.sql.adaptive.coalescePartitions.enabled", "true")
-spark.conf.set("spark.sql.adaptive.skewJoin.enabled", "true")
-spark.conf.set("spark.sql.adaptive.autoBroadcastJoinThreshold", "67108864")  # 64MB
-```
+| Runbook ID | Title & Direct Link | Severity | Root Cause & Remediation Focus |
+| :---: | :--- | :---: | :--- |
+| **01** | **[Driver & Executor OOM Triage](runbooks/01_driver_and_executor_oom_triage.md)** | `SEV-1` | Resolve `java.lang.OutOfMemoryError`, container killed by YARN/K8s (Exit code 137), `.collect()` traps, and overhead sizing. |
+| **02** | **[Tungsten Shuffle Spill & Partition Sizing](runbooks/02_shuffle_spill_and_partition_sizing.md)** | `SEV-2` | Eliminate massive `Spill (Disk)` using dynamic partition calculation (150MB target rule) and AQE partition coalescing. |
+| **03** | **[Data Skew & Two-Phase Salting](runbooks/03_data_skew_and_two_phase_salting.md)** | `SEV-1` | Triage single straggler tasks stuck at 99%, null key accumulation, and implement two-phase key salting with exploded lookups. |
+| **04** | **[Streaming State Store Leaks & Watermark Drops](runbooks/04_streaming_state_store_and_watermark_drops.md)** | `SEV-1` | Stop state store memory leaks via event-time watermarking, switch to RocksDB, and recover from checkpoint corruption. |
+| **05** | **[Delta ACID Concurrency & Metadata Triage](runbooks/05_delta_acid_concurrency_and_metadata_bottlenecks.md)** | `SEV-2` | Resolve `ConcurrentModificationException`, eliminate small file latency via `OPTIMIZE` and Liquid Clustering, and tune `VACUUM`. |
+| **06** | **[PyArrow Serialization & Worker Crashes](runbooks/06_pandas_udf_arrow_serialization_and_gc_pauses.md)** | `SEV-2` | Fix Python daemon crashes, tune `spark.sql.execution.arrow.maxRecordsPerBatch`, and eliminate JVM GC overhead. |
 
 ---
 
-## 📂 Repository Structure
+## 🎓 4-Tier Interview Preparation Matrix
 
-```
-pyspark-handbook/
-├── .github/workflows/
-│   ├── ci.yml                     # Automated GitHub Actions CI workflow
-│   └── deploy_bundles.yml         # Databricks Asset Bundles (DAB) CI/CD deployment
-├── apps/
-│   └── lakehouse_monitor/         # Databricks App: Streamlit Lakehouse monitor
-├── notebooks/                     # 105 Databricks .py notebooks across 10 modules
-│   ├── 01_core_dataframe_api/     # 001 - 012: Core DataFrame API, Schemas, Arrow Pandas UDFs
-│   ├── 02_complex_data_types/     # 013 - 022: Arrays, Higher-Order Functions, Nested Structs, JSON
-│   ├── 03_sql_and_window_functions/ # 023 - 032: OLAP Cubes, Pivots, Window Functions, Joins
-│   ├── 04_delta_lake_and_acid/    # 033 - 043: Transaction Log, ACID CRUD, MERGE, Time Travel
-│   ├── 05_data_ingestion_autoloader/ # 044 - 053: Auto Loader, Rescued Data, Parallel JDBC
-│   ├── 06_streaming_realtime/     # 054 - 063: Structured Streaming, Triggers, Watermarks, DLQ
-│   ├── 07_lakehouse_modeling_scd/ # 064 - 073: Medallion Architecture, SCD 1/2/3/4, Debezium CDC
-│   ├── 08_performance_and_tuning/ # 074 - 085: Catalyst Optimizer, AQE, Salting Skew, OOM Fixes
-│   ├── 09_unity_catalog_and_security/ # 086 - 095: 3-Tier Namespace, Volumes, RLS, Column Masking
-│   └── 10_end_to_end_projects/    # 096 - 105: Finance Fraud, Retail, Healthcare, IoT, RAG
-├── resources/                     # Databricks Asset Bundle (DAB) definitions
-│   ├── apps.yml                   # Databricks Apps resource specification
-│   ├── dashboards.yml             # Lakeview AI/BI dashboards specification
-│   ├── dlt_pipelines.yml          # Delta Live Tables (DLT) declarative pipelines
-│   ├── jobs.yml                   # Multi-task orchestration workflows & clusters
-│   ├── model_serving.yml          # Serverless real-time model serving endpoints
-│   └── unity_catalog.yml          # Unity Catalog schemas, volumes, and grants
-├── scripts/
-│   ├── generate_readme.py         # Rebuilds the GitHub master catalog and documentation
-│   ├── validate_notebooks.py      # Structural integrity, syntax, and compliance checker
-│   └── export_to_ipynb.py         # Converts .py notebooks to Jupyter .ipynb format
-├── tests/
-│   ├── test_bundle_integrity.py   # Validates DAB configs, resources, and object paths
-│   └── test_notebook_integrity.py # Automated integrity test suite (count, format, syntax)
-├── databricks.yml                 # Root Databricks Asset Bundle (DAB) configuration
-├── requirements.txt               # Production and local PySpark dependencies
-├── pyproject.toml
-├── LICENSE                        # MIT Open Source License
-└── README.md
-```
+Comprehensive technical interview guides and flashcard deck located under `interview/`:
+
+| Tier | Role Target | Core Focus Areas | Direct Link |
+| :---: | :--- | :--- | :---: |
+| **Tier 1** | **Junior & Associate PySpark Engineer** | SparkSession, DataFrame API, Lazy Evaluation, Narrow vs Wide Dependencies, Basic Aggregations, File Formats. | [`01_junior.md`](interview/01_junior_and_associate_pyspark_engineer.md) |
+| **Tier 2** | **Mid-Level Data Engineer** | Complex Types, Higher-Order Functions, Analytical Windows, PyArrow Pandas UDFs, Delta Lake ACID, Auto Loader. | [`02_mid_level.md`](interview/02_mid_level_data_engineer.md) |
+| **Tier 3** | **Senior Distributed Systems Engineer** | Catalyst Optimizer, Project Tungsten, Memory Pools & Spill Triage, AQE Skew Joins, Two-Phase Salting, Stateful Streaming. | [`03_senior.md`](interview/03_senior_distributed_systems_engineer.md) |
+| **Tier 4** | **Staff & Principal Spark Architect** | Cluster Sizing Formulas, Multi-Tenant Fair Queues, Geo-DR, Zero-Copy Lakehouse Federation, FinOps Compute Right-Sizing. | [`04_staff.md`](interview/04_staff_and_principal_spark_architect.md) |
+| **Deck** | **50 Rapid-Fire Flashcards** | 50 rapid-fire questions and answers across all 10 modules of the PySpark Handbook curriculum. | [`05_flashcards.md`](interview/05_flashcards_deck_50.md) |
 
 ---
 
-## 🧪 Automated Testing & Continuous Integration
+## 📦 Sister Repositories & Knowledge Base
 
-This repository enforces strict code quality and structural contracts on every commit via GitHub Actions:
-- **Notebook File Contract:** Exactly 105 `.py` Databricks notebooks must exist.
-- **Databricks Formatting:** Every notebook begins with `# Databricks notebook source` without empty prepended cells, uses valid `# COMMAND ----------` delimiters, and includes `# MAGIC %md` documentation.
-- **Zero Video / Extraneous References:** Verified completely free of video timestamps, video links, or external author references.
-- **AST Syntax Check:** All code blocks pass standard Python AST validation.
-
-```bash
-# Validate notebook format and AST compliance
-python scripts/validate_notebooks.py
-
-# Run integrity tests
-python tests/test_notebook_integrity.py
-```
-
----
-
-## 🤝 Contributing
-
-Contributions, feedback, and optimization recipes are warmly welcomed:
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/awesome-pyspark-recipe`)
-3. Commit your Changes (`git commit -m 'Add SCD2 PySpark implementation'`)
-4. Push to the Branch (`git push origin feature/awesome-pyspark-recipe`)
-5. Open a Pull Request
+- ⚡ **[The Databricks Handbook (105 Production Recipes)](https://github.com/santoshjammi29/databricks-handbook)**: 105 Databricks Data Intelligence Platform recipes, Unity Catalog governance, Delta 3.x, Lakeflow, and DABs.
+- ⚡ **[The SQL Handbook (105 Production Exercises)](https://github.com/santoshjammi29/sql-handbook)**: 105 production SQL exercises, query optimization recipes, MPP architectures, and incident runbooks.
+- 🌐 **[Modern Data Engineer Hub (`moderndataengineer.uk`)](https://github.com/santoshjammi29/moderndataengineer)**: Live production encyclopedia featuring 11,950+ verified assets, interactive simulators, and 52 whiteboard blueprints.
+- ☁️ **[Azure Enterprise Cheat Sheet](https://github.com/santoshjammi29/azure-cheat-sheet)**: Enterprise Azure architecture, networking, security, and governance.
 
 ---
 
 ## 📜 License
 
-This project is licensed under the **[MIT License](LICENSE)** — feel free to use it for personal study, enterprise lakehouse development, internal team training, and technical interview preparation.
+Distributed under the **[MIT License](LICENSE)** — feel free to use it for personal study, enterprise lakehouse development, internal team training, and technical interview preparation.
 
-Maintained with ❤️ by [Santosh Jammi](https://github.com/santoshjammi29)
+Maintained with ❤️ by [Santosh Jammi](https://github.com/santoshjammi29) (2026)
 """
 
     with open(base_dir / "README.md", "w", encoding="utf-8") as f:
