@@ -40,7 +40,7 @@
 | 5 | **PySpark Try-Cast Graceful Degradation** | 🟢<br>Easy | A fault-tolerant casting function returning NULL instead of terminating the Spark job when parsing corrupted data strings. |
 | 6 | **Resilient Distributed Dataset (RDD)** | 🟢<br>Easy | Spark's core abstraction representing a read-only, partitioned, fault-tolerant collection of elements. |
 | 7 | **SparkSession** | 🟢<br>Easy | The unified entry point for programming Apache Spark applications using DataFrames and SQL. |
-| 8 | **Temp Views & Global Temp Views** | 🟢<br>Easy | Scope: temp views live in the SparkSession, global temp views in `global_temp` and survive across notebooks on the same cluster. |
+| 8 | **Temp Views & Global Temp Views** | 🟢<br>Easy | Session-scoped and cluster-scoped virtual tables that provide temporary SQL query interfaces over DataFrames without persisting physical data files to storage. |
 | 9 | **Wide Transformation** | 🟢<br>Easy | A Spark transformation where each output partition may depend on multiple input partitions from different executors, requiring a full shuffle of data across the network. |
 | 10 | **Accumulator** | 🟡<br>Intermediate | A Spark shared variable that allows tasks running on executors to additively update a counter or collection, which the driver can then read — used for diagnostics and monitoring. |
 | 11 | **Adaptive Query Execution (AQE)** | 🟡<br>Intermediate | An optimization framework that dynamically adjusts Spark physical execution plans during runtime based on intermediate stage statistics. |
@@ -50,8 +50,8 @@
 | 15 | **Cache vs Persist Operations** | 🟡<br>Intermediate | DataFrame operations used to store intermediate execution results in memory or disk to avoid recalculations. |
 | 16 | **Catalyst Optimizer** | 🟡<br>Intermediate | The core query optimization engine powering Spark SQL and the DataFrame API. |
 | 17 | **coalesce() vs repartition()** | 🟡<br>Intermediate | Two Spark functions for changing partition count: coalesce() reduces partitions without a full shuffle by merging local partitions, while repartition() performs a full shuffle to evenly redistribute data across any number of partitions. |
-| 18 | **Complex Types: ARRAY, STRUCT, MAP** | 🟡<br>Intermediate | Creating and querying nested structures. |
-| 19 | **CTEs, PIVOT & Subqueries** | 🟡<br>Intermediate | Writing CTEs for readable multi-step queries. |
+| 18 | **Complex Types: ARRAY, STRUCT, MAP** | 🟡<br>Intermediate | Composite Spark SQL data types (ARRAY, STRUCT, MAP) representing hierarchical and nested data schemas, queried using dot-notation, array indexing, and higher-order functions. |
+| 19 | **CTEs, PIVOT & Subqueries** | 🟡<br>Intermediate | Advanced SQL query composition patterns—including Common Table Expressions, PIVOT aggregations, and subqueries—used to structure readable, modular, and optimized multi-step analytical transformations. |
 | 20 | **DAG & RDD Lineage** | 🟡<br>Intermediate | The logical execution graph tracking all transformations applied to a dataset to enable fault-tolerance. |
 | 21 | **DAG Scheduler** | 🟡<br>Intermediate | The high-level scheduling layer in Apache Spark that converts a logical DAG of RDD transformations into a physical execution plan of stages. |
 | 22 | **Databricks Cluster Policies** | 🟡<br>Intermediate | Databricks governance constructs that define JSON-based rules restricting or fixing cluster configuration parameters, enforced when users create new clusters in a workspace. |
@@ -64,11 +64,11 @@
 | 29 | **Delta Lake Time Travel** | 🟡<br>Intermediate | Delta Lake's ability to query or restore a table to any previous version or timestamp by replaying the transaction log to reconstruct the historical table state. |
 | 30 | **Dynamic Partition Overwrite** | 🟡<br>Intermediate | A Spark write mode that overwrites only the partitions present in the incoming DataFrame, leaving partitions not touched by the current write intact. |
 | 31 | **EXPLAIN Plan (Spark Query Plan)** | 🟡<br>Intermediate | A Spark debugging tool that displays the logical and physical execution plan for a DataFrame or SQL query, enabling engineers to verify optimisations, diagnose performance issues, and understand data flow. |
-| 32 | **foreachBatch Pattern** | 🟡<br>Intermediate | Using `foreachBatch()` to apply arbitrary batch logic to each micro-batch. |
-| 33 | **Higher-Order Functions** | 🟡<br>Intermediate | `transform()`, `filter()`, `exists()`, `aggregate()` for array manipulation without exploding. |
-| 34 | **Join Strategies** | 🟡<br>Intermediate | The three join types: broadcast hash join (small table fits in memory), sort-merge join (default for large-large), shuffle hash join (rare). |
+| 32 | **foreachBatch Pattern** | 🟡<br>Intermediate | A Structured Streaming sink API method that processes each micro-batch as a static DataFrame, enabling custom multi-table writes, MERGE upserts, and external API integrations. |
+| 33 | **Higher-Order Functions** | 🟡<br>Intermediate | Built-in Spark SQL functions (`transform`, `filter`, `exists`, `aggregate`) that manipulate nested arrays inline using anonymous lambda expressions without requiring expensive `explode()` operations. |
+| 34 | **Join Strategies** | 🟡<br>Intermediate | The physical execution algorithms selected by the Catalyst optimizer for distributed table joins, including Broadcast Hash Join (BHJ), Sort-Merge Join (SMJ), and Shuffle Hash Join (SHJ). |
 | 35 | **Lazy Evaluation** | 🟡<br>Intermediate | An execution strategy where Spark delays query executions until an action is explicitly requested. |
-| 36 | **Output Modes** | 🟡<br>Intermediate | Append (new rows only, default). |
+| 36 | **Output Modes** | 🟡<br>Intermediate | The streaming sink write configurations defining whether only newly processed rows are written (Append), the entire updated aggregation table is rewritten (Complete), or modified rows are updated in-place (Update). |
 | 37 | **Parquet Columnar Storage** | 🟡<br>Intermediate | An Apache Parquet file format that stores data column-by-column rather than row-by-row, enabling highly efficient compression and selective column reads for analytical workloads. |
 | 38 | **Partition Pruning** | 🟡<br>Intermediate | A Spark read optimisation that skips entire partition directories in storage when a query's WHERE clause exactly matches or narrows the partitioning key, avoiding unnecessary I/O. |
 | 39 | **Photon Engine (General)** | 🟡<br>Intermediate | A native, vectorized query engine written in C++ that accelerates execution speeds of Spark SQL and DataFrame workloads. |
@@ -76,24 +76,24 @@
 | 41 | **PySpark Pandas API on Spark (formerly Koalas)** | 🟡<br>Intermediate | A PySpark API that implements the pandas DataFrame interface on top of distributed Spark DataFrames, allowing pandas code to scale across a cluster with minimal code changes. |
 | 42 | **PySpark Vectorized Pandas UDF Architecture** | 🟡<br>Intermediate | Using Apache Arrow record batches to pass columnar data between the JVM and Python worker processes with high efficiency. |
 | 43 | **RDD Lineage Graph** | 🟡<br>Intermediate | The directed acyclic graph of transformations recorded for an RDD that allows Spark to reconstruct lost partitions by replaying only the transformations needed, rather than storing full data copies. |
-| 44 | **Reading the Spark UI** | 🟡<br>Intermediate | The tabs that matter: Jobs, Stages, Tasks, SQL. |
+| 44 | **Reading the Spark UI** | 🟡<br>Intermediate | The web-based performance monitoring and telemetry dashboard used to inspect execution plans, identify straggler tasks, detect memory spill, and profile shuffle I/O across Spark Jobs, Stages, and SQL DAGs. |
 | 45 | **Semi Join & Anti Join** | 🟡<br>Intermediate | Spark join types that filter the left table based on existence (semi) or non-existence (anti) of matching rows in the right table, without including right-side columns in the output. |
 | 46 | **Shuffle Hash Join vs. Sort Merge Join** | 🟡<br>Intermediate | The architectural trade-offs between sorting keys on disk (SMJ) versus building in-memory hash tables across partitions (SHJ). |
-| 47 | **Shuffle Operations** | 🟡<br>Intermediate | What triggers a shuffle (groupBy, join, repartition, distinct). |
+| 47 | **Shuffle Operations** | 🟡<br>Intermediate | The distributed physical data redistribution process across cluster executor nodes triggered by wide transformations such as `groupBy()`, `join()`, `distinct()`, and `repartition()`. |
 | 48 | **Spark AQE Dynamic Shuffle Partition Coalescing** | 🟡<br>Intermediate | A runtime optimization in Apache Spark 3.0+ that inspects post-shuffle partition sizes and automatically combines undersized partitions into target-sized task bundles. |
 | 49 | **Spark Broadcast Hash Join (BHJ)** | 🟡<br>Intermediate | A distributed join strategy in Apache Spark that distributes an entire small DataFrame to all executor nodes to eliminate costly shuffle operations. |
 | 50 | **Spark Connect (General)** | 🟡<br>Intermediate | A client-server gRPC architecture that decouples the Spark driver from local client applications and developer IDEs. |
 | 51 | **Spark Window Function** | 🟡<br>Intermediate | A Spark SQL operation that performs calculations across a set of rows logically related to the current row (a 'window'), without collapsing the result into a single aggregate row. |
 | 52 | **Stage Boundary** | 🟡<br>Intermediate | A stage boundary in Spark marks the point where a wide transformation (shuffle) separates two stages, requiring all tasks in the upstream stage to complete before the downstream stage begins. |
 | 53 | **Storage Level: MEMORY_AND_DISK** | 🟡<br>Intermediate | A Spark cache storage level that stores partitions in JVM heap memory and spills remaining partitions to local executor disk if memory is insufficient. |
-| 54 | **Stream-Static Joins** | 🟡<br>Intermediate | Joining streaming DataFrames with batch DataFrames. |
+| 54 | **Stream-Static Joins** | 🟡<br>Intermediate | A stateful stream enrichment pattern that joins real-time streaming DataFrames with static reference or dimensional tables without requiring unbounded streaming state retention. |
 | 55 | **StructType & Explicit Schema** | 🟡<br>Intermediate | The programmatic way to define the schema of a Spark DataFrame using StructType and StructField objects, avoiding the cost and risks of automatic schema inference from data. |
-| 56 | **Structured Streaming Fundamentals** | 🟡<br>Intermediate | How Structured Streaming on Databricks uses Delta Lake as both source and sink. |
-| 57 | **Table Constraints & Generated Columns** | 🟡<br>Intermediate | CHECK constraints, NOT NULL, PRIMARY KEY (informational), FOREIGN KEY (informational). |
+| 56 | **Structured Streaming Fundamentals** | 🟡<br>Intermediate | The scalable, fault-tolerant stream processing engine in Apache Spark that models streaming data as append-only unbounded tables, leveraging Delta Lake sources and sinks with exactly-once guarantees. |
+| 57 | **Table Constraints & Generated Columns** | 🟡<br>Intermediate | Declarative relational integrity rules—including CHECK constraints, NOT NULL requirements, and computed generated columns—enforced by Delta Lake at write time to guarantee table quality. |
 | 58 | **Task Scheduler** | 🟡<br>Intermediate | The low-level component in Apache Spark responsible for assigning individual tasks to executor cores and handling task retries and speculative execution. |
-| 59 | **UDFs vs. Native Functions** | 🟡<br>Intermediate | Why Python UDFs break Catalyst and force row-by-row execution. |
-| 60 | **VARIANT Type** | 🟡<br>Intermediate | Storing semi-structured data (JSON) in a native binary format. |
-| 61 | **Windowed Aggregations** | 🟡<br>Intermediate | Tumbling windows (fixed, non-overlapping), sliding windows (fixed, overlapping), session windows (gap-based). |
+| 59 | **UDFs vs. Native Functions** | 🟡<br>Intermediate | The architectural trade-offs between native Catalyst expressions and custom Python UDFs, highlighting serialization overhead, memory penalties, and whole-stage code generation boundaries. |
+| 60 | **VARIANT Type** | 🟡<br>Intermediate | A native binary data type in Databricks and Spark designed to efficiently store semi-structured JSON data with sub-column shredding, indexing, and high-performance query execution. |
+| 61 | **Windowed Aggregations** | 🟡<br>Intermediate | Time-based streaming aggregations computed over fixed non-overlapping intervals (tumbling windows) or overlapping periodic intervals (sliding windows) bounded by event-time watermarks. |
 | 62 | **AQE Dynamic Join Strategy Switching** | 🔴<br>Advanced | A runtime optimization in Adaptive Query Execution that converts planned SortMergeJoins into BroadcastHashJoins based on post-shuffle partition size statistics. |
 | 63 | **AQE Dynamic Skew Join Splitting** | 🔴<br>Advanced | An AQE optimization that automatically identifies skewed shuffle partitions at runtime and splits them into smaller sub-partitions to balance executor workload. |
 | 64 | **AQE Shuffle Partition Coalescing** | 🔴<br>Advanced | An Adaptive Query Execution feature that merges small post-shuffle partitions at runtime into larger ones, eliminating the small-file and task-overhead problem from over-partitioning. |
@@ -102,7 +102,7 @@
 | 67 | **Catalyst Optimizer — Analysis Phase** | 🔴<br>Advanced | The first phase of Spark's Catalyst Optimizer where unresolved logical plans are validated against the catalog to produce a resolved logical plan. |
 | 68 | **Catalyst Optimizer — Physical Planning** | 🔴<br>Advanced | The phase of Spark's Catalyst Optimizer that selects the most efficient physical execution strategy from multiple candidate plans using a cost model. |
 | 69 | **Data Skew & Salt Keys** | 🔴<br>Advanced | A performance bottleneck where a few data partitions hold disproportionately more records, resolved by adding random salt keys. |
-| 70 | **Data Skew: Detection & Mitigation** | 🔴<br>Advanced | Recognizing skew in Spark UI (one task takes 10x longer). |
+| 70 | **Data Skew: Detection & Mitigation** | 🔴<br>Advanced | The process of diagnosing uneven record distributions across executor partitions using Spark UI percentiles, resolved via Adaptive Query Execution (AQE) skew join splitting or two-phase key salting. |
 | 71 | **Databricks Auto Loader** | 🔴<br>Advanced | A Databricks-native structured streaming source that incrementally ingests new files from cloud storage (S3/ADLS/GCS) as they arrive, using directory listing or file notification events to detect new files efficiently at scale. |
 | 72 | **Delta Lake Change Data Feed (CDF)** | 🔴<br>Advanced | A Delta Lake feature that records row-level change events (INSERT, UPDATE_PREIMAGE, UPDATE_POSTIMAGE, DELETE) in a special column, enabling downstream systems to consume only changed rows. |
 | 73 | **Delta Lake Data Skipping** | 🔴<br>Advanced | A Delta Lake read optimisation that uses per-file min/max column statistics stored in the transaction log to skip Parquet files entirely when their value ranges cannot contain query filter values. |
@@ -117,9 +117,9 @@
 | 82 | **External Shuffle Service** | 🔴<br>Advanced | A long-running service on each worker node that serves shuffle blocks independently of executor JVM processes, allowing executors to be removed during dynamic scaling without losing shuffle data. |
 | 83 | **G1GC Garbage Collector in Spark** | 🔴<br>Advanced | The Garbage-First (G1) GC is the recommended JVM garbage collector for Spark executors, offering predictable pause times and better heap region management than the older ParallelGC. |
 | 84 | **G1GC Garbage Collector Tuning in Spark** | 🔴<br>Advanced | Configuring the Garbage-First Garbage Collector (`-XX:+UseG1GC`) for low-pause heap reclamation in large Spark executors. |
-| 85 | **Memory Management & Spill** | 🔴<br>Advanced | The unified memory model (execution + storage pool). |
+| 85 | **Memory Management & Spill** | 🔴<br>Advanced | The Spark Unified Memory architecture that dynamically shares RAM between Execution (shuffles/joins) and Storage (caching), spilling in-memory buffers to disk when executor memory limits are exceeded. |
 | 86 | **Memory Spill to Disk** | 🔴<br>Advanced | A performance degradation state where Spark runs out of executor RAM and writes execution buffers to disk. |
-| 87 | **MERGE INTO & Upsert Patterns** | 🔴<br>Advanced | The MERGE syntax for insert/update/delete in one statement. |
+| 87 | **MERGE INTO & Upsert Patterns** | 🔴<br>Advanced | The atomic `MERGE INTO` SQL operation used to coordinate simultaneous INSERT, UPDATE, and DELETE actions between source and target Delta tables in a single ACID transaction. |
 | 88 | **Off-Heap Memory** | 🔴<br>Advanced | Memory allocated outside the JVM heap using native OS memory, bypassing garbage collection entirely and managed explicitly by Project Tungsten's memory manager. |
 | 89 | **Pandas UDF — GROUPED_MAP Type** | 🔴<br>Advanced | A PySpark UDF pattern that receives an entire partition group (keyed by groupBy columns) as a Pandas DataFrame, applies arbitrary Python/Pandas logic, and returns a Pandas DataFrame — enabling per-group custom transformations. |
 | 90 | **Pandas UDF — SCALAR Type** | 🔴<br>Advanced | A vectorised PySpark UDF that receives a batch of column values as a Pandas Series, applies a Python function, and returns a Pandas Series — using Apache Arrow for efficient zero-copy data transfer. |
@@ -136,14 +136,14 @@
 | 101 | **Spark Tungsten Off-Heap Memory Model** | 🔴<br>Advanced | Project Tungsten's memory management system that allocates binary row representations directly in C-style off-heap memory using sun.misc.Unsafe. |
 | 102 | **Speculative Execution** | 🔴<br>Advanced | A Spark fault-tolerance feature that launches a duplicate copy of a slow (straggler) task on another executor, using whichever copy finishes first and killing the other. |
 | 103 | **Spill to Disk** | 🔴<br>Advanced | The mechanism by which Spark writes in-progress shuffle or sort buffers to executor local disk when execution memory is insufficient to hold all intermediate records. |
-| 104 | **Stream-Stream Joins** | 🔴<br>Advanced | Joining two streaming DataFrames. |
+| 104 | **Stream-Stream Joins** | 🔴<br>Advanced | A bidirectional stateful join between two continuous real-time data streams requiring event-time watermarking and time-interval constraints on both sides to bound in-memory state buffer growth. |
 | 105 | **Structured Streaming Checkpoint** | 🔴<br>Advanced | A directory on durable storage where Spark Structured Streaming records the state of a streaming query — including offsets consumed and micro-batch progress — enabling recovery after failures without reprocessing. |
 | 106 | **Structured Streaming Watermark** | 🔴<br>Advanced | A Spark Structured Streaming mechanism that defines how late an event can arrive and still be included in a windowed aggregation, enabling Spark to clean up state for windows that are no longer expected to receive late data. |
 | 107 | **Task Duration Skew Detection** | 🔴<br>Advanced | Using Spark Web UI task duration percentiles (75th vs Max) to diagnose unbalanced partition distributions. |
 | 108 | **Tungsten Binary Row Format (UnsafeRow)** | 🔴<br>Advanced | Apache Spark's off-heap binary row format that stores data as raw bytes using sun.misc.Unsafe, bypassing JVM object overhead and enabling cache-efficient processing. |
 | 109 | **Tungsten Engine** | 🔴<br>Advanced | Spark's physical execution optimizer that manages memory directly using raw off-heap byte arrays. |
 | 110 | **Unity Catalog (General)** | 🔴<br>Advanced | A unified governance and catalog system for files, tables, dashboards, and notebooks across Databricks workspaces. |
-| 111 | **Watermarks & Late Data** | 🔴<br>Advanced | How `withWatermark()` bounds how late data can arrive. |
+| 111 | **Watermarks & Late Data** | 🔴<br>Advanced | A streaming state management mechanism (`withWatermark()`) that specifies the maximum allowable delay for incoming events, permitting Spark to evict expired state from memory. |
 | 112 | **Whole-Stage Code Generation** | 🔴<br>Advanced | A Project Tungsten optimisation that compiles an entire pipeline of Spark operators into a single Java function, eliminating virtual function dispatch overhead and enabling JIT optimisation. |
 | 113 | **Whole-Stage Code Generation (Tungsten)** | 🔴<br>Advanced | Collapsing an entire physical query execution stage of multiple operators into a single optimized Java bytecode loop. |
 | 114 | **Adaptive Query Execution (AQE) Runtime Optimization** | 🟣<br>Architect | Dynamic query re-optimization framework in Apache Spark inspecting physical shuffle statistics at stage boundaries to re-plan execution plans on the fly. |
