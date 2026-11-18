@@ -55,10 +55,10 @@ df.groupBy("join_key").count().orderBy(col("count").desc()).limit(5).show()
 - **Remediation & Recovery Strategy**:
   1. If null keys can never join to the dimension table, isolate or randomize null keys before the join:
      ```python
-     # ❌ BAD: Nulls hash to one partition
+     # ❌ Trap: Nulls hash to single partition
      joined_df = orders.join(customers, "customer_id", "left")
      
-     # ✅ PRODUCTION REMEDIATION: Assign pseudo-random keys to NULLs
+     # ✅ Randomize null join keys
      from pyspark.sql.functions import col, when, rand, concat, lit
      
      orders_fixed = orders.withColumn(
@@ -80,18 +80,18 @@ from pyspark.sql.functions import col, lit, explode, array, rand, floor, concat
 
 SALT_FACTOR = 16  # Distribute hot key across 16 parallel tasks
 
-# 1. Salt the massive skewed fact table (adds random salt suffix: "KEY_0" .. "KEY_15")
+# Salt fact table with random key [0..15]
 orders_salted = orders.withColumn(
     "salted_key",
     concat(col("merchant_id"), lit("_"), floor(rand() * SALT_FACTOR))
 )
 
-# 2. Replicate the smaller dimension table by the salt factor array [0, 1, ..., 15]
+# Replicate dimension table across salt keys
 salt_array = array([lit(i) for i in range(SALT_FACTOR)])
 merchants_replicated = merchants.withColumn("salt_number", explode(salt_array)) \
                                 .withColumn("salted_key", concat(col("merchant_id"), lit("_"), col("salt_number")))
 
-# 3. Perform the join on the salted key with zero skew!
+# Balanced equi-join on salted key
 joined_result = orders_salted.join(
     merchants_replicated,
     on="salted_key",

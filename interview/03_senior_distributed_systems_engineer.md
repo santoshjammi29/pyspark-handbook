@@ -14,11 +14,11 @@ Atomic upsert (insert, update, delete) operations inside Delta tables. Crucial f
 ```python
 import logging
 
-# Configure pipeline logger
+# Init pipeline logger
 logger = logging.getLogger("MedallionPipeline")
 
 try:
-    # Target Delta table representation
+    # Reference target Delta table
     target_table_path = "abfss://silver@euadlsprod.dfs.core.windows.net/customers"
     
     # Load source staging updates
@@ -71,7 +71,7 @@ Enabling and querying row-level change propagation logs in Delta tables. Allows 
 ```python
 import logging
 
-# Configure pipeline logger
+# Init pipeline logger
 logger = logging.getLogger("MedallionPipeline")
 
 try:
@@ -116,7 +116,7 @@ Eliminating network shuffle stages when joining a large table with a small refer
 ```python
 import logging
 
-# Configure pipeline logger
+# Init pipeline logger
 logger = logging.getLogger("MedallionPipeline")
 
 try:
@@ -162,7 +162,7 @@ Caching intermediate DataFrames in executor memory or disk. This avoids re-evalu
 ```python
 import logging
 
-# Configure pipeline logger
+# Init pipeline logger
 logger = logging.getLogger("MedallionPipeline")
 
 try:
@@ -210,7 +210,7 @@ Managing the degree of parallelism and layout of partitions in memory. Explains 
 ```python
 import logging
 
-# Configure pipeline logger
+# Init pipeline logger
 logger = logging.getLogger("MedallionPipeline")
 
 try:
@@ -253,7 +253,7 @@ Resolving performance bottlenecks caused by uneven data distribution. By appendi
 ```python
 import logging
 
-# Configure pipeline logger
+# Init pipeline logger
 logger = logging.getLogger("MedallionPipeline")
 
 try:
@@ -303,7 +303,7 @@ Consolidating small files into large ones and organizing layout mapping to speed
 ```python
 import logging
 
-# Configure pipeline logger
+# Init pipeline logger
 logger = logging.getLogger("MedallionPipeline")
 
 try:
@@ -350,7 +350,7 @@ Creating continuous, fault-tolerant ingestion pipelines with low latency. Real-t
 ```python
 import logging
 
-# Configure pipeline logger
+# Init pipeline logger
 logger = logging.getLogger("MedallionPipeline")
 
 try:

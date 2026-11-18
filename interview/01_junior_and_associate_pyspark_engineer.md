@@ -14,7 +14,7 @@ The entry point to programming Spark with the Dataset and DataFrame API. It expl
 ```python
 from pyspark.sql import SparkSession
 
-# Build SparkSession with optimized configs for enterprise Medallion Pipelines
+# Build SparkSession with Delta Lake support
 spark = SparkSession.builder \
     .appName("EU_BFSI_Transaction_Processor") \
     .config("spark.sql.shuffle.partitions", "200") \
@@ -23,7 +23,7 @@ spark = SparkSession.builder \
     .config("spark.databricks.delta.autoCompact.enabled", "true") \
     .getOrCreate()
 
-# Verify the active session details
+# Verify active session
 print(f"Spark Version: {spark.version}")
 print(f"Master Endpoint: {spark.sparkContext.master}")
 print(f"App Name: {spark.sparkContext.appName}")

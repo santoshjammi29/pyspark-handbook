@@ -170,5 +170,5 @@ df.explain(mode="formatted")
 # +- *Filter (isnotnull(amount#2) AND (amount#2 > 1000.0))
 #    +- *ColumnarToRow
 #       +- FileScan parquet [customer_id#1,amount#2] Batched: true, DataFilters: [isnotnull(amount#2)...]
-# NOTE: The asterisk (*) indicates that the operator is compiled inside a Whole-Stage CodeGen pipeline!
+# Asterisk (*) indicates Whole-Stage CodeGen
 ```

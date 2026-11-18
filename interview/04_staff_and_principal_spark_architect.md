@@ -14,13 +14,13 @@ Enforcing security configurations dynamically on PII columns and complying with 
 ```python
 import logging
 
-# Configure pipeline logger
+# Init pipeline logger
 logger = logging.getLogger("MedallionPipeline")
 
 try:
     from pyspark.sql.functions import when, expr, col, sha2, lit
     
-    # 1. Dynamic Column Masking: Obfuscate IBAN for unauthorized users
+    # Dynamic column masking for IBAN
     # is_member evaluates the active caller's Microsoft Entra ID groups in Unity Catalog
     secured_customer_df = customer_raw_df.withColumn(
         "iban_secured",
@@ -63,7 +63,7 @@ Designing end-to-end batch and micro-batch data pipelines that guarantee exactly
 ```python
 import logging
 
-# Configure pipeline logger
+# Init pipeline logger
 logger = logging.getLogger("MedallionPipeline")
 
 try:
@@ -111,7 +111,7 @@ Structuring resource policies, configuring instance pools, setting scaling thres
 ```python
 import logging
 
-# Configure pipeline logger
+# Init pipeline logger
 logger = logging.getLogger("MedallionPipeline")
 
 try:
@@ -151,7 +151,7 @@ Designing Unified namespaces across business domains. Leverages Microsoft Fabric
 ```python
 import logging
 
-# Configure pipeline logger
+# Init pipeline logger
 logger = logging.getLogger("MedallionPipeline")
 
 try:
@@ -192,7 +192,7 @@ Managing concurrent transactions and resolving conflicts. Delta Lake uses Optimi
 ```python
 import logging
 
-# Configure pipeline logger
+# Init pipeline logger
 logger = logging.getLogger("MedallionPipeline")
 
 try:
@@ -237,7 +237,7 @@ Structuring workspaces and schemas to enforce strict data separation across EU s
 ```python
 import logging
 
-# Configure pipeline logger
+# Init pipeline logger
 logger = logging.getLogger("MedallionPipeline")
 
 try:
@@ -285,7 +285,7 @@ Managing schema changes in medallion pipelines. Demonstrates how to support sche
 ```python
 import logging
 
-# Configure pipeline logger
+# Init pipeline logger
 logger = logging.getLogger("MedallionPipeline")
 
 try:
@@ -327,7 +327,7 @@ Reading Spark execution query plans and diagnosing performance bottlenecks. Expl
 ```python
 import logging
 
-# Configure pipeline logger
+# Init pipeline logger
 logger = logging.getLogger("MedallionPipeline")
 
 try:

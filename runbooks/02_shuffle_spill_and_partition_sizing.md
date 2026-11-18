@@ -72,10 +72,10 @@ In the Task Metrics table, examine **Shuffle Read Size**:
   1. Never repartition on low-cardinality columns alone.
   2. Combine low-cardinality keys with high-cardinality attributes:
      ```python
-     # ❌ TRAP: Only 5 partitions get all data
+     # ❌ Skew trap: Only 5 partitions get data
      df.repartition("country_code")
      
-     # ✅ PRODUCTION REMEDIATION: Balanced distribution
+     # ✅ Balanced composite partition key
      df.repartition(200, "country_code", "customer_id")
      ```
 

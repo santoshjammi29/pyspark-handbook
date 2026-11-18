@@ -57,10 +57,10 @@ org.apache.spark.SparkException: Job aborted due to stage failure: Total size of
 - **Remediation**:
   1. Audit code for `.collect()` and replace with distributed writes:
      ```python
-     # ❌ CRITICAL TRAP: Crashes driver on 100GB table
+     # ❌ Anti-pattern: OOM on large table
      all_records = df.collect()
      
-     # ✅ PRODUCTION REMEDIATION: Write directly to lakehouse storage
+     # ✅ Write directly to Lakehouse storage
      df.write.format("delta").mode("overwrite").saveAsTable("gold_output")
      ```
   2. If a sample is required for debugging, strictly enforce a limit:

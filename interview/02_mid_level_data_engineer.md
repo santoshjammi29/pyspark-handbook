@@ -15,13 +15,13 @@ Performing calculations across a set of rows related to the current row without 
 from pyspark.sql import Window
 from pyspark.sql.functions import row_number, col, lag, sum as _sum
 
-# Define transaction window partition by account, ordered by timestamp
+# Window partition by account, ordered by time
 ranking_window = Window.partitionBy("account_id").orderBy(col("txn_timestamp").desc())
 running_total_window = Window.partitionBy("account_id") \
     .orderBy("txn_timestamp") \
     .rowsBetween(Window.unboundedPreceding, Window.currentRow)
 
-# Enrich transactions with dynamic rankings and running balances
+# Add rankings and running balance
 enriched_df = transactions \
     .withColumn("txn_recency", row_number().over(ranking_window)) \
     .withColumn("running_total_eur", _sum("amount_eur").over(running_total_window)) \

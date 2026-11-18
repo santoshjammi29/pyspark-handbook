@@ -55,10 +55,10 @@ for query in spark.streams.active:
 - **Remediation & Recovery Strategy**:
   1. Add explicit watermarks on all joined streaming DataFrames:
      ```python
-     # ❌ TRAP: Retains all impressions forever in memory
+     # ❌ Trap: Retains impressions indefinitely
      clicks.join(impressions, "ad_id")
      
-     # ✅ PRODUCTION REMEDIATION: Watermarked with time interval bounds
+     # ✅ Watermarked with time interval bounds
      impressions_wm = impressions.withWatermark("impression_time", "2 hours")
      clicks_wm = clicks.withWatermark("click_time", "3 hours")
      

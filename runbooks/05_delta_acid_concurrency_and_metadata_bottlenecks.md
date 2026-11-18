@@ -56,10 +56,10 @@ Look for two operations with timestamps within milliseconds of each other compet
   2. **Enforce Target Partition Pruning on MERGE Operations**:
      Always include the partition key in the `ON` clause of `MERGE INTO`:
      ```sql
-     -- ❌ TRAP: Scans entire table, causes global write conflicts
+     -- ❌ Scans entire table (causes write conflicts)
      MERGE INTO target t USING source s ON t.id = s.id ...
      
-     -- ✅ PRODUCTION REMEDIATION: Restricts conflict detection to targeted partition
+     -- Partition filter restricts conflict detection
      MERGE INTO target t USING source s 
      ON t.id = s.id AND t.transaction_date = s.transaction_date ...
      ```

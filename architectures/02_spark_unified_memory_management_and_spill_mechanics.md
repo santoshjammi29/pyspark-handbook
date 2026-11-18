@@ -140,7 +140,7 @@ total_node_cores = 16
 usable_cores = total_node_cores - 1   # 15 cores
 usable_ram = total_node_ram - 4       # 124 GB
 
-# Optimal Spark executor core count is 4 to 5 cores (avoids HDFS/Netty throughput bottleneck)
+# Optimal sizing: 4 to 5 cores per executor
 cores_per_executor = 5
 executors_per_node = usable_cores // cores_per_executor  # 3 executors per node
 

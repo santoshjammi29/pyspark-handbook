@@ -38,13 +38,13 @@ Caused by: org.apache.spark.SparkException: Python worker exited unexpectedly (c
 ### Step 2: Identify UDF Type in User Code
 Check whether the offending code uses standard `@udf` (row-by-row pickle) or `@pandas_udf` (vectorized PyArrow IPC):
 ```python
-# ❌ CATASTROPHIC ANTI-PATTERN: Standard row-at-a-time Python UDF
-# Incurs 1 JVM <-> Python serialization context switch PER ROW!
+# ❌ Anti-pattern: Row-by-row Python UDF
+# Incurs JVM <-> Python context switch per row
 @udf(returnType=StringType())
 def slow_fn(val):
     return val.upper() if val else None
 
-# ✅ PRODUCTION VECTORIZED: Processes Apache Arrow RecordBatches natively
+# ✅ Vectorized: Native Apache Arrow RecordBatches
 @pandas_udf(StringType())
 def fast_fn(s: pd.Series) -> pd.Series:
     return s.str.upper()
