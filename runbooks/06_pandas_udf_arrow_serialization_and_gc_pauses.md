@@ -83,3 +83,29 @@ def fast_fn(s: pd.Series) -> pd.Series:
 - [ ] No row-by-row standard `@udf` calls exist on high-cardinality DataFrames.
 - [ ] `spark.sql.execution.arrow.pyspark.enabled = true` is set.
 - [ ] Executor memory overhead is sized to at least $25\%$ of executor heap for PyArrow-heavy pipelines.
+
+
+---
+
+## 5. Mosaic AI & Large-Scale Vector Embedding PyArrow Triage
+
+### 5.1 Incident Symptoms & Root Cause
+- **Symptoms**: Executor JVMs crash with `Exit code 137 (OOM Killer)` or Python worker processes crash during high-volume vector embedding generation feeding Mosaic AI Vector Search.
+- **Root Cause**: Unbounded PyArrow batch sizes (`spark.sql.execution.arrow.maxRecordsPerBatch = 10000`) combined with heavy multi-dimensional float arrays (1024-dim or 4096-dim tensors) exhausting container memory limits.
+
+### 5.2 Remediation & PyArrow Memory Tuning
+1. **Reduce Arrow Batch Size**: Constrain the number of rows transferred between JVM and Python daemon to fit within off-heap memory:
+```bash
+--conf spark.sql.execution.arrow.maxRecordsPerBatch=1000
+--conf spark.executor.memoryOverhead=4g
+```
+
+2. **Refactor to PyArrow Iterator UDF**:
+```python
+# Safe chunked processing avoiding full memory materialization
+@F.pandas_udf(ArrayType(FloatType()))
+def safe_embedding_udf(batch_iter: Iterator[pd.Series]) -> Iterator[pd.Series]:
+    model = get_cached_transformer()
+    for batch in batch_iter:
+        yield pd.Series(model.encode(batch.tolist(), batch_size=64).tolist())
+```

@@ -1709,3 +1709,143 @@ A mobile gaming platform aggregates player score events over 10-minute tumbling 
 - A watermark specifies the maximum threshold by which event-time can lag behind the maximum event-time observed by the engine ($Watermark = Max(event\_time) - Delay$). Once a window's end time falls behind the watermark, Spark emits the final aggregate and purges the window's state from memory.
 
 ---
+
+---
+
+### Q3.26: Distributed Embedding Generation at Scale with PySpark Arrow UDFs (Mosaic AI & GenAI)
+
+**Scenario & System Overview:**  
+An enterprise lakehouse contains 100 million technical support articles and customer transcripts. The platform team must generate 1024-dimensional dense embeddings at scale to feed a Mosaic AI Vector Search Delta Sync Index. How to structure high-throughput, zero-copy PySpark transformations using `@pandas_udf` and batch inference without crashing executor JVMs.
+
+**Technical Deep-Dive & Architecture:**  
+Calling an embedding model sequentially inside standard Python UDFs introduces severe pickling overhead ($> 80\%$ CPU time spent on row serialization) and causes executor timeouts. By employing **PySpark Vectorized Pandas UDFs (`@pandas_udf(ArrayType(FloatType()))`)**, Apache Arrow transfers batches of records (e.g. 5,000 strings) directly into Python process memory with zero copy. The Python process loads a local sentence-transformer or queries a batched Mosaic AI Foundation Model serving endpoint, returning a PyArrow RecordBatch containing float arrays directly to the Spark Tungsten off-heap engine.
+
+**Production Implementation:**
+```python
+from pyspark.sql import functions as F
+from pyspark.sql.types import ArrayType, FloatType
+import pandas as pd
+from typing import Iterator
+
+# Define PyArrow iterator UDF for batch embedding inference
+# Uses worker batching to maximize GPU/CPU tensor throughput
+@F.pandas_udf(ArrayType(FloatType()))
+def compute_embeddings_arrow(batch_iter: Iterator[pd.Series]) -> Iterator[pd.Series]:
+    # Lazy load local embedding model once per worker lifecycle
+    from sentence_transformers import SentenceTransformer
+    model = SentenceTransformer('BAAI/bge-large-en-v1.5')
+    
+    for text_series in batch_iter:
+        # Generate dense embeddings across Arrow chunk
+        clean_texts = text_series.fillna("").tolist()
+        embeddings = model.encode(clean_texts, batch_size=256, normalize_embeddings=True)
+        # Yield as Pandas Series of float lists for Spark
+        yield pd.Series(embeddings.tolist())
+
+# Apply vectorized embedding generator to gold documents
+df_embedded = (
+    spark.table("prod_catalog.gold.knowledge_docs")
+    .filter(F.length(F.col("chunk_text")) > 20)
+    .withColumn("embedding_vector", compute_embeddings_arrow("chunk_text"))
+)
+
+# Write to Delta table with Change Data Feed enabled
+# Enables automatic Delta Sync in Mosaic AI Vector Search
+(
+    df_embedded.write
+    .format("delta")
+    .mode("append")
+    .option("delta.enableChangeDataFeed", "true")
+    .saveAsTable("prod_catalog.ai_schema.kb_embeddings")
+)
+```
+
+**Key Invariants & Gotchas:**
+- Set `spark.sql.execution.arrow.maxRecordsPerBatch` (e.g. 1000–5000) to prevent Arrow buffer OOM.
+- Ensure `delta.enableChangeDataFeed = true` so Mosaic AI Vector Search syncs incrementally.
+- Always use `Iterator[pd.Series]` UDF pattern to initialize the model once per worker task.
+
+---
+
+### Q3.27: Real-Time Streaming Ingestion for Mosaic AI Vector Search (Mosaic AI & GenAI)
+
+**Scenario & System Overview:**  
+Customer support conversations and dynamic document revisions must be discoverable in Mosaic AI Vector Search within 15 seconds of creation. How to design a Structured Streaming pipeline writing to Delta Lake with CDF to drive sub-minute Vector Search Delta Sync.
+
+**Technical Deep-Dive & Architecture:**  
+Mosaic AI Vector Search Delta Sync operates by tailing the Delta transaction log and Change Data Feed (`_delta_log` and `_change_data`). When Structured Streaming appends micro-batches to the target Delta table, each commit records row insertions, updates, and deletes with commit timestamps. Vector Search compute endpoints poll the CDF, compute embeddings for new chunks, and update the HNSW vector index.
+
+**Production Implementation:**
+```python
+from pyspark.sql import functions as F
+
+# Stream incoming support tickets from Kafka
+# Parse payload and generate text chunks for indexing
+df_stream = (
+    spark.readStream
+    .format("kafka")
+    .option("kafka.bootstrap.servers", "broker1:9092,broker2:9092")
+    .option("subscribe", "support.ticket.events")
+    .option("startingOffsets", "latest")
+    .load()
+    .select(F.from_json(F.col("value").cast("string"), "ticket_id STRING, customer_id STRING, text STRING, updated_at TIMESTAMP").alias("data"))
+    .select("data.*")
+)
+
+# Sink to Delta table with Change Data Feed enabled
+# Vector Search Delta Sync indexes automatically tail this table
+query = (
+    df_stream.writeStream
+    .format("delta")
+    .outputMode("append")
+    .option("checkpointLocation", "abfss://checkpoints@datalake.dfs.core.windows.net/tickets_cdf")
+    .option("mergeSchema", "true")
+    .table("prod_catalog.ai_schema.support_tickets_stream")
+)
+```
+
+**Key Invariants & Gotchas:**
+- The target Delta table must have `delta.enableChangeDataFeed = true`.
+- Checkpoints must reside on fault-tolerant cloud storage with reliable leases.
+- Continuous Vector Search sync maintains $<20\text{s}$ latency SLA.
+
+---
+
+### Q3.28: High-Throughput Batch LLM Inference with MLflow & PySpark (Mosaic AI & GenAI)
+
+**Scenario & System Overview:**  
+Scoring millions of customer feedback comments daily using a fine-tuned Llama 3 model registered in Unity Catalog. How to leverage `mlflow.pyfunc.spark_udf` to execute distributed model inference across a multi-node Spark cluster.
+
+**Technical Deep-Dive & Architecture:**  
+Instead of sending millions of REST requests sequentially, `mlflow.pyfunc.spark_udf` distributes the model weights to Spark executor local storage (via Spark broadcast/distributed cache) and executes local GPU/CPU batch inference within executor worker threads. This scales horizontally across hundreds of executor cores while completely eliminating network REST API throttling.
+
+**Production Implementation:**
+```python
+import mlflow.pyfunc
+from pyspark.sql import functions as F
+from pyspark.sql.types import StringType
+
+# Load registered Unity Catalog model as distributed Spark UDF
+# Distributes model weights across Spark executor nodes
+model_uri = "models:/prod_catalog.models.llama_3_customer_classifier/2"
+predict_udf = mlflow.pyfunc.spark_udf(
+    spark,
+    model_uri=model_uri,
+    result_type=StringType()
+)
+
+# Run distributed batch inference over partitioned Delta table
+df_classified = (
+    spark.table("prod_catalog.silver.customer_feedback")
+    .withColumn("predicted_category", predict_udf(F.col("feedback_text")))
+    .select("feedback_id", "feedback_text", "predicted_category")
+)
+
+# Persist classified results to gold lakehouse layer
+df_classified.write.format("delta").mode("overwrite").saveAsTable("prod_catalog.gold.classified_feedback")
+```
+
+**Key Invariants & Gotchas:**
+- `mlflow.pyfunc.spark_udf` requires model dependencies packaged in conda/virtualenv.
+- Ensure executor nodes have GPU drivers installed if running dense transformer models.
+- Set Spark task concurrency to match available executor GPU slots.
