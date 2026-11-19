@@ -83,7 +83,7 @@ sequenceDiagram
     Task->>Sorter: Inserts UnsafeRow records
     Sorter->>Unified: Requests additional memory page (8MB)
     Unified-->>Sorter: Page Granted
-    Note over Sorter: Memory fills; Unified Pool reports OUT_OF_MEMORY
+    Note over Sorter: Memory fills, Unified Pool reports OUT_OF_MEMORY
     Sorter->>Disk: Spills sorted chunk to disk (compressed block)
     Note over Disk: Writes Spill (Disk) = 1.2 GB
     Note over Sorter: Spill (Memory) was 4.8 GB (uncompressed)
