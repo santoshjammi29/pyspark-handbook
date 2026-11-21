@@ -666,7 +666,7 @@ Comprehensive technical interview guides and flashcard deck located under `inter
 
 ## 🌐 Ecosystem Interlinking & Sister Repositories
 
-The Modern Data Engineering Lakehouse Ecosystem is an integrated suite of 13 production-grade, specialized repositories anchored by the **[Modern Data Engineer Platform ()](https://github.com/santoshjammi29/moderndataengineer)**. Use this cross-reference matrix to navigate directly between complementary implementations across our repositories:
+The Modern Data Engineering Lakehouse Ecosystem is an integrated suite of 14 production-grade, specialized repositories anchored by the **[Modern Data Engineer Platform (`moderndataengineer.uk`)](https://github.com/santoshjammi29/moderndataengineer)**. Use this cross-reference matrix to navigate directly between complementary implementations across our repositories:
 
 | Repository | Focus & Domain | Tightly Coupled Cross-Reference & Integration Points |
 | :--- | :--- | :--- |
@@ -681,6 +681,7 @@ The Modern Data Engineering Lakehouse Ecosystem is an integrated suite of 13 pro
 | **[System Design Handbook](https://github.com/santoshjammi29/data-system-design-handbook)** | Distributed Storage, Table Formats & BCDR | • **Storage Format Internals**: Comparing Parquet, ORC, and Avro storage structures and compression ratios.<br>• **Memory Architecture**: Deep dive into Spark unified memory management and Tungsten off-heap rows. |
 | **[Azure Cheat Sheet](https://github.com/santoshjammi29/azure-cheat-sheet)** | Fabric OneLake, Synapse & Azure Infrastructure | • **Fabric Spark vs Classic Spark**: Tuning vectorized execution, memory pools, and Arrow optimization in Microsoft Fabric.<br>• **Capacity Units**: Managing Spark compute burst and smoothing under Fabric capacities. |
 | **[Interview Handbook](https://github.com/santoshjammi29/data-engineering-interview-handbook)** | Architectural Defense Playbooks & Concepts | • **Pillar 01 & 11 Defense**: Comprehensive interview defense on Spark 3.5 engine internals, Catalyst, and PyArrow.<br>• **100 Spark Data Issues**: Real-world data-induced failures, silent corruptions, and production fixes. |
+| **[The Security Handbook](https://github.com/santoshjammi29/security-handbook)** | Enterprise Cloud Security, Zero Trust & Lakehouse Governance | • **Zero Trust Lakehouse Perimeter**: Private endpoints, NSGs, and Azure Key Vault envelope encryption.<br>• **Workload Identity Federation**: Keyless GitHub Actions OIDC and Azure Managed Identities. |
 | **[Modern Data Engineer Hub](https://github.com/santoshjammi29/moderndataengineer)** | Central Edge Presentation Platform | • **Interactive Whiteboard Viewer**: Pan, zoom, and inspect all 52 blueprints at [moderndataengineer.uk/whiteboards](https://moderndataengineer.uk/whiteboards).<br>• **Interactive Code Practice**: Execute and explore the complete 20-page technical manual online. |
 
 ## 📜 License
