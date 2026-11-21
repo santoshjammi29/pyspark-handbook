@@ -224,3 +224,38 @@ Consult these bundled deep-dive reference documents for complex implementations:
 - 🥉 **[Medallion Lakehouse Architecture](./references/medallion_architecture.md)**: Bronze/Silver/Gold layers, Delta Lake 3.2, and ACID invariants.
 - 📊 **[Semantic Layer Patterns](./references/semantic_layer.md)**: Direct Lake mode, VertiPaq, dbt Semantic Layer, and metric views.
 - 🚚 **[Data Migration Playbook](./references/data_migration_playbook.md)**: Heterogeneous database migration, dual-run reconciliation, and cutover protocols.
+- 🗄️ **[SQL & NoSQL Handbook](https://github.com/santoshjammi29/sql-handbook)**: 105 SQL production exercises across 8 tiers, NoSQL taxonomy (Document, KV, Wide-Column, Graph, Vector, Time-Series), specialized SQL engines (DuckDB, ClickHouse, pgvector), profiling (pg_stat_statements, Query Store), PgBouncer pooling, and Top 25 gotchas.
+- 🛡️ **[Security Handbook](https://github.com/santoshjammi29/security-handbook)**: Zero Trust architecture, keyless OIDC workload identity, Private Link perimeters, envelope encryption (DEK/KEK), DevSecOps (Trivy, Cosign, SBOM), ADF managed identities, Unity Catalog dynamic masking, and 6 incident response runbooks.
+- 📘 **[Databricks Data Intelligence Platform 20-Page Technical Manual (PDF)](file:///Users/santosh/Documents/antigravity/charming-fermi/docs/pdf/databricks_data_intelligence_platform_technical_manual.pdf)**: Authoritative Level 100–400 progression from Split-Plane cloud architecture to Mosaic AI RAG and Principal DevOps.
+- 📐 **[52 Whiteboard Architecture Blueprints Catalog](file:///Users/santosh/Documents/antigravity/charming-fermi/docs/whiteboard_diagrams/README.md)**: 52 enterprise digital whiteboard schematics across 7 domains with 5-persona breakdowns, under-the-hood engine mechanisms, and 100% primary docLinks.
+
+---
+
+## 11. Databricks Data Intelligence Platform: End-to-End Technical Manual
+
+When designing or operating Databricks Lakehouse architectures, align with the **4-Tier Mastery Progression (Level 100 to Level 400)**:
+
+### Level 100: Platform Architecture & Compute
+- **Split-Plane Security Model**: Databricks-managed Control Plane (Web UI, Lakeflow scheduler, Unity Catalog metastore) vs. Customer-owned Compute Plane (Classic VNet/VPC or Serverless container pools) and Storage (ADLS Gen2/S3).
+- **Compute Taxonomy & DBU Economics**: All-Purpose Compute (interactive, ad-hoc, 2x-3x higher DBU cost) vs. Job Compute (ephemeral, scheduled production ETL) vs. Serverless SQL Warehouses (IWM, Photon, sub-second elasticity) vs. Lakeflow Pipeline Compute.
+
+### Level 200: Delta Lake Storage Internals & Medallion ETL
+- **The ACID Transaction Log (`_delta_log`)**: Atomic JSON commits (`000000.json`) with `add`, `remove`, `metaData`, and `protocol` actions; compacted Parquet checkpoints (`.checkpoint.parquet`); Optimistic Concurrency Control (OCC) with row-level concurrency.
+- **Deletion Vectors (Merge-on-Read)**: Roaring bitmap soft deletions eliminating the 512 MB file rewrite penalty of Copy-on-Write (CoW).
+- **Liquid Clustering (`CLUSTER BY`)**: Dynamic Hilbert-curve space-filling layout replacing rigid Hive partitioning and Z-Ordering without requiring full table rewrites.
+- **Predictive Optimization & Delta UniForm**: Automatic background `OPTIMIZE`, `VACUUM`, and `ANALYZE`; asynchronous Apache Iceberg/Hudi metadata generation.
+
+### Level 300: Unity Catalog Governance & Spark/Photon Engine
+- **3-Level Namespace**: `catalog.schema.table_or_view_or_volume` across Dev, Staging, and Prod.
+- **Fine-Grained Security**: Row Filters and Column Masks via SQL UDFs (`mask_pan`, `region_rls`).
+- **Lakehouse Federation & Delta Sharing**: Zero-ETL foreign catalogs and open cross-platform sharing.
+- **Engine Internals**: Catalyst Optimizer pipeline with Adaptive Query Execution (AQE) dynamically coalescing shuffle partitions, switching join strategies to Broadcast Hash Join mid-query, and splitting skewed partitions.
+- **Photon C++ Vectorized Engine**: Off-heap memory management and SIMD CPU vectorization bypassing JVM garbage collection.
+
+### Level 400: Frameworks, Stateful Streaming, DevOps & AI
+- **Stateful Structured Streaming with RocksDB**: Off-heap state store (`RocksDBStateStoreProvider`) with changelog checkpointing and dual event-time watermarking for bounded state retention in stream-to-stream joins.
+- **Metadata-Driven Ingestion & Dynamic Key Merge**: Unity Catalog control tables parameterizing Auto Loader ingestion and idempotent SCD merges.
+- **Databricks Asset Bundles (DABs)**: Declarative YAML IaC (`databricks.yml`, `resources/lakeflow_etl_job.yml`), service principal `run_as`, multi-task dependencies, and `chispa`/`pytest` CI validation.
+- **FinOps via System Tables**: Querying `system.billing.usage`, `system.query.history`, and `system.access.table_lineage`.
+- **Mosaic AI & Governed RAG**: Delta-synced vector indexes over CDF tables, Unity Catalog tool calling, and MLflow 3.0 AI Gateway tracing.
+- **The 5 S's Diagnostic Matrix**: Systematic triage for Spill, Skew, Shuffle, Storage, and Serialization bottlenecks.

@@ -1,18 +1,9 @@
 ---
 name: databricks-asset-bundles-dev
-description: |
-  Specialized skill for authoring, configuring, linting, validating, and deploying Databricks Asset Bundles (DABs) Infrastructure-as-Code.
-  Activate when working on:
-  - Authoring or modifying databricks.yml or resource definitions (resources/jobs.yml, resources/dlt_pipelines.yml, resources/unity_catalog.yml, etc.)
-  - Setting up multi-environment CI/CD automation for Databricks Lakehouse pipelines across dev, staging, and production workspaces
-  - Configuring target isolation (mode: development vs mode: production), variable interpolation, and run_as service principals
-  - Validating and linting bundles via `databricks bundle validate -t <target>` or local syntax linters
-  - Deploying workflows, Delta Live Tables (DLT) pipelines, Model Serving endpoints, Dashboards, and Databricks Apps via `databricks bundle deploy`
-  - Integrating GitHub Actions or Azure DevOps pipelines with Databricks CLI and keyless OIDC authentication
-
-  DO NOT trigger for:
-  - Pure Python data manipulation inside notebooks without bundle configuration
-  - Non-Databricks cloud infrastructure (use Terraform directly for general cloud infra)
+description: >
+  Author, configure, lint, validate, and deploy Databricks Asset Bundles (DABs) Infrastructure-as-Code. Activate for databricks.yml, multi-environment CI/CD (dev/staging/prod), target isolation, run_as service principals, bundle validate, bundle deploy, and GitHub Actions OIDC integration.
+metadata:
+  short-description: Databricks Asset Bundles (DABs) IaC & CI/CD deployment
 ---
 
 # Databricks Asset Bundles (DABs) Development Skill
@@ -109,3 +100,82 @@ databricks bundle run -t dev my_job_key
 - 🚀 **[GitHub Actions CI/CD Template](./references/dabs_cicd_github_actions.md)**: Production workflow with OIDC and Service Principal authentication.
 - 🔍 **[Bundle Linter Script](./scripts/lint_bundle.py)**: Fast offline YAML and bundle structure validator.
 - 📦 **Sample Templates**: See `resources/databricks.yml`, `resources/resources/jobs.yml`, `resources/resources/dlt_pipelines.yml`, and `resources/resources/unity_catalog.yml`.
+- 📘 **[Databricks Data Intelligence Platform 20-Page Manual (PDF)](file:///Users/santosh/Documents/antigravity/charming-fermi/docs/pdf/databricks_data_intelligence_platform_technical_manual.pdf)**: Complete curriculum including Level 400 DABs architecture, Lakeflow Jobs, and Chispa unit testing.
+
+---
+
+## 6. Level 400 Production Bundle Pattern: Wheel Build & Table Update Trigger
+
+```yaml
+# Root Bundle Configuration: databricks.yml
+bundle:
+  name: enterprise_lakehouse_bundle
+
+include:
+  - resources/*.yml
+
+artifacts:
+  core_transforms:
+    type: whl
+    build: poetry build
+    path: .
+
+variables:
+  catalog_name:
+    default: dev_catalog
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: https://adb-111111111111.1.azuredatabricks.net
+    variables:
+      catalog_name: dev_catalog
+
+  prod:
+    mode: production
+    workspace:
+      host: https://adb-999999999999.9.azuredatabricks.net
+      root_path: /Workspace/Users/sp-prod/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      catalog_name: prod_catalog
+    run_as:
+      service_principal_name: "00000000-1111-2222-3333-444444444444"
+```
+
+```yaml
+# Multi-Task Lakeflow Job Resource: resources/lakeflow_etl_job.yml
+resources:
+  jobs:
+    medallion_etl_workflow:
+      name: "[${bundle.target}] Medallion Incremental Pipeline"
+      trigger:
+        table_update:
+          table_names:
+            - ${var.catalog_name}.bronze.orders_raw
+          condition: ANY_UPDATED
+          min_time_between_triggers_seconds: 300
+
+      environments:
+        - environment_key: serverless_default
+          spec:
+            client: "1"
+            dependencies:
+              - ./dist/*.whl
+
+      tasks:
+        - task_key: bronze_to_silver
+          environment_key: serverless_default
+          spark_python_task:
+            python_file: ../src/ingestion/dynamic_engine.py
+            parameters: ["orders"]
+
+        - task_key: silver_to_gold
+          depends_on:
+            - task_key: bronze_to_silver
+          environment_key: serverless_default
+          spark_python_task:
+            python_file: ../src/transformations/cdf_gold_merge.py
+            parameters: ["--catalog", "${var.catalog_name}"]
+```

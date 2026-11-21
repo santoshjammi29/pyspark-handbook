@@ -1,11 +1,9 @@
 ---
 name: whiteboard-architecture-diagrams
-description: |
-  Specialized skill and guideline for generating educational, polished hand-drawn whiteboard sketch style architecture diagrams, system design workflows, and technical infographic images.
-  Activate when:
-  - The user asks to generate an architecture diagram, flow chart, pipeline diagram, or system design image.
-  - The user requests an image explanation in "this style", "whiteboard style", "hand-drawn sketch style", or "diagram style".
-  - Designing visual explanations of data engineering architectures, cloud platforms (Azure, Fabric, Databricks, AWS, GCP), storage engines, or technical under-the-hood mechanisms.
+description: >
+  Generate educational, polished hand-drawn whiteboard sketch style architecture diagrams, system design workflows, and technical infographic images. Activate for whiteboard style diagrams, cloud platform flows (Azure, Fabric, Databricks, AWS, GCP), storage engines, and system under-the-hood schematics.
+metadata:
+  short-description: Hand-drawn whiteboard architecture diagrams & system workflows
 ---
 
 # Whiteboard Architecture Diagrams Skill & Guidelines
@@ -73,20 +71,30 @@ The platform maintains 42 hand-drawn digital blueprints across 7 architectural d
 - **Governance & Compliance Standards (`governanceAndCompliance`)**: Audit trails, sensitivity labels, and regulatory standards.
 - **Interactive 4-Tab Lightbox Inspector**: Seamless exploration across Architecture & Pillars, 5 Role Perspectives, Production Triage, and Governance.
 
-### 1. Compute & Optimization (11)
-- `spark-catalyst-photon-engine`: Databricks Compute: Catalyst Optimizer, AQE & Photon
-- `spark-shuffle-memory-execution`: Apache Spark Memory Architecture & Shuffle Mechanics
-- `sql-server-query-engine-optimization`: SQL Server & Relational Query Engine Architecture
-- `python-arrow-polars-architecture`: Modern Python Data Architecture: Apache Arrow, Polars & Zero-Copy IPC
-- `spark-data-skew-aqe-optimization`: Apache Spark Data Skew Remediation & AQE Optimization
-- `spark-join-decision-tree`: Apache Spark Join Strategy Selection Decision Tree
-- `spark-aqe-dynamic-optimization`: Apache Spark Adaptive Query Execution (AQE) Architecture
-- `spark-memory-management-spill`: Apache Spark Memory Management & Shuffle Spilling Mechanics
-- `spark-streaming-state-store`: Spark Structured Streaming State Store & Watermarking Mechanics
-- `photon-engine-vs-jvm`: Databricks Photon Native C++ Engine vs. Classic Spark JVM
-- `spark-broadcast-accumulators`: Apache Spark Broadcast Variables vs. Accumulators Architecture
+### 1. The 52 Architecture Whiteboard Blueprints Catalog
 
-### 2. Storage Engines & Formats (8)
+The platform contains **52 high-resolution digital whiteboard blueprints** across 7 architectural domains. The complete repository documentation with Markdown image embeds, multi-persona breakdowns, and primary docLinks is available at:
+👉 **[`docs/whiteboard_diagrams/README.md`](file:///Users/santosh/Documents/antigravity/charming-fermi/docs/whiteboard_diagrams/README.md)**
+
+All 52 image files are directly stored in:
+- `assets/whiteboards/` (Direct repository asset mirror)
+- `public/diagrams/` (Production WebP application assets)
+- Interactive web portal: [`https://moderndataengineer.uk/whiteboards`](https://moderndataengineer.uk/whiteboards)
+
+#### 1. Compute & Optimization (11)
+- `catalyst-photon-engine`: Apache Spark Catalyst Optimizer & Databricks Photon Engine
+- `photon-engine-vs-jvm`: Photon Vectorized C++ Engine vs. Apache Spark JVM Mechanics
+- `spark-data-skew-aqe-optimization`: Apache Spark Data Skew & Adaptive Query Execution (AQE) Optimization
+- `spark-aqe-architecture`: Apache Spark Adaptive Query Execution (AQE) Runtime Mechanics
+- `spark-shuffle-memory-execution`: Spark Shuffle Architecture & Memory Execution Model
+- `spark-memory-management-spill`: Spark Memory Management, Tungsten Execution & Shuffle Disk Spill
+- `spark-broadcast-accumulators`: Apache Spark Broadcast Variables & Distributed Accumulators Architecture
+- `spark-streaming-state-store`: Spark Structured Streaming Stateful Processing & RocksDB State Store
+- `spark-join-decision-tree`: Apache Spark Distributed Join Strategies Decision Tree Matrix
+- `python-arrow-polars-architecture`: Python Vectorization, Apache Arrow & Polars Query Engine Architecture
+- `sql-server-query-engine-optimization`: SQL Server & Analytical Query Engine Internals
+
+#### 2. Storage Engines & Formats (9)
 - `delta-lake-under-the-hood`: How Delta Lake Works Under the Hood
 - `apache-iceberg-open-table-format`: Apache Iceberg Open Table Format Mechanics
 - `open-table-formats-lakehouse`: Open Table Formats Blueprint: Lakehouse Storage Engines
@@ -95,8 +103,9 @@ The platform maintains 42 hand-drawn digital blueprints across 7 architectural d
 - `spark-savemode-architecture`: Apache Spark SaveMode Handling & Storage Execution Architecture
 - `delta-vs-iceberg-architecture`: Delta Lake vs. Apache Iceberg Storage & Metadata Architecture
 - `lakehouse-acid-concurrency`: Lakehouse ACID Concurrency & Write Conflict Resolution Matrix
+- `table-maintenance-compaction-vacuum`: Automated Lakehouse Table Maintenance: Bin-Packing Compaction & VACUUM Hygiene
 
-### 3. Pipelines & Ingestion (8)
+#### 3. Pipelines & Ingestion (12)
 - `apache-airflow-distributed-architecture`: Apache Airflow Distributed Production Architecture
 - `dbt-analytics-engineering-dag`: dbt (Data Build Tool) Modern Analytics Engineering DAG
 - `adf-hybrid-integration-runtime`: Azure Data Factory Enterprise Hybrid Ingestion Architecture
@@ -105,29 +114,38 @@ The platform maintains 42 hand-drawn digital blueprints across 7 architectural d
 - `databricks-medallion-pipeline`: Databricks Medallion Lakehouse Architecture
 - `delta-live-tables-pipeline`: Delta Live Tables (DLT) Pipeline Architecture
 - `databricks-dabs-devops-pipeline`: Databricks Asset Bundles (DABs) & Serverless CI/CD Architecture
+- `lakehouse-ingestion-autoloader`: Enterprise Incremental Ingestion: Auto Loader (cloudFiles) & Schema Evolution
+- `data-ingestion-strategy-matrix`: Enterprise Ingestion Strategy Decision Matrix: Batch vs Micro-Batch vs Real-Time Streaming
+- `streaming-dlq-recovery-flow`: Streaming Dead-Letter Queue (DLQ) Quarantine & Automated Self-Healing Pipeline
+- `orchestration-backfill-lifecycle`: Production Orchestration Backfill & Idempotent Reprocessing Lifecycle
 
-### 4. Platform Landscape (5)
+#### 4. Platform Landscape & AI (7)
 - `databricks-platform-master`: Databricks Unified Data Intelligence Platform
 - `rag-vector-search-data-pipeline`: Enterprise RAG & Vector Data Architecture
+- `governed-agentic-rag-pipeline`: Governed Agentic RAG Pipeline with Unity Catalog & Vector Search
 - `enterprise-edge-client-architecture`: Enterprise Edge Architecture: Data, Edge & Client Flow
 - `distributed-systems-resilience-architecture`: Distributed Systems Design: High-Throughput & Resilient Architecture
 - `lakehouse-finops-cost-optimization`: Enterprise Lakehouse FinOps & Cloud Cost Optimization
+- `lakehouse-bcdr-failover`: Multi-Region Lakehouse Business Continuity & Disaster Recovery (BCDR) Architecture
 
-### 5. Microsoft Fabric & Power BI (4)
+#### 5. Microsoft Fabric & Power BI (4)
 - `fabric-onelake-architecture`: Microsoft Fabric Unified Architecture & OneLake
 - `powerbi-direct-lake-vertipaq`: Power BI Direct Lake Mode & VertiPaq Semantic Engine
 - `powerbi-dax-engine-context`: Power BI DAX Engine Mechanics & Context Transition
 - `fabric-onelake-direct-lake-architecture`: Microsoft Fabric OneLake Shortcuts & Direct Lake Mode
 
-### 6. Data Modeling & Architecture (4)
+#### 6. Data Modeling & Architecture (4)
 - `kimball-dimensional-star-schema`: Kimball Dimensional Modeling & Enterprise Star Schema
 - `data-vault-enterprise-architecture`: Data Vault 2.0 Architecture & Lakehouse Modeling
 - `data-mesh-enterprise-architecture`: Enterprise Data Mesh: Decentralized Domains & Data Products
 - `scd-types-lakehouse`: Slowly Changing Dimensions (SCD Types 1, 2, 3, 4, 6) in Modern Lakehouses
 
-### 7. Governance & Security (2)
+#### 7. Governance & Security (5)
 - `unity-catalog-governance`: Unity Catalog Unified Governance & 3-Level Namespace
 - `purview-governance-catalog`: Microsoft Purview Enterprise Governance Architecture
+- `lakehouse-access-masking-lifecycle`: Zero-Trust Lakehouse Access Governance: Dynamic Row Filters & Column Masks
+- `data-quality-wap-quarantine`: Write-Audit-Publish (WAP) Pattern & Data Quality Quarantine Architecture
+- `lakehouse-cicd-promotion-lifecycle`: Enterprise Lakehouse CI/CD Promotion Lifecycle: Dev to Staging to Production
 
 ---
 
