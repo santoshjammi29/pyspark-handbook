@@ -1,13 +1,13 @@
 # 🏛️ Modern Data Engineering Lakehouse Ecosystem Taxonomy
 
-> **Canonical Controlled Vocabulary & Standards (13-Repository Lakehouse Ecosystem)**  
+> **Canonical Controlled Vocabulary & Standards (14-Repository Lakehouse Ecosystem)**  
 > **Hub**: [moderndataengineer.uk](https://moderndataengineer.uk) | **Baseline**: 2025/2026 Lakehouse Architecture
 
 ---
 
 ## 1. The 14 Technical Pillars
 
-Every concept, recipe, exercise, architecture scenario, and interview question across all 13 repositories maps to exactly one primary pillar:
+Every concept, recipe, exercise, architecture scenario, and interview question across all 14 repositories maps to exactly one primary pillar:
 
 | Pillar ID | Pillar Name | Sibling Authority | Target Core Topics |
 |:---:|---|---|---|
