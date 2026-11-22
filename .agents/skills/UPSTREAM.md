@@ -13,3 +13,5 @@ Packages and their supporting files originate from:
 Each imported package includes the upstream MIT license.
 
 The frontmatter descriptions for all skills fit within the Agent Skills 1,024-character description limit. Detailed activation guidance remains in each skill body.
+
+- `coding-learning-repo-architect`: Synthesis of 25 top-starred GitHub educational repositories (~5M+ stars) covering the 8 structural archetypes, 4-tier progressive disclosure, code-test-doc triad, and automated test harnesses.
