@@ -60,7 +60,7 @@ Row filters evaluate conditions dynamically at query time based on user group me
 -- Step 1: Create deterministic filter function
 CREATE OR REPLACE FUNCTION prod_catalog.security.region_row_filter(country_code STRING)
 RETURN IF(
-    IS_ACCOUNT_GROUP_MEMBER('global_admins') OR 
+    IS_ACCOUNT_GROUP_MEMBER('global_admins') OR
     (IS_ACCOUNT_GROUP_MEMBER('emea_sales') AND country_code IN ('UK', 'DE', 'FR')) OR
     (IS_ACCOUNT_GROUP_MEMBER('apac_sales') AND country_code IN ('IN', 'SG', 'AU')),
     TRUE,
@@ -68,7 +68,7 @@ RETURN IF(
 );
 
 -- Step 2: Apply filter function to table
-ALTER TABLE prod_catalog.gold.fact_sales 
+ALTER TABLE prod_catalog.gold.fact_sales
 SET ROW FILTER prod_catalog.security.region_row_filter ON (country_code);
 ```
 
@@ -88,7 +88,7 @@ RETURN IF(
 );
 
 -- Step 2: Apply mask to column
-ALTER TABLE prod_catalog.gold.dim_customer 
+ALTER TABLE prod_catalog.gold.dim_customer
 ALTER COLUMN email SET MASK prod_catalog.security.mask_email;
 ```
 
@@ -98,7 +98,7 @@ ALTER COLUMN email SET MASK prod_catalog.security.mask_email;
 
 ```sql
 -- AES Encryption with 256-bit key
-SELECT 
+SELECT
     customer_id,
     base64(aes_encrypt(credit_card_number, secret('vault_scope', 'aes_encryption_key'))) as encrypted_pan,
     sha2(concat(email, secret('vault_scope', 'salt_secret')), 256) as salted_email_hash
@@ -137,7 +137,7 @@ jdbc_df = (
 
 ```sql
 -- Real-time DBU consumption aggregated by Workspace & SKU
-SELECT 
+SELECT
     workspace_id,
     sku_name,
     SUM(usage_quantity) as total_dbus,

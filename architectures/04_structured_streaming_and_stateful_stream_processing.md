@@ -1,14 +1,10 @@
 # 🏛️ Architecture 04: Structured Streaming & Stateful Stream Processing
 
-
 ![Spark Structured Streaming State Store & Watermarking Mechanics](../assets/whiteboards/spark_streaming_state_store.webp)
 > *Architectural Blueprint: [Spark Structured Streaming State Store & Watermarking Mechanics](../docs/whiteboard_diagrams/README.md#spark-streaming-state-store). View full multi-persona breakdown and engine mechanisms in the master index.*
 
-
 ![Real-Time Event Streaming & Kafka Architecture](../assets/whiteboards/kafka_event_streaming_pipeline.webp)
 > *Architectural Blueprint: [Real-Time Event Streaming & Kafka Architecture](../docs/whiteboard_diagrams/README.md#kafka-event-streaming-pipeline). View full multi-persona breakdown and engine mechanisms in the master index.*
-
-
 
 > **Focus**: Micro-Batch vs. Continuous Processing, Event-Time Watermarking, Stateful Aggregations & Stream-Stream Joins, RocksDB State Store, Checkpointing, and Exactly-Once Guarantees.
 
@@ -29,7 +25,7 @@ flowchart TD
 
     subgraph Engine["2. Incremental Catalyst Stream Execution Engine"]
         WAL["Write-Ahead Log (WAL)<br/>(Driver Records Offsets to Checkpoint Storage)"]
-        
+
         subgraph MicroBatch["Micro-Batch Execution (Trigger: 500ms - 10s)"]
             MicroPlan["Incremental Catalyst Query Plan<br/>(Reads Offset Range: N to N+K)"]
             Watermark["Event-Time Watermark Engine<br/>max(event_time) - delay_threshold"]
@@ -71,7 +67,7 @@ sequenceDiagram
     Source->>Spark: Events with timestamps: 12:00, 12:05, 12:12
     Note over Spark: max(event_time) = 12:12. Watermark = 12:12 - 10m = 12:02
     Spark->>State: Store aggregates for window [12:00 - 12:10] and [12:10 - 12:20]
-    
+
     Note over Spark: Trigger Batch 2
     Source->>Spark: Event with timestamp 12:01 (Late by 11 mins)
     Note over Spark: Timestamp 12:01 < Watermark (12:02) -> DROPPED AS TOO LATE!

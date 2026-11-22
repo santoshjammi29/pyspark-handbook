@@ -3,8 +3,8 @@
   "github": "santoshjammi29/pyspark-handbook",
   "name": "PySpark Handbook",
   "role": "105 PySpark code use cases, Catalyst internals, Tungsten memory, AQE, Arrow UDFs, skew salting",
-  "last_synced": "2026-11-21T04:54:58.626009Z",
-  "entry_count": 115,
+  "last_synced": "2026-11-22T07:34:24.142259Z",
+  "entry_count": 116,
   "entries": [
     {
       "id": "pyspark-handbook-001_sparksession_initialization_and_dataframe_creation_strategies",
@@ -1266,6 +1266,17 @@
       "title": "Architecture: 04 Structured Streaming And Stateful Stream Processing",
       "difficulty": "L400",
       "relative_path": "architectures/04_structured_streaming_and_stateful_stream_processing.md",
+      "pillars": [
+        "Apache Spark & Distributed Compute",
+        "Python for Data Engineering"
+      ]
+    },
+    {
+      "id": "pyspark-handbook-curriculum-topics",
+      "type": "curriculum_topics_catalog",
+      "title": "Topics Directory: PySpark Handbook",
+      "difficulty": "L200",
+      "relative_path": "topics/README.md",
       "pillars": [
         "Apache Spark & Distributed Compute",
         "Python for Data Engineering"

@@ -12,7 +12,7 @@
 flowchart TD
     SpillAlert["🚨 Stage Execution Slows by 5x-10x with High Disk I/O"] --> InspectUI["Open Spark UI -> Stages Tab -> Stage Details"]
     InspectUI --> CheckSpill{"Is Spill (Memory) / Spill (Disk) Non-Zero?"}
-    
+
     CheckSpill -->|"Yes, Significant Spill (>5GB)"| DiagnosePartitionSize{"Inspect Shuffle Read Size per Partition"}
     CheckSpill -->|"No, Zero Spill"| CheckOther["Not a Shuffle Spill Issue<br/>Inspect GC Pauses or Data Skew"]
 
@@ -74,7 +74,7 @@ In the Task Metrics table, examine **Shuffle Read Size**:
      ```python
      # ❌ Skew trap: Only 5 partitions get data
      df.repartition("country_code")
-     
+
      # ✅ Balanced composite partition key
      df.repartition(200, "country_code", "customer_id")
      ```

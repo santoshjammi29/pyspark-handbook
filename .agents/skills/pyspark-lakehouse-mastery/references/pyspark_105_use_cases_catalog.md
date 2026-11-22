@@ -4,7 +4,6 @@ This master catalog indexes all 105 production coding use cases from The PySpark
 
 ---
 
-
 ## Module 01: Core PySpark Foundations & DataFrame API (`01_core_dataframe_api`)
 
 | # | Use Case Title | Level | Business Scenario | Key Architectural Takeaway |

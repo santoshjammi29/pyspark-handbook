@@ -1,14 +1,10 @@
 # 🏛️ Architecture 02: Spark Unified Memory Management & Spill Mechanics
 
-
 ![Apache Spark Memory Architecture & Shuffle Mechanics](../assets/whiteboards/spark_shuffle_memory_execution.webp)
 > *Architectural Blueprint: [Apache Spark Memory Architecture & Shuffle Mechanics](../docs/whiteboard_diagrams/README.md#spark-shuffle-memory-execution). View full multi-persona breakdown and engine mechanisms in the master index.*
 
-
 ![Apache Spark Memory Management & Shuffle Spilling Mechanics](../assets/whiteboards/spark_memory_management_spill_diagram.webp)
 > *Architectural Blueprint: [Apache Spark Memory Management & Shuffle Spilling Mechanics](../docs/whiteboard_diagrams/README.md#spark-memory-management-spill). View full multi-persona breakdown and engine mechanisms in the master index.*
-
-
 
 > **Focus**: JVM Heap Partitioning, Execution vs. Storage Dynamic Borrowing, Off-Heap Memory, Tungsten Shuffle Disk Spill, and Garbage Collection (G1GC) Tuning.
 
@@ -26,13 +22,13 @@ Instead of static, rigid memory boundaries that cause premature OOMs, the Unifie
 flowchart TD
     subgraph Container["Total Container Memory (spark.executor.memory + spark.executor.memoryOverhead)"]
         Overhead["Executor Overhead Memory<br/>(10% of heap or min 384MB)<br/>Native libraries, PyArrow, Python worker, Netty buffers"]
-        
+
         subgraph JVM["JVM Heap (spark.executor.memory)"]
             Reserved["Reserved Memory<br/>(Strictly 300 MB fixed)<br/>Internal Spark system metadata"]
-            
+
             subgraph Usable["Usable Memory: (Heap - 300MB)"]
                 User["User Memory<br/>(1 - spark.memory.fraction = 40%)<br/>UDF data structures, internal metadata, user objects"]
-                
+
                 subgraph SparkMemory["Unified Spark Memory Pool<br/>(spark.memory.fraction = 60%)"]
                     Storage["Storage Pool<br/>(Default 50% = 30% of total)<br/>Cached tables & broadcast variables"]
                     Execution["Execution Pool<br/>(Default 50% = 30% of total)<br/>Shuffle, Joins, Sorts, Aggregations"]

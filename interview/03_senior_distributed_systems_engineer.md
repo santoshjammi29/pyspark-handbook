@@ -20,15 +20,15 @@ logger = logging.getLogger("MedallionPipeline")
 try:
     # Reference target Delta table
     target_table_path = "abfss://silver@euadlsprod.dfs.core.windows.net/customers"
-    
+
     # Load source staging updates
     staging_updates_df = spark.read.format("delta").load("abfss://bronze@euadlsprod.dfs.core.windows.net/customer_updates")
-    
+
     from delta.tables import DeltaTable
-    
+
     # Instantiate the target DeltaTable object
     delta_target = DeltaTable.forPath(spark, target_table_path)
-    
+
     # Execute the upsert (merge) statement
     delta_target.alias("t").merge(
         source=staging_updates_df.alias("s"),
@@ -81,7 +81,7 @@ try:
         .option("startingVersion", 10) \
         .option("endingVersion", 15) \
         .load("abfss://silver@euadlsprod.dfs.core.windows.net/customers")
-    
+
     # 2. Filter CDF events to extract modifications and propagate to audit ledger
     updates_and_deletes_df = cdf_df.filter(
         col("_change_type").isin("update_postimage", "delete")
@@ -121,20 +121,20 @@ logger = logging.getLogger("MedallionPipeline")
 
 try:
     from pyspark.sql.functions import broadcast
-    
+
     # Load the massive transactions dataset (10 Billion records)
     txns_df = spark.read.format("delta").load("abfss://silver@euadlsprod.dfs.core.windows.net/transactions")
-    
+
     # Load small currency dimension table (100 rows)
     currency_dim_df = spark.read.format("delta").load("abfss://silver@euadlsprod.dfs.core.windows.net/currencies")
-    
+
     # Force broadcast join of the currency dimension
     enriched_txns_df = txns_df.join(
         broadcast(currency_dim_df),
         on="currency_code",
         how="inner"
     )
-    
+
     # Verify execution plan contains 'BroadcastHashJoin' using explain()
     enriched_txns_df.explain()
 except Exception as e:
@@ -167,22 +167,22 @@ logger = logging.getLogger("MedallionPipeline")
 
 try:
     from pyspark import StorageLevel
-    
+
     # Load and apply heavy transformations to expose transaction flags
     flagged_accounts_df = raw_txns \
         .filter(col("amount_eur") > 250000) \
         .groupBy("account_id").count() \
         .filter(col("count") >= 5)
-    
+
     # Persist to memory and serialized disk spill (retains resource availability)
     flagged_accounts_df.persist(StorageLevel.MEMORY_AND_DISK_SER)
-    
+
     # Trigger action 1: Count of critical warning accounts
     high_risk_count = flagged_accounts_df.count()
-    
+
     # Trigger action 2: Save list to audit files (reuses the cached state)
     flagged_accounts_df.write.format("delta").save("abfss://gold@euadlsprod.dfs.core.windows.net/aml_targets")
-    
+
     # Always unpersist to release memory when transactions are completed
     flagged_accounts_df.unpersist()
 except Exception as e:
@@ -216,16 +216,16 @@ logger = logging.getLogger("MedallionPipeline")
 try:
     # Load Silver transactions (poorly partitioned on landing)
     dirty_input_df = spark.read.format("delta").load("abfss://bronze@euadlsprod.dfs.core.windows.net/landing_txns")
-    
+
     # 1. repartition: Increase partitions and shuffle data evenly across keys
     # Useful to increase parallelism for heavy CPU tasks
     repartitioned_df = dirty_input_df.repartition(100, "account_id")
-    
+
     # 2. coalesce: Decreases partitions without shuffling (minimizes data movement)
     # Ideal for merging small partitions before writing target files
     optimized_for_export_df = repartitioned_df.filter(col("amount_eur") > 10000) \
         .coalesce(5)
-    
+
     # Write output (will produce exactly 5 files in storage)
     optimized_for_export_df.write.format("json").save("abfss://export@euadlsprod.dfs.core.windows.net/daily_alerts")
 except Exception as e:
@@ -258,20 +258,20 @@ logger = logging.getLogger("MedallionPipeline")
 
 try:
     from pyspark.sql.functions import col, concat, lit, rand, round, explode, array
-    
+
     # Target Table: Massive transactions table where some account IDs are extremely skewed (e.g. corporate accounts)
     # Reference Table: Accounts dimension table
-    
+
     # 1. Salt the transactions DataFrame by adding a random salt column (0-9)
     salt_factor = 10
     salted_txns_df = txns_df.withColumn("salt", round(rand() * (salt_factor - 1))) \
         .withColumn("salted_join_key", concat(col("account_id"), lit("_"), col("salt")))
-    
+
     # 2. Replicate the accounts dimension table 10 times to match all possible salts
     exploded_salts_df = spark.range(0, salt_factor).withColumnRenamed("id", "salt")
     replicated_accounts_df = accounts_df.crossJoin(exploded_salts_df) \
         .withColumn("salted_join_key", concat(col("account_id"), lit("_"), col("salt")))
-    
+
     # 3. Perform skew-free join on salted keys
     skew_free_join_df = salted_txns_df.join(
         replicated_accounts_df,
@@ -310,7 +310,7 @@ try:
     # 1. Legacy Z-Ordering (Static multi-dimensional clustering)
     # Run via SQL command interface
     spark.sql("OPTIMIZE eu_bfsi_prod.silver.transactions ZORDER BY (account_id, currency)")
-    
+
     # 2. Modern Liquid Clustering (DBR 13.3+)
     # Configured at table creation or altered dynamically
     spark.sql("""
@@ -322,7 +322,7 @@ try:
         ) USING DELTA
         CLUSTER BY (account_id, txn_date)
     """)
-    
+
     # Compelling execution run to re-cluster layout after batch loading
     spark.sql("OPTIMIZE eu_bfsi_prod.silver.liquid_transactions")
 except Exception as e:
@@ -358,11 +358,11 @@ try:
     streaming_source_df = spark.readStream.format("delta") \
         .option("maxFilesPerTrigger", "10") \
         .load("abfss://bronze@euadlsprod.dfs.core.windows.net/transactions")
-    
+
     # Filter fraud candidates (amounts exceeding 50,000 EUR)
     alert_stream_df = streaming_source_df \
         .filter((col("amount_eur") > 50000) & (col("status") == "COMPLETED"))
-    
+
     # Start streaming query and output results to target database
     streaming_query = alert_stream_df.writeStream.format("delta") \
         .outputMode("append") \
@@ -438,12 +438,12 @@ from typing import List, Dict
 class DynamicPipelineTransformer:
     def __init__(self, df: DataFrame):
         self.df = df
-        
+
     def add_audit_columns(self) -> 'DynamicPipelineTransformer':
         self.df = self.df.withColumn("ingested_at", F.current_timestamp()) \
                          .withColumn("source_system", F.lit("ADLS_RAW"))
         return self
-        
+
     def dynamic_aggregate(self, group_by_cols: List[str], agg_mapping: Dict[str, str]) -> DataFrame:
         """
         Dynamically builds aggregation expressions from a dictionary.
@@ -453,7 +453,7 @@ class DynamicPipelineTransformer:
         for col_name, func_name in agg_mapping.items():
             spark_func = getattr(F, func_name.lower())
             expressions.append(spark_func(F.col(col_name)).alias(f"{func_name}_{col_name}"))
-            
+
         return self.df.groupBy(*group_by_cols).agg(*expressions)
 
 # Pipeline usage:
@@ -503,15 +503,15 @@ df_raw.write.format("delta") \
 
 # 3. Multi-dimensional Z-Ordering on high-cardinality keys
 spark.sql(f"""
-    CREATE TABLE {CATALOG}.{SCHEMA}.sales_zorder AS 
+    CREATE TABLE {CATALOG}.{SCHEMA}.sales_zorder AS
     SELECT * FROM {CATALOG}.{SCHEMA}.sales_raw;
 """)
 spark.sql(f"OPTIMIZE {CATALOG}.{SCHEMA}.sales_zorder ZORDER BY (customer_id, product_id)")
 
 # 4. Liquid Clustering (modern recommended standard - Hilbert curve)
 spark.sql(f"""
-    CREATE TABLE {CATALOG}.{SCHEMA}.sales_liquid 
-    USING DELTA 
+    CREATE TABLE {CATALOG}.{SCHEMA}.sales_liquid
+    USING DELTA
     CLUSTER BY (sale_date, customer_id)
     AS SELECT * FROM {CATALOG}.{SCHEMA}.sales_raw;
 """)
@@ -600,7 +600,7 @@ def process_micro_batch(micro_batch_df, batch_id):
         .withColumn("row_num", row_number().over(window_spec)) \
         .filter(col("row_num") == 1) \
         .drop("row_num")
-        
+
     # 2. Idempotent MERGE into Target Silver Delta Table
     target_delta.alias("tgt").merge(
         deduped_batch.alias("src"),
@@ -719,7 +719,7 @@ Architecting and calibrating a Databricks Genie AI/BI space on top of a Kimball 
 # Databricks Genie Space Semantic Configuration Pattern
 # 1. Ensure Star Schema tables have rich column comments and PRIMARY/FOREIGN keys in Unity Catalog:
 spark.sql("""
-    ALTER TABLE gold.fct_sales 
+    ALTER TABLE gold.fct_sales
     ALTER COLUMN customer_id COMMENT 'Unique foreign key referencing dim_customer.customer_id';
 """)
 
@@ -1734,7 +1734,7 @@ def compute_embeddings_arrow(batch_iter: Iterator[pd.Series]) -> Iterator[pd.Ser
     # Lazy load local embedding model once per worker lifecycle
     from sentence_transformers import SentenceTransformer
     model = SentenceTransformer('BAAI/bge-large-en-v1.5')
-    
+
     for text_series in batch_iter:
         # Generate dense embeddings across Arrow chunk
         clean_texts = text_series.fillna("").tolist()

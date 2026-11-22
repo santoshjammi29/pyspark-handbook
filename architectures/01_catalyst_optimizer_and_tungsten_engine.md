@@ -1,14 +1,10 @@
 # 🏛️ Architecture 01: The Catalyst Optimizer & Project Tungsten Engine
 
-
 ![Catalyst Optimizer, AQE & Photon Engine](../assets/whiteboards/catalyst_photon_engine.webp)
 > *Architectural Blueprint: [Catalyst Optimizer, AQE & Photon Engine](../docs/whiteboard_diagrams/README.md#spark-catalyst-photon-engine). View full multi-persona breakdown and engine mechanisms in the master index.*
 
-
 ![Photon Native C++ Engine vs Classic JVM](../assets/whiteboards/photon_engine_vs_jvm.webp)
 > *Architectural Blueprint: [Photon Native C++ Engine vs Classic JVM](../docs/whiteboard_diagrams/README.md#photon-engine-vs-jvm). View full multi-persona breakdown and engine mechanisms in the master index.*
-
-
 
 > **Focus**: Query Optimization Pipeline, Tree Transformations, Whole-Stage Code Generation, Memory Offloading, and Hardware-Conscious Computation in Apache Spark 3.5+ & 4.0.
 

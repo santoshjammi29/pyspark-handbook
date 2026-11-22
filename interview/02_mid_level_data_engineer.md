@@ -88,7 +88,7 @@ from pyspark.sql.functions import coalesce, col, when, lit
 
 # Clean customer profile details and assign defaults for reporting
 sanitized_customers_df = customer_df.withColumn(
-    "contact_phone", 
+    "contact_phone",
     coalesce(col("mobile_number"), col("home_phone"), lit("NOT_PROVIDED"))
 ).withColumn(
     "risk_tier_category",

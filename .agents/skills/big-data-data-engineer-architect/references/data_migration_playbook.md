@@ -113,14 +113,14 @@ Transformation | Notes
 ### Post-Migration Reconciliation Checks
 ```sql
 -- Row count reconciliation
-SELECT 
+SELECT
     'source' AS system, COUNT(*) AS row_count FROM source_db.dbo.orders
 UNION ALL
-SELECT 
+SELECT
     'target' AS system, COUNT(*) AS row_count FROM target_db.dbo.orders;
 
 -- Checksum reconciliation (for smaller tables)
-SELECT CHECKSUM_AGG(CHECKSUM(order_id, customer_id, total_amount)) 
+SELECT CHECKSUM_AGG(CHECKSUM(order_id, customer_id, total_amount))
 FROM source_db.dbo.orders;
 
 -- Column-level aggregate comparison

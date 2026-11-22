@@ -274,7 +274,7 @@ silver_df.createOrReplaceTempView("v_silver_transactions")
 
 # Execute standard ANSI SQL commands against the view
 summary_report_df = spark.sql("""
-    SELECT 
+    SELECT
         account_id,
         SUM(txn_amount) as total_debited,
         CURRENT_TIMESTAMP() as report_generated_at
@@ -1658,8 +1658,8 @@ SELECT
     IFNULL(processing_fee, 0.00)                    AS processing_fee_safe,
 
     -- NVL2: NVL2(expr, if_not_null, if_null)
-    NVL2(counterparty_country, 
-         CONCAT('CROSS-BORDER:', counterparty_country), 
+    NVL2(counterparty_country,
+         CONCAT('CROSS-BORDER:', counterparty_country),
          'DOMESTIC')                                AS txn_geography,
 
     -- Combining CAST + COALESCE for safe numeric operations

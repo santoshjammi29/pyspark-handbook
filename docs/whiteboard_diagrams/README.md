@@ -1,7 +1,7 @@
 # Modern Data Platform & Lakehouse Architecture Whiteboard Blueprints
 
 > **Repository Master Index**: 52 architect-grade, hand-drawn digital whiteboard schematics across 7 enterprise domains with 2x2 visual blueprint grids, 5-role persona breakdowns, engine-level mechanisms, failure mode playbooks, and primary documentation links.
-> 
+>
 > 📘 **Complete Handbook Blueprints (20 Pillars & 8 Playbooks)**: See [`handbook_whiteboard_blueprints.md`](./handbook_whiteboard_blueprints.md) for the end-to-end Dual-Plane & 3-Panel Mermaid whiteboard diagrams covering all 20 Knowledge Pillars and 8 Playbooks from the [Data Engineering Interview Handbook](https://github.com/santoshjammi29/data-engineering-interview-handbook).
 
 All visual blueprint files are available in this repository under [`assets/whiteboards/`](../../assets/whiteboards) and [`public/diagrams/`](../../public/diagrams).

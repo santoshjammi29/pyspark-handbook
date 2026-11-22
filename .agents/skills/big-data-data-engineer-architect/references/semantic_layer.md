@@ -47,7 +47,7 @@ semantic_models:
   - name: orders
     description: "Order transactions semantic model"
     model: ref('fct_orders')
-    
+
     entities:
       - name: order
         type: primary
@@ -134,7 +134,7 @@ Revenue YTD = CALCULATE([Total Revenue], DATESYTD(dim_date[date_actual]))
 
 Revenue LY = CALCULATE([Total Revenue], SAMEPERIODLASTYEAR(dim_date[date_actual]))
 
-Revenue YoY% = 
+Revenue YoY% =
 DIVIDE(
     [Total Revenue] - [Revenue LY],
     [Revenue LY],
@@ -142,7 +142,7 @@ DIVIDE(
 )
 
 -- Filtered measure
-Online Revenue = 
+Online Revenue =
 CALCULATE([Total Revenue], dim_channel[channel_name] = "Online")
 
 -- Row-level security
@@ -155,7 +155,7 @@ CALCULATE([Total Revenue], dim_channel[channel_name] = "Online")
 -- Dynamic RLS using security table
 [email] = USERPRINCIPALNAME()
 -- OR for group-based RLS:
-[region_code] IN 
+[region_code] IN
     VALUES(security_table[region_code])
 ```
 
@@ -168,7 +168,7 @@ CALCULATE([Total Revenue], dim_channel[channel_name] = "Online")
 // schema/Orders.js
 cube(`Orders`, {
   sql: `SELECT * FROM gold.fact_orders`,
-  
+
   measures: {
     total_revenue: {
       sql: `revenue`,
@@ -180,7 +180,7 @@ cube(`Orders`, {
       drillMembers: [id, order_date]
     }
   },
-  
+
   dimensions: {
     id: {
       sql: `order_id`,
@@ -196,7 +196,7 @@ cube(`Orders`, {
       type: `string`
     }
   },
-  
+
   segments: {
     completed: {
       sql: `${CUBE}.order_status = 'COMPLETED'`
