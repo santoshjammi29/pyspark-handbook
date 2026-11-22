@@ -11,7 +11,7 @@
 ```mermaid
 flowchart TD
     PyAlert["🚨 PySpark Job Fails during Pandas UDF / PyArrow Execution"] --> CategorizeCrash{"Identify Exact Crash Signature"}
-    
+
     CategorizeCrash -->|"Python worker exited unexpectedly / SIGSEGV"| WorkerCrash["Python Worker Daemon Death"]
     CategorizeCrash -->|"ArrowInvalid: offset overflow / 2GB limit"| ArrowLimit["PyArrow 32-bit Buffer Overflow"]
     CategorizeCrash -->|"Severe JVM GC Pauses (>30% of stage time)"| SerializationGC["Serialization Memory Overhead"]
@@ -83,7 +83,6 @@ def fast_fn(s: pd.Series) -> pd.Series:
 - [ ] No row-by-row standard `@udf` calls exist on high-cardinality DataFrames.
 - [ ] `spark.sql.execution.arrow.pyspark.enabled = true` is set.
 - [ ] Executor memory overhead is sized to at least $25\%$ of executor heap for PyArrow-heavy pipelines.
-
 
 ---
 

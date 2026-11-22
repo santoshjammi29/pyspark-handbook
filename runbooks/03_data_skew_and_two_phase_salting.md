@@ -12,13 +12,13 @@
 flowchart TD
     SkewAlert["🚨 Spark Job Hangs at 99%: 199/200 Tasks Done, 1 Running Forever"] --> CheckUI["Open Spark UI -> Stages Tab -> Task Metrics Table"]
     CheckUI --> InspectDistribution{"Inspect Task Duration & Shuffle Read Size"}
-    
+
     InspectDistribution -->|"Max Task Size > 10x Median Task Size"| ConfirmedSkew["Confirmed Data Skew on Join or Grouping Key"]
     InspectDistribution -->|"All Tasks Uniformly Slow"| NotSkew["Resource Starvation or External Sink Throttling"]
 
     ConfirmedSkew --> CheckAQE{"Is AQE Skew Join Enabled?"}
     CheckAQE -->|"No or Ineffective"| EvaluateKeyType{"Examine Skewed Key Distribution"}
-    
+
     EvaluateKeyType -->|"Skew Due to NULL Values"| FixNulls["Null Key Accumulation<br/>Remediation: Filter NULLs or Isolate Null Partition"]
     EvaluateKeyType -->|"Skew Due to Legitimate Key (e.g. 'AMAZON')"| TwoPhaseSalting["High-Cardinality Key Imbalance<br/>Remediation: Implement Two-Phase Key Salting"]
 ```
@@ -57,10 +57,10 @@ df.groupBy("join_key").count().orderBy(col("count").desc()).limit(5).show()
      ```python
      # ❌ Trap: Nulls hash to single partition
      joined_df = orders.join(customers, "customer_id", "left")
-     
+
      # ✅ Randomize null join keys
      from pyspark.sql.functions import col, when, rand, concat, lit
-     
+
      orders_fixed = orders.withColumn(
          "salted_join_key",
          when(col("customer_id").isNull(), concat(lit("null_salt_"), (rand() * 100).cast("int")))

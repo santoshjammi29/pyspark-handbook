@@ -112,12 +112,12 @@ spark.conf.set("spark.sql.adaptive.advisoryPartitionSizeInBytes", "134217728") #
 ### Surgical Remediation
 1. **Enable Deletion Vectors**: Allows concurrent updates/deletes to mark rows deleted without rewriting entire Parquet files.
    ```sql
-   ALTER TABLE catalog.schema.target_table 
+   ALTER TABLE catalog.schema.target_table
    SET TBLPROPERTIES ('delta.enableDeletionVectors' = true);
    ```
 2. **Migrate from Hive Partitioning to Liquid Clustering**:
    ```sql
-   ALTER TABLE catalog.schema.target_table 
+   ALTER TABLE catalog.schema.target_table
    CLUSTER BY (customer_id, transaction_date);
    ```
 3. **Partition-Pruned Conditional Merges**:
@@ -201,7 +201,7 @@ spark.conf.set("spark.sql.adaptive.advisoryPartitionSizeInBytes", "134217728") #
    - Step 4: ADF Control Table updates `last_watermark` ONLY on explicit Success status.
 2. **Automated Audit Check**:
    ```sql
-   SELECT 
+   SELECT
        c.table_name,
        c.last_watermark,
        MAX(t.event_timestamp) as actual_target_max,

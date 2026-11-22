@@ -81,7 +81,7 @@ resources:
   jobs:
     daily_medallion_etl:
       name: "[${bundle.target}] Daily Medallion ETL & Quality Gates"
-      
+
       schedule:
         quartz_cron_expression: "0 0 2 * * ?" # 02:00 UTC daily
         timezone_id: "UTC"
@@ -145,7 +145,7 @@ resources:
       channel: "preview"
       edition: "advanced"
       photon: true
-      
+
       libraries:
         - notebook:
             path: ../notebooks/streaming_orders_dlt.py

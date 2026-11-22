@@ -11,7 +11,7 @@
 ```mermaid
 flowchart TD
     StreamingAlert["🚨 Streaming Job Fails with State Store OOM or Dropped Data"] --> TriageCategory{"Identify Primary Symptom"}
-    
+
     TriageCategory -->|"Executor Heap OOM in Stateful Window / Join"| StateLeak["State Store Memory Leak"]
     TriageCategory -->|"Business Complains Missing Records"| LateDrop["Late Data Silently Dropped by Watermark"]
     TriageCategory -->|"Streaming Query Fails to Restart"| CheckpointCorrupt["Checkpoint Metadata Mismatch / Corrupt Offsets"]
@@ -57,11 +57,11 @@ for query in spark.streams.active:
      ```python
      # ❌ Trap: Retains impressions indefinitely
      clicks.join(impressions, "ad_id")
-     
+
      # ✅ Watermarked with time interval bounds
      impressions_wm = impressions.withWatermark("impression_time", "2 hours")
      clicks_wm = clicks.withWatermark("click_time", "3 hours")
-     
+
      joined_stream = impressions_wm.join(
          clicks_wm,
          expr("""

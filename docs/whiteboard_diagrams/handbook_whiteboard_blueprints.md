@@ -60,13 +60,13 @@ flowchart TD
     subgraph PhysicalPlane ["Physical Tungsten & Hardware Execution Plane"]
         Bytecode -->|"Deploy to Executor Cores"| Driver["Driver DAGScheduler"]
         Driver -->|"Dispatch Task Sets"| Task["Executor Task Thread"]
-        
+
         subgraph MemoryModel ["Tungsten Memory Layout (Off-Heap sun.misc.Unsafe)"]
             OffHeap["64-Bit Memory Pointers\n(No JVM Object Header Overhead)"]
             CacheAware["L1 / L2 / L3 CPU Cache Line Alignment\n(Continuous 8-Byte Pointers)"]
             ExecutionMem["Execution Memory Pool\n(Shuffle / Hash Joins / Sort)"]
         end
-        
+
         Task --> MemoryModel
         MemoryModel -->|"Scan Parquet / Prune via DPP"| CloudStorage["Cloud Object Store (ADLS / S3)"]
     end
@@ -183,13 +183,13 @@ flowchart LR
 flowchart TD
     subgraph IngestionFlow ["High-Throughput Prefix Partitioning & Ingestion"]
         Producers["High-Volume Ingestion Producers\n(100,000 Files / Second)"]
-        
+
         subgraph StoragePrefixes ["S3 / ADLS Hash-Distributed Prefixes"]
             P1["bucket/data/prefix_a1/... (3,500 PUT/s)"]
             P2["bucket/data/prefix_b2/... (3,500 PUT/s)"]
             P3["bucket/data/prefix_c3/... (3,500 PUT/s)"]
         end
-        
+
         AutoLoader["Databricks Auto Loader (cloudFiles)\nFile Notification Mode (AWS SQS / Azure Event Grid)"]
         Producers --> StoragePrefixes --> AutoLoader
     end
@@ -198,7 +198,7 @@ flowchart TD
         PrimaryRegion["Primary Region (e.g., East US)\nActive Compute & Ingestion"]
         StorageReplication["Cloud Storage Geo-Replication\n(Azure GRS / S3 Cross-Region Replication)"]
         SecondaryRegion["Secondary Region (e.g., West US)\nStandby Disaster Recovery Workspace"]
-        
+
         PrimaryRegion --> StorageReplication --> SecondaryRegion
         FailoverDNS["Global Traffic Manager / Route 53\n(Automated DNS Failover on Outage)"]
         FailoverDNS -.-> PrimaryRegion
@@ -227,7 +227,7 @@ flowchart TD
         Scheduler["Airflow Scheduler (Heartbeat & DAG Parsing)"]
         MetadataDB["Metadata Database (PostgreSQL / MySQL)\n(Job States, Variables, Connections)"]
         Triggerer["Airflow Triggerer (AsyncIO Event Loop)\n(Runs 10,000+ Deferrable Sensors on 1 Thread)"]
-        
+
         Scheduler <--> MetadataDB
         Webserver <--> MetadataDB
         Scheduler <--> Triggerer
@@ -243,7 +243,7 @@ flowchart TD
         Worker2["Worker 2 (Celery Worker / K8s Pod)"]
         Queue --> Worker1
         Queue --> Worker2
-        
+
         subgraph Tasks ["Dynamic Task Mapping (expand)"]
             TaskMap["Dynamic Task Mapping\n(Spawns N parallel sub-tasks dynamically)"]
         end
@@ -268,13 +268,13 @@ flowchart TD
 flowchart TD
     subgraph DecisionMatrix ["1. Distributed Join Strategy Selection"]
         JoinCondition{"Is it an Equi-Join\n(= condition)?"}
-        
+
         JoinCondition -->|No| BNLJ["Broadcast Nested Loop Join (BNLJ)\n(Extreme CPU $O(N \times M)$, avoid)"]
         JoinCondition -->|Yes| SizeCheck{"Is Table A or B < 10 MB\n(or broadcast hint)?"}
-        
+
         SizeCheck -->|Yes| BHJ["Broadcast Hash Join (BHJ)\n🏆 Zero Network Shuffle on Fact Table"]
         SizeCheck -->|No| SortCheck{"Are keys sortable\nand large?"}
-        
+
         SortCheck -->|Default| SMJ["Sort-Merge Join (SMJ)\n🛡️ Scalable, Full Shuffle + Disk Sort"]
         SortCheck -->|Photon / RAM fit| SHJ["Shuffle Hash Join (SHJ)\n⚡ Fast, Shuffles but No Sort"]
     end
@@ -283,7 +283,7 @@ flowchart TD
         TotalMem["Total Container Memory (Allocated by YARN / K8s)"]
         Overhead["Memory Overhead (10-30%)\n(PySpark daemons, off-heap buffers)"]
         Heap["JVM Heap Memory\n(Storage 50% vs Execution 50%)"]
-        
+
         Heap -->|"Execution Buffer Exceeded"| SpillMemory["Spill (Memory): Deserialized Java Objects in RAM"]
         SpillMemory -->|"Flushed to Local Disk"| SpillDisk["Spill (Disk): Compressed Blocks on SSD"]
         TotalMem -->|"Exceeded Limit"| Exit137["Container Killed: Exit Code 137"]
@@ -293,7 +293,7 @@ flowchart TD
         HotKey["Hot Key Skew\n(e.g., NULLs or Mega Customer)"]
         AQESkew["Level 1: Enable AQE Skew Join\nspark.sql.adaptive.skewJoin.enabled = true"]
         SelectiveSalting["Level 2: Selective Two-Phase Salting\nAdd random 0..K-1 suffix to HOT keys\nReplicate dimension table by K"]
-        
+
         HotKey --> AQESkew --> SelectiveSalting
     end
 
@@ -319,7 +319,7 @@ flowchart TD
         ADF["Azure Data Factory / Synapse Pipeline\n(Master Pipeline Orchestrator)"]
         KeyVault["Azure Key Vault\n(Credential & Connection Secret Vault)"]
         EventGrid["Azure Event Grid\n(Storage Event Ingestion Trigger)"]
-        
+
         EventGrid --> ADF
         KeyVault <--> ADF
     end
@@ -373,7 +373,7 @@ flowchart LR
         end
         Staging --> DimCustomer
         Staging --> FactOrders
-        
+
         Tests["dbt Test Engine\n(unique, not_null, accepted_values,\nrelationship foreign-key constraints)"]
         FactOrders --> Tests
     end
@@ -421,12 +421,12 @@ flowchart TD
             WorkspaceA["Finance Workspace Lakehouse\n(Delta Parquet with V-Order)"]
             WorkspaceB["Marketing Workspace Lakehouse\n(Delta Parquet with V-Order)"]
         end
-        
+
         subgraph Shortcuts ["Zero-Copy Cross-Cloud Shortcuts"]
             S3Shortcut["Shortcut -> AWS S3 Bucket\n(IAM AssumedRole Delegation)"]
             ADLSShortcut["Shortcut -> External ADLS Gen2\n(Zero Egress Duplication)"]
         end
-        
+
         WorkspaceA <--> Shortcuts
     end
 
@@ -497,7 +497,7 @@ flowchart TD
             Col3["Column Chunk: Date\n(Run-Length Encoded)"]
             Col4["Column Chunk: Amount\n(Bit-Packed Decimal)"]
         end
-        
+
         DeltaStore["Delta Store (B-Tree Rowstore Buffer)\n(Accepts trickle inserts until 1M rows)"]
         TupleMover["Tuple Mover (Background Daemon)\nCompresses Delta Store into Row Group"]
         DeltaStore --> TupleMover --> RowGroup1
@@ -568,7 +568,7 @@ flowchart TD
         OutboxTable["Outbox Table (Events Committed in Same Txn)"]
         Debezium["Debezium Connector (Kafka Connect)\n(Reads PostgreSQL WAL / Logical Replication)"]
         Kafka["Kafka Topic: cdc.orders\n(Avro Payload + Key + Schema ID)"]
-        
+
         Postgres --> OutboxTable --> Debezium --> Kafka
     end
 
@@ -655,7 +655,7 @@ flowchart TD
     subgraph DualPathExecution ["Dual-Path Architecture: Offline Lakehouse vs Online Store"]
         SparkStream["Databricks Structured Streaming / Flink"]
         Kafka --> SparkStream
-        
+
         subgraph OfflineStore ["Offline Feature Store (Delta Lake Gold)"]
             DeltaGold["Delta Lake Feature Store\n(Historical Training Data / Point-in-Time Lookups)"]
             ModelTraining["ML Model Training (AutoML / Mosaic AI)"]
@@ -711,7 +711,7 @@ flowchart TD
     subgraph Tier4 ["Tier 4: Manifest Files (*.avro) & Physical Data Files"]
         Manifest1["manifest-1.avro\nList of Data Files: part-1.parquet, part-2.parquet\nColumn Min/Max Stats | Null Counts | Positional Delete Refs"]
         ManifestList --> Manifest1
-        
+
         subgraph PhysicalFiles ["Storage Layer (S3 / ADLS)"]
             DataFile1["part-1.parquet (Active Data)"]
             DataFile2["part-2.parquet (Active Data)"]
@@ -745,7 +745,7 @@ flowchart LR
     subgraph OperatorPipeline ["2. Stateful Operator Pipeline"]
         WindowOp["Sliding Window Aggregator\n(Keyed State: customer_id -> running_total)"]
         Barrier --> WindowOp
-        
+
         subgraph LocalState ["Local Off-Heap RocksDB State Store"]
             SSTable["LSM-Tree Key-Value State\n(Spills to local NVMe SSDs)"]
             MemTable["In-Memory MemTable (Fast Lookups)"]
@@ -775,13 +775,13 @@ flowchart LR
 flowchart TD
     subgraph TrinoMPP ["Trino Distributed MPP Architecture (Multi-Node Cloud Scale)"]
         TrinoCoord["Trino Coordinator (Parser, Planner, Cost-Based Optimizer)"]
-        
+
         subgraph Workers ["Distributed Worker Nodes (In-Memory Streaming Pipeline)"]
             W1["Worker 1 (Task Exchange / Netty)"]
             W2["Worker 2 (Task Exchange / Netty)"]
             W3["Worker 3 (Task Exchange / Netty)"]
         end
-        
+
         DynFilter["Dynamic Filtering Engine\n(Pushes Runtime Hash Join Filter down to Lakehouse Scans)"]
         TrinoCoord --> DynFilter --> Workers
     end
@@ -790,7 +790,7 @@ flowchart TD
         PythonProcess["Host Process (Python / Node.js / CLI)"]
         DuckDB["DuckDB Vectorized C++ Engine\n(Direct Pointer Memory Sharing, No TCP Network Transfer)"]
         SIMD["SIMD Execution Vectors (1024-Row Chunks in CPU L1/L2 Cache)"]
-        
+
         PythonProcess <--> DuckDB --> SIMD
     end
 
@@ -821,7 +821,7 @@ flowchart TD
         Chunker["LangChain / Semantic Chunker (512-Token Overlap)"]
         Embedder["Embedding Model (bge-large / text-embedding-3)"]
         VectorIndex["Databricks Vector Search / Pinecone / Milvus\n(HNSW Hierarchical Navigable Small World Graph)"]
-        
+
         Docs --> AutoLoader --> Chunker --> Embedder --> VectorIndex
     end
 
@@ -832,7 +832,7 @@ flowchart TD
         ACL_Filter["Unity Catalog ACL Verification\n(Filter Out Documents User Lacks SELECT On)"]
         LLM["Foundation Model (Llama-3 / Claude / GPT-4)"]
         Response["Synthesized Accurate Response with Direct Citations"]
-        
+
         UserQuery --> QueryEmbedding --> ANN_Search --> ACL_Filter --> LLM --> Response
     end
 
@@ -933,7 +933,7 @@ flowchart TD
     subgraph SparkEnginePlane ["2. Spark Structured Streaming Engine (Micro-Batch)"]
         MicroBatch["Micro-Batch Execution (Trigger: availableNow or ProcessingTime)"]
         ConsumerGroup --> MicroBatch
-        
+
         subgraph StatefulStore ["Off-Heap State Store (RocksDB)"]
             Watermark["Event-Time Watermark: max(event_time) - 10 mins"]
             StateKey["State Keys: user_id -> cart_events"]
@@ -1090,7 +1090,7 @@ flowchart TD
         FeatureCache["Redis Enterprise / DynamoDB (Sub-5ms Feature Vector Lookup)"]
         ScoringModel["ONNX ML Inference Engine (Vectorized Fraud Probability)"]
         DecisionRules["Decision Engine: Allow / Challenge / Block"]
-        
+
         KafkaCluster --> FlinkCluster
         FlinkCluster <--> FeatureCache
         FlinkCluster --> ScoringModel --> DecisionRules
@@ -1101,7 +1101,7 @@ flowchart TD
         DLT_Silver["Silver Curated Transactions"]
         FeatureStore["Delta Lake Feature Store (Feature Engineering)"]
         ModelRetraining["Continuous Model Retraining Pipeline"]
-        
+
         KafkaCluster --> DeltaBronze --> DLT_Silver --> FeatureStore --> ModelRetraining
         ModelRetraining -.->|"Publish New Model Weights"| ScoringModel
     end

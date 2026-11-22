@@ -19,7 +19,7 @@ logger = logging.getLogger("MedallionPipeline")
 
 try:
     from pyspark.sql.functions import when, expr, col, sha2, lit
-    
+
     # Dynamic column masking for IBAN
     # is_member evaluates the active caller's Microsoft Entra ID groups in Unity Catalog
     secured_customer_df = customer_raw_df.withColumn(
@@ -28,11 +28,11 @@ try:
         .when(expr("is_member('Standard_Developers')"), sha2(col("iban"), 256))
         .otherwise(lit("ACCESS_DENIED"))
     )
-    
+
     # 2. Right to be Forgotten (GDPR Article 17): Purge records based on customer requests
     # Perform deletion in the Delta table and clean up history using VACUUM
     spark.sql("DELETE FROM eu_bfsi_prod.silver.customers WHERE customer_id = 'CUST-EU-8809'")
-    
+
     # Run VACUUM to permanently purge deleted data files from physical storage
     # Set retention to 0 hours for immediate physical delete (requires bypass flag)
     spark.conf.set("spark.databricks.delta.vacuum.parallelDelete.enabled", "true")
@@ -68,18 +68,18 @@ logger = logging.getLogger("MedallionPipeline")
 
 try:
     from pyspark.sql import functions as F
-    
+
     # Batch Ingestion pattern with explicit batch tracking
     def ingest_daily_transactions(batch_date: str, source_path: str, target_table: str):
         # 1. Load batch files for the specific execution date
         batch_df = spark.read.format("delta").load(source_path) \
             .filter(F.col("txn_date") == batch_date)
-        
+
         # 2. Add pipeline metadata for audit tracing
         enriched_batch_df = batch_df \
             .withColumn("_pipeline_batch_id", F.lit(batch_date)) \
             .withColumn("_ingested_at", F.current_timestamp())
-    
+
         # 3. Idempotently write to target table using INSERT OVERWRITE on the target partition
         # Rerunning this function for the same date will safely overwrite without doubling rows
         enriched_batch_df.write.format("delta") \
@@ -119,7 +119,7 @@ try:
     spark.conf.set("spark.sql.adaptive.enabled", "true")                  # Auto optimizes execution paths
     spark.conf.set("spark.sql.adaptive.skewJoin.enabled", "true")         # Mitigates data skew tasks dynamically
     spark.conf.set("spark.sql.adaptive.coalescePartitions.enabled", "true")# Automatically merges small output files
-    
+
     # Specify cluster autoscaling logic programmatically for Synapse/Fabric workloads
     # Example: Limit max drivers, configure dynamic allocation based on thread limits
     spark.conf.set("spark.dynamicAllocation.enabled", "true")
@@ -159,12 +159,12 @@ try:
     # Querying directly across catalog structures (dev to prod)
     gold_report_df = spark.read.table("eu_bfsi_prod.gold.aml_alerts") \
         .join(spark.read.table("eu_bfsi_prod.silver.customers"), on="customer_id")
-    
+
     # 2. Accessing cross-cloud datasets using Microsoft Fabric OneLake Shortcuts
     # OneLake presents a single ADLS repository across workspaces
     fabric_shortcut_path = "abfss://finance_workspace@onelake.dfs.fabric.microsoft.com/invoices.Lakehouse/Tables/raw_invoices"
     external_invoices_df = spark.read.format("delta").load(fabric_shortcut_path)
-    
+
     # 3. Create a shortcut reference catalog pointer
     spark.sql(f"CREATE TABLE IF NOT EXISTS eu_bfsi_prod.bronze.shortcut_invoices USING DELTA LOCATION '{fabric_shortcut_path}'")
 except Exception as e:
@@ -198,7 +198,7 @@ logger = logging.getLogger("MedallionPipeline")
 try:
     # Scenario: Simultaneously streaming alerts into gold table and running background maintenance delete
     from delta.tables import DeltaTable
-    
+
     # Background process deleting expired transactions
     def run_purging_operation():
         try:
@@ -207,7 +207,7 @@ try:
         except Exception as e:
             print(f"Conflict detected: {e}")
             # OCC conflict throws 'ConcurrentAppendException' or 'WriteConflictException'
-    
+
     # Stream write configuration with concurrency limits
     # Enable schema evolution and configure write limits
     spark.conf.set("spark.databricks.delta.write.allowConcurrentWrites", "true")
@@ -247,17 +247,17 @@ try:
         MANAGED LOCATION 'abfss://france@euadlsfr.dfs.core.windows.net/managed/'
         COMMENT 'Isolated catalog for French Banking Subsidiary'
     """)
-    
+
     spark.sql("""
         CREATE CATALOG IF NOT EXISTS tenant_germany
         MANAGED LOCATION 'abfss://germany@euadlsde.dfs.core.windows.net/managed/'
         COMMENT 'Isolated catalog for German Banking Subsidiary'
     """)
-    
+
     # Grant access permissions strictly to regional groups
     spark.sql("GRANT USAGE, CREATE SCHEMA ON CATALOG tenant_france TO `group-fr-data-engineers`")
     spark.sql("GRANT USAGE, CREATE SCHEMA ON CATALOG tenant_germany TO `group-de-data-engineers`")
-    
+
     # Active tenant selection logic
     spark.sql("USE CATALOG tenant_france")
 except Exception as e:
@@ -295,7 +295,7 @@ try:
         .option("cloudFiles.inferColumnTypes", "true") \
         .option("cloudFiles.schemaLocation", "abfss://meta@euadlsprod.dfs.core.windows.net/schemas/drift_txns") \
         .load("abfss://landing@euadlsprod.dfs.core.windows.net/incoming_txns")
-    
+
     # Configure target write with mergeSchema enabled to automatically adapt to column additions
     drift_query = raw_ingest_df.writeStream.format("delta") \
         .outputMode("append") \
@@ -334,15 +334,15 @@ try:
     # Load target tables for performance diagnosis
     txns = spark.read.table("eu_bfsi_prod.silver.transactions")
     customers = spark.read.table("eu_bfsi_prod.silver.customers")
-    
+
     # Combine and aggregate to analyze query plans
     query_df = txns.join(customers, on="customer_id", how="inner") \
         .groupBy("customers.country_code").count()
-    
+
     # 1. Print formatted execution query plan to console
     # Displays: Parsed Logical Plan -> Analyzed Logical Plan -> Optimized Logical Plan -> Physical Plan
     query_df.explain(extended=True)
-    
+
     # 2. Force explain output with cost and code generation details
     query_df.explain(mode="formatted")
 except Exception as e:
@@ -1842,7 +1842,6 @@ def evaluate_commit_lease(epsilon_ms: float = 12.0) -> float:
     return time.time()
 ```
 
-
 **Question & Concept Overview:**  
 In a globally distributed multi-region transactional engine spanning Virginia (us-east-1), Frankfurt (eu-central-1), and Tokyo (ap-northeast-1), your cluster relies on an atomic TrueTime-style API providing time intervals [earliest, latest] where uncertainty is bounded by 2*epsilon. During a planned solar geomagnetic disturbance, redundant GPS receivers across Frankfurt lose satellite lock, falling back to local oven-controlled crystal oscillators (OCXO) with a drift rate of 1 microsecond per second, driving epsilon from 200 microseconds to 12 milliseconds over a 3-hour period. Because strict external consistency (linearizability) requires transactions to commit-wait for 2*epsilon before releasing write locks, p99 commit latency explodes from 800 microseconds to 24 milliseconds, causing severe lock contention on primary account balance rows and cascading connection pool exhaustion across all regional ingress proxies. How do you re-architect the commit-wait epoch and lease allocation mechanism to maintain linearizable snapshot isolation without degrading write throughput to zero, given the physical speed-of-light round-trip time between Frankfurt and Tokyo is 112ms?
 
@@ -1850,7 +1849,7 @@ In a globally distributed multi-region transactional engine spanning Virginia (u
 Enterprise Lakehouse Scale
 
 **Architectural Invariants & Gotchas:**
-- 
+-
 
 ---
 
@@ -1869,7 +1868,6 @@ spark = (SparkSession.builder
     .getOrCreate())
 ```
 
-
 **Question & Concept Overview:**  
 A 5-node geo-distributed metadata cluster deployed across North America, Europe, and Asia uses Raft with leader leases (lease duration = 2,000ms, heartbeat interval = 300ms) to serve 150,000 metadata lookups per second. A malfunctioning border gateway router in Ashburn begins silently dropping egress TCP packets while continuing to forward ingress TCP ACK packets, creating an asymmetric network partition: Leader Node A can receive heartbeats and append-entries responses from Followers B and C, but B and C cannot receive Leader A's heartbeat updates. Followers B and C experience heartbeat election timeouts (1,500ms) and increment their term, broadcasting `RequestVote` RPCs. Because ingress still functions, Leader A receives these higher-term votes, steps down to follower, and aborts in-flight client writes. However, neither B nor C can establish a majority quorum due to transatlantic cross-partition packet drops, causing continuous term escalation up to Term 45,000. When the router temporarily clears its route table, the hyper-accelerated term flood invalidates valid leases across all surviving nodes. How do you architect a consensus transport and lease renewal protocol that prevents term inflation cascades and preserves read availability during asymmetric routing failures?
 
@@ -1877,7 +1875,7 @@ A 5-node geo-distributed metadata cluster deployed across North America, Europe,
 Enterprise Lakehouse Scale
 
 **Architectural Invariants & Gotchas:**
-- 
+-
 
 ---
 
@@ -1902,7 +1900,6 @@ class DirectIOWAL:
             os.close(fd)
 ```
 
-
 **Question & Concept Overview:**  
 You are optimizing a low-latency distributed state machine engine processing 2,000,000 write operations per second across an array of enterprise PCIe Gen5 x4 NVMe SSDs (U.2 form factor, raw sequential write throughput: 14 GB/s, 4KB random write IOPS: 3.2M). The consensus engine writes to an append-only Write-Ahead Log (WAL) using Direct I/O (`O_DIRECT | O_DSYNC`). Profiling reveals that while the p50 write latency is 18 microseconds, the p99.99 latency spikes violently to 14.8 milliseconds. Kernel tracing with eBPF reveals two root causes: (1) memory buffers passed to `pwrite64` occasionally cross 64-byte L3 cache lines and unaligned 4096-byte memory page boundaries, forcing NVMe driver split-DMA transfers; and (2) internal SSD controller NAND flash garbage collection (GC) block-erase cycles stall controller write queues when write amplification factor (WAF) reaches 3.2. How do you architect the user-space WAL ring buffer allocator and NVMe I/O submission path to guarantee strict sub-50 microsecond p99.99 write latency without losing synchronous durability?
 
@@ -1910,6 +1907,6 @@ You are optimizing a low-latency distributed state machine engine processing 2,0
 Enterprise Lakehouse Scale
 
 **Architectural Invariants & Gotchas:**
-- 
+-
 
 ---

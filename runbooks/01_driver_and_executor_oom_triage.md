@@ -11,7 +11,7 @@
 ```mermaid
 flowchart TD
     Start["🚨 Spark Job Fails with OOM / Container Killed"] --> CheckWhere{"Where Did the Failure Occur?"}
-    
+
     CheckWhere -->|"Driver Node Crashed"| DriverTriage["Driver OOM Triage"]
     CheckWhere -->|"Executor Node Died"| ExecTriage["Executor OOM Triage"]
 
@@ -44,7 +44,7 @@ grep -E "OutOfMemoryError|collect\(\)|maxResultSize|Total size of serialized res
 
 Common trigger:
 ```text
-org.apache.spark.SparkException: Job aborted due to stage failure: Total size of serialized results of 
+org.apache.spark.SparkException: Job aborted due to stage failure: Total size of serialized results of
 16 tasks (1048.6 MiB) is bigger than spark.driver.maxResultSize (1024.0 MiB)
 ```
 
@@ -59,7 +59,7 @@ org.apache.spark.SparkException: Job aborted due to stage failure: Total size of
      ```python
      # ❌ Anti-pattern: OOM on large table
      all_records = df.collect()
-     
+
      # ✅ Write directly to Lakehouse storage
      df.write.format("delta").mode("overwrite").saveAsTable("gold_output")
      ```

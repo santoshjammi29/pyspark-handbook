@@ -19,7 +19,7 @@ Databricks provides operational billing metrics in `system.billing.usage`:
 
 ```sql
 -- Monthly DBU Consumption by SKU and Workload
-SELECT 
+SELECT
     usage_date,
     sku_name,
     usage_unit,
@@ -31,7 +31,7 @@ GROUP BY usage_date, sku_name, usage_unit
 ORDER BY usage_date DESC, total_dbus DESC;
 
 -- Identify Top 10 Most Expensive Databricks Jobs
-SELECT 
+SELECT
     usage_metadata.job_id,
     identity_metadata.run_as,
     SUM(usage_quantity) AS total_dbus
@@ -51,7 +51,7 @@ LIMIT 10;
 - Deletion Vectors decouple row deletes from Parquet file rewrites. Instead of rewriting a 500MB Parquet file for a single row deletion or update, Delta writes a tiny 1KB bitmask vector.
 - **I/O Reduction**: 60% – 85% on CDC and GDPR/CCPA workflows.
 ```sql
-ALTER TABLE silver.customer_master 
+ALTER TABLE silver.customer_master
 SET TBLPROPERTIES ('delta.enableDeletionVectors' = true);
 ```
 
@@ -95,8 +95,8 @@ VACUUM gold.fact_sales RETAIN 168 HOURS;
 - **Query Acceleration Service (QAS)**:
   Instead of permanently upsizing an entire warehouse from M to 2XL for rare outlier scans, enable QAS:
   ```sql
-  ALTER WAREHOUSE reporting_wh SET 
-    ENABLE_QUERY_ACCELERATION = TRUE 
+  ALTER WAREHOUSE reporting_wh SET
+    ENABLE_QUERY_ACCELERATION = TRUE
     QUERY_ACCELERATION_MAX_SCALE_FACTOR = 8;
   ```
 - **Statement Timeout**: Prevent runaway Cartesian joins from consuming credits indefinitely:

@@ -95,10 +95,10 @@ def upsert_to_delta(microbatch_df, batch_id):
     """
     if microbatch_df.isEmpty():
         return
-        
+
     from delta.tables import DeltaTable
     target = DeltaTable.forName(spark, "silver.orders")
-    
+
     (
         target.alias("t")
         .merge(

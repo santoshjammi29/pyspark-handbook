@@ -11,7 +11,7 @@
 ```mermaid
 flowchart TD
     DeltaAlert["🚨 Delta Lake Write Fails with Concurrency Conflict or Extreme Latency"] --> ClassifyIssue{"Identify Issue Category"}
-    
+
     ClassifyIssue -->|"ConcurrentModificationException / ConcurrentAppendException"| ConcurrencyTriage["Concurrency Conflict Triage"]
     ClassifyIssue -->|"Table Scan Slow: 100k+ tiny files"| SmallFileTriage["Small File Metadata Problem"]
     ClassifyIssue -->|"Data Inconsistency / Corruption Warning"| VacuumTriage["VACUUM / Time Travel Fault"]
@@ -58,9 +58,9 @@ Look for two operations with timestamps within milliseconds of each other compet
      ```sql
      -- ❌ Scans entire table (causes write conflicts)
      MERGE INTO target t USING source s ON t.id = s.id ...
-     
+
      -- Partition filter restricts conflict detection
-     MERGE INTO target t USING source s 
+     MERGE INTO target t USING source s
      ON t.id = s.id AND t.transaction_date = s.transaction_date ...
      ```
 

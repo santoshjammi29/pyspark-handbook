@@ -130,34 +130,34 @@ jobs:
   dbt-test:
     runs-on: ubuntu-latest
     environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'development' }}
-    
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
-      
+
       - name: Install dbt
         run: pip install dbt-databricks dbt-synapse
-      
+
       - name: dbt debug (connectivity check)
         run: dbt debug
         env:
           DBT_TARGET: ${{ vars.DBT_TARGET }}
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
-      
+
       - name: dbt deps
         run: dbt deps
-      
+
       - name: dbt build (compile + test modified models)
         run: |
           dbt build \
             --select state:modified+ \
             --defer \
             --state prod-artifacts/
-        
+
       - name: Upload dbt artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -250,7 +250,7 @@ resource "azurerm_databricks_workspace" "main" {
   resource_group_name = var.resource_group
   location            = var.location
   sku                 = "premium"
-  
+
   custom_parameters {
     virtual_network_id                                   = var.vnet_id
     private_subnet_name                                  = var.private_subnet
@@ -271,7 +271,7 @@ resource "azurerm_data_factory" "main" {
   name                = "adf-${var.env}"
   resource_group_name = var.resource_group
   location            = var.location
-  
+
   identity {
     type = "SystemAssigned"
   }

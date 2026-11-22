@@ -37,8 +37,8 @@ target.alias("t").merge(
 
 ### Spark SQL
 ```sql
-MERGE INTO silver.customers t 
-USING updates s 
+MERGE INTO silver.customers t
+USING updates s
 ON t.customer_id = s.customer_id
 WHEN MATCHED AND s.updated_at > t.updated_at THEN UPDATE SET *
 WHEN NOT MATCHED THEN INSERT *;
@@ -46,8 +46,8 @@ WHEN NOT MATCHED THEN INSERT *;
 
 ### Snowflake
 ```sql
-MERGE INTO silver.customers t 
-USING updates s 
+MERGE INTO silver.customers t
+USING updates s
 ON t.customer_id = s.customer_id
 WHEN MATCHED THEN UPDATE SET t.name = s.name, t.updated_at = s.updated_at
 WHEN NOT MATCHED THEN INSERT (customer_id, name, updated_at) VALUES (s.customer_id, s.name, s.updated_at);
@@ -55,8 +55,8 @@ WHEN NOT MATCHED THEN INSERT (customer_id, name, updated_at) VALUES (s.customer_
 
 ### Google BigQuery
 ```sql
-MERGE `project.silver.customers` t 
-USING updates s 
+MERGE `project.silver.customers` t
+USING updates s
 ON t.customer_id = s.customer_id
 WHEN MATCHED THEN UPDATE SET t.name = s.name, t.updated_at = s.updated_at
 WHEN NOT MATCHED THEN INSERT ROW;
@@ -64,10 +64,10 @@ WHEN NOT MATCHED THEN INSERT ROW;
 
 ### DuckDB
 ```sql
-INSERT INTO customers 
-SELECT * FROM updates 
-ON CONFLICT (customer_id) DO UPDATE SET 
-    name = EXCLUDED.name, 
+INSERT INTO customers
+SELECT * FROM updates
+ON CONFLICT (customer_id) DO UPDATE SET
+    name = EXCLUDED.name,
     updated_at = EXCLUDED.updated_at;
 ```
 
@@ -103,7 +103,7 @@ SELECT * EXCLUDE (rn) FROM (
 
 ### DuckDB
 ```sql
-SELECT order_id, 
+SELECT order_id,
        arg_max(customer_id, event_time) as customer_id,
        arg_max(amount, event_time) as amount,
        max(event_time) as latest_event
