@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/repo-header.svg" width="100%" alt="Repository Header Banner" />
+</p>
+
 # ⚡ The PySpark Handbook
 
 **105 Production Coding Use Cases, Performance Tuning Recipes, Lakehouse Masterclass & Incident Runbooks**
