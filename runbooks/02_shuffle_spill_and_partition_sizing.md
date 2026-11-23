@@ -10,15 +10,15 @@
 
 ```mermaid
 flowchart TD
-    SpillAlert["🚨 Stage Execution Slows by 5x-10x with High Disk I/O"] --> InspectUI["Open Spark UI -> Stages Tab -> Stage Details"]
-    InspectUI --> CheckSpill{"Is Spill (Memory) / Spill (Disk) Non-Zero?"}
+    SpillAlert["🚨 Stage Execution Slows by 5x-10x<br/>with High Disk I/O"] --> InspectUI["Open Spark UI -> Stages Tab -><br/>Stage Details"]
+    InspectUI --> CheckSpill{"Is Spill (Memory) / Spill (Disk)<br/>Non-Zero?"}
 
-    CheckSpill -->|"Yes, Significant Spill (>5GB)"| DiagnosePartitionSize{"Inspect Shuffle Read Size per Partition"}
+    CheckSpill -->|"Yes, Significant Spill<br/>(&gt;5GB)"| DiagnosePartitionSize{"Inspect Shuffle Read Size per<br/>Partition"}
     CheckSpill -->|"No, Zero Spill"| CheckOther["Not a Shuffle Spill Issue<br/>Inspect GC Pauses or Data Skew"]
 
-    DiagnosePartitionSize -->|"Partitions > 200MB each"| UnderPartitioned["Under-Partitioned Dataset<br/>Partitions exceed executor task memory<br/>Remediation: Increase spark.sql.shuffle.partitions"]
-    DiagnosePartitionSize -->|"Partitions < 20MB each but 1 huge partition"| SkewSpill["Data Skew on Single Key<br/>Remediation: Key Salting / AQE Skew Join"]
-    DiagnosePartitionSize -->|"Overall Cluster Memory Too Small"| MemoryStarvation["Executor Memory Sizing Too Low<br/>Remediation: Increase executor cores / RAM ratio"]
+    DiagnosePartitionSize -->|"Partitions &gt; 200MB each"| UnderPartitioned["Under-Partitioned Dataset<br/>Partitions exceed executor task<br/>memory<br/>Remediation: Increase<br/>spark.sql.shuffle.partitions"]
+    DiagnosePartitionSize -->|"Partitions &lt; 20MB each but<br/>1 huge partition"| SkewSpill["Data Skew on Single Key<br/>Remediation: Key Salting / AQE<br/>Skew Join"]
+    DiagnosePartitionSize -->|"Overall Cluster Memory Too<br/>Small"| MemoryStarvation["Executor Memory Sizing Too Low<br/>Remediation: Increase executor<br/>cores / RAM ratio"]
 ```
 
 ---

@@ -10,17 +10,17 @@
 
 ```mermaid
 flowchart TD
-    SkewAlert["🚨 Spark Job Hangs at 99%: 199/200 Tasks Done, 1 Running Forever"] --> CheckUI["Open Spark UI -> Stages Tab -> Task Metrics Table"]
-    CheckUI --> InspectDistribution{"Inspect Task Duration & Shuffle Read Size"}
+    SkewAlert["🚨 Spark Job Hangs at 99%: 199/200<br/>Tasks Done, 1 Running Forever"] --> CheckUI["Open Spark UI -> Stages Tab -><br/>Task Metrics Table"]
+    CheckUI --> InspectDistribution{"Inspect Task Duration & Shuffle<br/>Read Size"}
 
-    InspectDistribution -->|"Max Task Size > 10x Median Task Size"| ConfirmedSkew["Confirmed Data Skew on Join or Grouping Key"]
-    InspectDistribution -->|"All Tasks Uniformly Slow"| NotSkew["Resource Starvation or External Sink Throttling"]
+    InspectDistribution -->|"Max Task Size &gt; 10x Median<br/>Task Size"| ConfirmedSkew["Confirmed Data Skew on Join or<br/>Grouping Key"]
+    InspectDistribution -->|"All Tasks Uniformly Slow"| NotSkew["Resource Starvation or External<br/>Sink Throttling"]
 
     ConfirmedSkew --> CheckAQE{"Is AQE Skew Join Enabled?"}
     CheckAQE -->|"No or Ineffective"| EvaluateKeyType{"Examine Skewed Key Distribution"}
 
-    EvaluateKeyType -->|"Skew Due to NULL Values"| FixNulls["Null Key Accumulation<br/>Remediation: Filter NULLs or Isolate Null Partition"]
-    EvaluateKeyType -->|"Skew Due to Legitimate Key (e.g. 'AMAZON')"| TwoPhaseSalting["High-Cardinality Key Imbalance<br/>Remediation: Implement Two-Phase Key Salting"]
+    EvaluateKeyType -->|"Skew Due to NULL Values"| FixNulls["Null Key Accumulation<br/>Remediation: Filter NULLs or<br/>Isolate Null Partition"]
+    EvaluateKeyType -->|"Skew Due to Legitimate Key<br/>(e.g. 'AMAZON')"| TwoPhaseSalting["High-Cardinality Key Imbalance<br/>Remediation: Implement Two-Phase<br/>Key Salting"]
 ```
 
 ---

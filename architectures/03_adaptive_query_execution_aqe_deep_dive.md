@@ -33,19 +33,19 @@ flowchart TD
         FilterB["Filter B"]
         ShuffleA["Exchange (Shuffle Write)"]
         ShuffleB["Exchange (Shuffle Write)"]
-        SMJ["Sort-Merge Join (Static 200 Partitions)"]
+        SMJ["Sort-Merge Join (Static 200<br/>Partitions)"]
     end
 
-    subgraph RuntimeReOpt["2. AQE Runtime Interception at Stage Boundaries"]
-        StatCollector["Stage Materialization & Shuffle Statistics Collector<br/>(Captures exact byte sizes & partition distributions)"]
+    subgraph RuntimeReOpt["2. AQE Runtime Interception at Stage<br/>Boundaries"]
+        StatCollector["Stage Materialization & Shuffle<br/>Statistics Collector<br/>(Captures exact byte sizes &<br/>partition distributions)"]
 
-        Opt1["Feature 1: Dynamically Coalesce Partitions<br/>(Merges small partitions to ~64MB target)"]
-        Opt2["Feature 2: Dynamically Switch Join Strategy<br/>(Switches SMJ to Broadcast Hash Join if size <= 10MB)"]
-        Opt3["Feature 3: Dynamically Optimize Skew Join<br/>(Splits huge skewed partition into smaller sub-slices)"]
+        Opt1["Feature 1: Dynamically Coalesce<br/>Partitions<br/>(Merges small partitions to ~64MB<br/>target)"]
+        Opt2["Feature 2: Dynamically Switch Join<br/>Strategy<br/>(Switches SMJ to Broadcast Hash<br/>Join if size &lt;= 10MB)"]
+        Opt3["Feature 3: Dynamically Optimize<br/>Skew Join<br/>(Splits huge skewed partition into<br/>smaller sub-slices)"]
     end
 
     subgraph OptimizedExecution["3. Adaptive Physical Plan Execution"]
-        ExecJoin["Optimized Join Execution<br/>(BHJ or Skew-Splitted Partition Join)"]
+        ExecJoin["Optimized Join Execution<br/>(BHJ or Skew-Splitted Partition<br/>Join)"]
     end
 
     FilterA --> ShuffleA
@@ -157,18 +157,18 @@ Apache Spark 4.0 mandates **ANSI SQL mode by default** (`spark.sql.ansi.enabled 
 flowchart TD
     subgraph CompileStage["Compilation & Strict ANSI Validation"]
         Query["User SQL Query"]
-        ANSI["ANSI Validator (Fail-Fast Overflow / Bad Cast)"]
+        ANSI["ANSI Validator (Fail-Fast Overflow<br/>/ Bad Cast)"]
     end
 
     subgraph Stage1["Shuffle Stage 1 (Map Output Generation)"]
-        T1["Tasks Execute & Write Shuffle Files"]
-        Stats["Shuffle Map Output Statistics Aggregated"]
+        T1["Tasks Execute & Write Shuffle<br/>Files"]
+        Stats["Shuffle Map Output Statistics<br/>Aggregated"]
     end
 
     subgraph AQEDecision["AQE 2.0 Dynamic Re-Planning"]
-        Coalesce["Coalesce 200 Partitions -> 14 Large Partitions"]
-        JoinSwitch["Convert SortMergeJoin -> BroadcastHashJoin"]
-        SkewSplit["Split Skewed Partition into 5 Sub-Range Slices"]
+        Coalesce["Coalesce 200 Partitions -> 14<br/>Large Partitions"]
+        JoinSwitch["Convert SortMergeJoin -><br/>BroadcastHashJoin"]
+        SkewSplit["Split Skewed Partition into 5<br/>Sub-Range Slices"]
     end
 
     Query --> ANSI --> Stage1 --> Stats --> AQEDecision

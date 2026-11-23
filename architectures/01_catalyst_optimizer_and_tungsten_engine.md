@@ -27,16 +27,16 @@ flowchart TD
         UP["Unresolved Logical Plan<br/>(Parsed AST)"]
         Catalog["Catalog / Metastore<br/>(Relations, Attributes, Types)"]
         ALP["Analyzed Logical Plan<br/>(Resolved Attributes)"]
-        OLP["Optimized Logical Plan<br/>(Rule-Based & Cost-Based Transforms)"]
+        OLP["Optimized Logical Plan<br/>(Rule-Based & Cost-Based<br/>Transforms)"]
         PP["Physical Plans<br/>(Multiple Candidate Strategies)"]
-        CBO["Cost-Based Optimizer (CBO)<br/>(Selects Cost-Optimal Physical Plan)"]
+        CBO["Cost-Based Optimizer (CBO)<br/>(Selects Cost-Optimal Physical<br/>Plan)"]
         SelectedPP["Selected Physical Plan"]
     end
 
-    subgraph Tungsten["3. Project Tungsten Code Generation & Execution"]
+    subgraph Tungsten["3. Project Tungsten Code Generation &<br/>Execution"]
         WSCG["Whole-Stage Code Generation<br/>(Janino Bytecode Compiler)"]
         UnsafeRow["Tungsten UnsafeRow<br/>(Off-Heap / On-Heap Binary Format)"]
-        RDD["Native Java Bytecode & RDD DAG Execution"]
+        RDD["Native Java Bytecode & RDD DAG<br/>Execution"]
     end
 
     Frontend --> UP
@@ -187,8 +187,8 @@ Apache Spark 4.0 and Databricks Runtime 15.4+ introduce **Spark Connect**, decou
 
 ```mermaid
 flowchart LR
-    subgraph ClientLayer["Lightweight Client Plane (Zero Local Spark JVM)"]
-        IDE["VS Code / PyCharm (pyspark-client 1.5MB)"]
+    subgraph ClientLayer["Lightweight Client Plane (Zero Local Spark<br/>JVM)"]
+        IDE["VS Code / PyCharm (pyspark-client<br/>1.5MB)"]
         Microservice["FastAPI / Streamlit Application"]
         CLI["Interactive CLI Explorer"]
     end
@@ -198,9 +198,9 @@ flowchart LR
     end
 
     subgraph RemoteCluster["Distributed Spark & Photon Engine"]
-        Server["Spark Connect Server Daemon (Driver)"]
+        Server["Spark Connect Server Daemon<br/>(Driver)"]
         Catalyst["Catalyst Optimizer & AQE Planner"]
-        Photon["Photon Native C++ Engine (SIMD Vectorization)"]
+        Photon["Photon Native C++ Engine (SIMD<br/>Vectorization)"]
     end
 
     ClientLayer --> AST --> Server --> Catalyst --> Photon

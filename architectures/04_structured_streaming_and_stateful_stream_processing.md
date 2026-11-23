@@ -20,21 +20,21 @@
 ```mermaid
 flowchart TD
     subgraph Ingestion["1. Replayable Streaming Ingestion"]
-        Kafka["Apache Kafka / Kinesis / Auto Loader<br/>(Partitioned, Offset-Addressable, Replayable)"]
+        Kafka["Apache Kafka / Kinesis / Auto<br/>Loader<br/>(Partitioned, Offset-Addressable,<br/>Replayable)"]
     end
 
-    subgraph Engine["2. Incremental Catalyst Stream Execution Engine"]
-        WAL["Write-Ahead Log (WAL)<br/>(Driver Records Offsets to Checkpoint Storage)"]
+    subgraph Engine["2. Incremental Catalyst Stream Execution<br/>Engine"]
+        WAL["Write-Ahead Log (WAL)<br/>(Driver Records Offsets to<br/>Checkpoint Storage)"]
 
         subgraph MicroBatch["Micro-Batch Execution (Trigger: 500ms - 10s)"]
             MicroPlan["Incremental Catalyst Query Plan<br/>(Reads Offset Range: N to N+K)"]
             Watermark["Event-Time Watermark Engine<br/>max(event_time) - delay_threshold"]
-            StateStore["State Store Provider<br/>(HDFS In-Memory vs. RocksDB Off-Heap)"]
+            StateStore["State Store Provider<br/>(HDFS In-Memory vs. RocksDB<br/>Off-Heap)"]
         end
     end
 
     subgraph Sink["3. Idempotent ACID Lakehouse Storage"]
-        DeltaSink["Delta Lake Table (ACID Append / MERGE)<br/>(Tracks Streaming Commit ID in _delta_log)"]
+        DeltaSink["Delta Lake Table (ACID Append /<br/>MERGE)<br/>(Tracks Streaming Commit ID in<br/>_delta_log)"]
     end
 
     Kafka --> WAL
@@ -70,7 +70,7 @@ sequenceDiagram
 
     Note over Spark: Trigger Batch 2
     Source->>Spark: Event with timestamp 12:01 (Late by 11 mins)
-    Note over Spark: Timestamp 12:01 < Watermark (12:02) -> DROPPED AS TOO LATE!
+    Note over Spark: Timestamp 12:01 &lt; Watermark (12:02) -> DROPPED AS TOO LATE!
     Source->>Spark: Events with timestamps: 12:25, 12:28
     Note over Spark: max(event_time) = 12:28. New Watermark = 12:28 - 10m = 12:18
     Spark->>State: Window [12:00 - 12:10] is older than 12:18 -> EVICTED FROM STATE!
@@ -141,12 +141,12 @@ flowchart LR
     end
 
     subgraph Matched["Output Matched Stream"]
-        Out["Joined Tuple: [Ad 101, Imp: 14:00, Click: 14:15]"]
+        Out["Joined Tuple: [Ad 101, Imp: 14:00,<br/>Click: 14:15]"]
     end
 
     IA --> BufA
     CB --> BufB
-    BufA <-->|"Evaluates Join Condition & Time Constraints"| BufB
+    BufA <-->|"Evaluates Join Condition &<br/>Time Constraints"| BufB
     BufA --> Out
     BufB --> Out
 ```
@@ -186,13 +186,13 @@ flowchart LR
 
     subgraph StatefulWorker["Spark Stateful Streaming Executor"]
         Watermark["10-Minute Allowed Watermark Delay"]
-        StateStore["RocksDB State Store (Out-of-Heap SSD)"]
-        Changelog["Continuous Changelog Checkpointing (Zero Stop-the-World)"]
+        StateStore["RocksDB State Store (Out-of-Heap<br/>SSD)"]
+        Changelog["Continuous Changelog Checkpointing<br/>(Zero Stop-the-World)"]
     end
 
     subgraph LakehouseSync["Lakehouse Vector Ingestion"]
-        DeltaSink["Delta Lake 3.x Streaming Table (Append Mode)"]
-        VectorIdx["Mosaic AI Vector Search (Delta Sync Index)"]
+        DeltaSink["Delta Lake 3.x Streaming Table<br/>(Append Mode)"]
+        VectorIdx["Mosaic AI Vector Search (Delta<br/>Sync Index)"]
     end
 
     Kafka --> Watermark --> StateStore --> Changelog

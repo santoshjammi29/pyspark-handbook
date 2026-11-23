@@ -10,17 +10,17 @@
 
 ```mermaid
 flowchart TD
-    PyAlert["🚨 PySpark Job Fails during Pandas UDF / PyArrow Execution"] --> CategorizeCrash{"Identify Exact Crash Signature"}
+    PyAlert["🚨 PySpark Job Fails during Pandas<br/>UDF / PyArrow Execution"] --> CategorizeCrash{"Identify Exact Crash Signature"}
 
-    CategorizeCrash -->|"Python worker exited unexpectedly / SIGSEGV"| WorkerCrash["Python Worker Daemon Death"]
-    CategorizeCrash -->|"ArrowInvalid: offset overflow / 2GB limit"| ArrowLimit["PyArrow 32-bit Buffer Overflow"]
-    CategorizeCrash -->|"Severe JVM GC Pauses (>30% of stage time)"| SerializationGC["Serialization Memory Overhead"]
+    CategorizeCrash -->|"Python worker exited<br/>unexpectedly / SIGSEGV"| WorkerCrash["Python Worker Daemon Death"]
+    CategorizeCrash -->|"ArrowInvalid: offset overflow<br/>/ 2GB limit"| ArrowLimit["PyArrow 32-bit Buffer Overflow"]
+    CategorizeCrash -->|"Severe JVM GC Pauses (&gt;30%<br/>of stage time)"| SerializationGC["Serialization Memory Overhead"]
 
-    WorkerCrash --> CheckOverhead{"Is spark.executor.memoryOverhead Sufficient?"}
-    CheckOverhead -->|"No, Default 10%"| BumpOverhead["Off-Heap Starvation<br/>Remediation: Increase memoryOverhead to 30%"]
-    CheckOverhead -->|"Yes, but massive record batch"| ReduceBatch["Batch Size Overwhelms Worker<br/>Remediation: Lower spark.sql.execution.arrow.maxRecordsPerBatch"]
+    WorkerCrash --> CheckOverhead{"Is spark.executor.memoryOverhead<br/>Sufficient?"}
+    CheckOverhead -->|"No, Default 10%"| BumpOverhead["Off-Heap Starvation<br/>Remediation: Increase<br/>memoryOverhead to 30%"]
+    CheckOverhead -->|"Yes, but massive record batch"| ReduceBatch["Batch Size Overwhelms Worker<br/>Remediation: Lower<br/>spark.sql.execution.arrow.maxRecordsPerBatch"]
 
-    ArrowLimit --> FixArrowString["String/Binary Exceeds 2GB in Single Batch<br/>Remediation: Switch to LargeString or reduce batch size"]
+    ArrowLimit --> FixArrowString["String/Binary Exceeds 2GB in<br/>Single Batch<br/>Remediation: Switch to LargeString<br/>or reduce batch size"]
 ```
 
 ---

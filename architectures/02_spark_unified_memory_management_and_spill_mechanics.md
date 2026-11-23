@@ -20,24 +20,24 @@ Instead of static, rigid memory boundaries that cause premature OOMs, the Unifie
 
 ```mermaid
 flowchart TD
-    subgraph Container["Total Container Memory (spark.executor.memory + spark.executor.memoryOverhead)"]
-        Overhead["Executor Overhead Memory<br/>(10% of heap or min 384MB)<br/>Native libraries, PyArrow, Python worker, Netty buffers"]
+    subgraph Container["Total Container Memory (spark.executor.memory<br/>+ spark.executor.memoryOverhead)"]
+        Overhead["Executor Overhead Memory<br/>(10% of heap or min 384MB)<br/>Native libraries, PyArrow, Python<br/>worker, Netty buffers"]
 
         subgraph JVM["JVM Heap (spark.executor.memory)"]
             Reserved["Reserved Memory<br/>(Strictly 300 MB fixed)<br/>Internal Spark system metadata"]
 
             subgraph Usable["Usable Memory: (Heap - 300MB)"]
-                User["User Memory<br/>(1 - spark.memory.fraction = 40%)<br/>UDF data structures, internal metadata, user objects"]
+                User["User Memory<br/>(1 - spark.memory.fraction = 40%)<br/>UDF data structures, internal<br/>metadata, user objects"]
 
                 subgraph SparkMemory["Unified Spark Memory Pool<br/>(spark.memory.fraction = 60%)"]
-                    Storage["Storage Pool<br/>(Default 50% = 30% of total)<br/>Cached tables & broadcast variables"]
-                    Execution["Execution Pool<br/>(Default 50% = 30% of total)<br/>Shuffle, Joins, Sorts, Aggregations"]
+                    Storage["Storage Pool<br/>(Default 50% = 30% of total)<br/>Cached tables & broadcast<br/>variables"]
+                    Execution["Execution Pool<br/>(Default 50% = 30% of total)<br/>Shuffle, Joins, Sorts,<br/>Aggregations"]
                 end
             end
         end
     end
 
-    Execution <-->|"Dynamic Cross-Borrowing<br/>(Execution has eviction priority!)"| Storage
+    Execution <-->|"Dynamic Cross-Borrowing<br/>(Execution has eviction<br/>priority!)"| Storage
 ```
 
 ---
@@ -171,16 +171,16 @@ To eliminate Python worker serialization bottlenecks, modern PySpark leverages *
 ```mermaid
 flowchart LR
     subgraph JVMExecutor["JVM / Tungsten Executor Memory"]
-        RowData["Tungsten Row Format (Binary Off-Heap)"]
-        ArrowBatch["Arrow RecordBatch (Columnar Memory)"]
+        RowData["Tungsten Row Format (Binary<br/>Off-Heap)"]
+        ArrowBatch["Arrow RecordBatch (Columnar<br/>Memory)"]
     end
 
     subgraph ZeroCopyBridge["Shared Memory / UNIX Domain Socket"]
-        SharedMem["Shared Memory IPC Buffer (Zero JVM Serialization)"]
+        SharedMem["Shared Memory IPC Buffer (Zero JVM<br/>Serialization)"]
     end
 
     subgraph PythonDaemon["Python Worker Daemon"]
-        PyArrow["PyArrow Table / NumPy Contiguous Array"]
+        PyArrow["PyArrow Table / NumPy Contiguous<br/>Array"]
         PandasUDF["Vectorized Pandas / Polars Kernel"]
     end
 

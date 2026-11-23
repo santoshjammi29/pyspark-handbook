@@ -110,7 +110,7 @@ To prevent supply-chain vulnerabilities, eliminate dependency bloat, and maintai
 flowchart TD
     A["1. Automated CVE Scanning<br/>(npm audit, pip-audit, Trivy)"] --> B["2. Dead/Ghost Dep Flagging<br/>(Knip, depcheck, ts-prune)"]
     B --> C["3. Dual-Ecosystem Lockfiles<br/>(package-lock.json & uv.lock)"]
-    C --> D["4. Scheduled Patch Cadence<br/>(Weekly Dependabot, Monthly Minors)"]
+    C --> D["4. Scheduled Patch Cadence<br/>(Weekly Dependabot, Monthly<br/>Minors)"]
 ```
 
 #### Step 1: Automated Vulnerability & CVE Scanning (SCA)
@@ -232,13 +232,13 @@ lakehouse-architect/
 ```mermaid
 flowchart LR
     subgraph Data Tier
-        A1["src/data/json/*<br/>(28 loose JSON files)"] -->|Consolidate & Partition| B1["content/qa-bank/<br/>content/concepts/<br/>content/scenarios/"]
+        A1["src/data/json/*<br/>(28 loose JSON files)"] -->|"Consolidate & Partition"| B1["content/qa-bank/<br/>content/concepts/<br/>content/scenarios/"]
     end
     subgraph Script Tier
-        A2["scripts/*.py<br/>scripts/data_patches/*"] -->|Package & Modularize| B2["tools/cli/ (TypeScript)<br/>tools/generators/ (Python)"]
+        A2["scripts/*.py<br/>scripts/data_patches/*"] -->|"Package & Modularize"| B2["tools/cli/ (TypeScript)<br/>tools/generators/ (Python)"]
     end
     subgraph Routing Tier
-        A3["src/app/{learn,plan,boost}/<br/>(Duplicate redirect pages)"] -->|Delete & Defer| B3["next.config.ts<br/>(Server-side 308 redirects)"]
+        A3["src/app/{learn,plan,boost}/<br/>(Duplicate redirect pages)"] -->|"Delete & Defer"| B3["next.config.ts<br/>(Server-side 308 redirects)"]
     end
     subgraph Asset Tier
         A4["docs/pdf/* (12.5 MB)<br/>assets/whiteboards/* (10 MB)"] -->|Deduplicate to Single Source| B4["public/artifacts/<br/>(R2 Edge Synced)"]
@@ -517,7 +517,7 @@ gantt
     Consolidate QA JSON Datasets into content/         :c1, 2026-12-08, 3d
     Migrate scripts/ to tools/cli/ & tools/generators/ :c2, after c1, 4d
     section Week 4: Documentation & Final Verification
-    README Monolith Deconstruction (<250 lines)        :d1, 2026-12-15, 2d
+    README Monolith Deconstruction (under 250 lines)        :d1, 2026-12-15, 2d
     Partition tests/ into unit/components/contracts/   :d2, after d1, 3d
     Full Cloudflare Deployment & Edge Parity Run       :d3, after d2, 2d
 ```

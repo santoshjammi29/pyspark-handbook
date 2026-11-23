@@ -10,17 +10,17 @@
 
 ```mermaid
 flowchart TD
-    DeltaAlert["🚨 Delta Lake Write Fails with Concurrency Conflict or Extreme Latency"] --> ClassifyIssue{"Identify Issue Category"}
+    DeltaAlert["🚨 Delta Lake Write Fails with<br/>Concurrency Conflict or Extreme<br/>Latency"] --> ClassifyIssue{"Identify Issue Category"}
 
-    ClassifyIssue -->|"ConcurrentModificationException / ConcurrentAppendException"| ConcurrencyTriage["Concurrency Conflict Triage"]
-    ClassifyIssue -->|"Table Scan Slow: 100k+ tiny files"| SmallFileTriage["Small File Metadata Problem"]
-    ClassifyIssue -->|"Data Inconsistency / Corruption Warning"| VacuumTriage["VACUUM / Time Travel Fault"]
+    ClassifyIssue -->|"ConcurrentModificationException<br/>/ ConcurrentAppendException"| ConcurrencyTriage["Concurrency Conflict Triage"]
+    ClassifyIssue -->|"Table Scan Slow: 100k+ tiny<br/>files"| SmallFileTriage["Small File Metadata Problem"]
+    ClassifyIssue -->|"Data Inconsistency /<br/>Corruption Warning"| VacuumTriage["VACUUM / Time Travel Fault"]
 
-    ConcurrencyTriage --> CheckConflictType{"Inspect Transaction Target Partitions"}
-    CheckConflictType -->|"Writing to Same Partition Simultaneously"| PartitionPruning["Partition Overlap Conflict<br/>Remediation: Row-Level Concurrency or Partition Alignment"]
-    CheckConflictType -->|"MERGE Conflicting with Streaming Append"| SegregatePipelines["Append vs Update Collision<br/>Remediation: Separate Bronze Append from Silver MERGE"]
+    ConcurrencyTriage --> CheckConflictType{"Inspect Transaction Target<br/>Partitions"}
+    CheckConflictType -->|"Writing to Same Partition<br/>Simultaneously"| PartitionPruning["Partition Overlap Conflict<br/>Remediation: Row-Level Concurrency<br/>or Partition Alignment"]
+    CheckConflictType -->|"MERGE Conflicting with<br/>Streaming Append"| SegregatePipelines["Append vs Update Collision<br/>Remediation: Separate Bronze<br/>Append from Silver MERGE"]
 
-    SmallFileTriage --> CompactionPlan["Compaction & Optimization Plan<br/>Remediation: Run OPTIMIZE with Liquid Clustering / Z-Order"]
+    SmallFileTriage --> CompactionPlan["Compaction & Optimization Plan<br/>Remediation: Run OPTIMIZE with<br/>Liquid Clustering / Z-Order"]
 ```
 
 ---

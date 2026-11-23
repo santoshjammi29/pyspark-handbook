@@ -107,8 +107,8 @@ flowchart LR
     end
 
     Raw -->|"Auto Loader (cloudFiles)"| Bronze
-    Bronze -->|"Delta MERGE / Streaming Watermark"| Silver
-    Silver -->|"Aggregations / Z-Order / Liquid Clustering"| Gold
+    Bronze -->|"Delta MERGE / Streaming<br/>Watermark"| Silver
+    Silver -->|"Aggregations / Z-Order /<br/>Liquid Clustering"| Gold
 ```
 
 ---

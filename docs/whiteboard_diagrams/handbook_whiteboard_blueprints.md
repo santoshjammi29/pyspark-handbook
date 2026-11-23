@@ -49,22 +49,22 @@
 
 ```mermaid
 flowchart TD
-    subgraph PlanPlane ["Catalyst Optimization Plane (Control & Compiler Lifecycle)"]
-        SQL["SQL / DataFrame Code\n(Unresolved Logical Plan)"] -->|"Catalog Analysis"| Analyzed["Resolved Logical Plan\n(Types, Columns Validated)"]
-        Analyzed -->|"Rule-Based Optimization\n(Pushdown Predicates, Constant Folding)"| OptLogical["Optimized Logical Plan"]
-        OptLogical -->|"Cost-Based Optimizer (CBO)\n(Histograms, Cardinality Stats)"| PhysicalPlans["Physical Candidate Plans"]
+    subgraph PlanPlane ["Catalyst Optimization Plane (Control &<br/>Compiler Lifecycle)"]
+        SQL["SQL / DataFrame Code<br/>(Unresolved Logical Plan)"] -->|"Catalog Analysis"| Analyzed["Resolved Logical Plan<br/>(Types, Columns Validated)"]
+        Analyzed -->|"Rule-Based Optimization<br/>(Pushdown Predicates, Constant<br/>Folding)"| OptLogical["Optimized Logical Plan"]
+        OptLogical -->|"Cost-Based Optimizer (CBO)<br/>(Histograms, Cardinality<br/>Stats)"| PhysicalPlans["Physical Candidate Plans"]
         PhysicalPlans -->|"Select Best Cost Plan"| BestPlan["Physical Plan: Whole-Stage CodeGen"]
-        BestPlan -->|"Janino Bytecode Compiler"| Bytecode["Java Bytecode Loop\n(Flattened Inner Loop)"]
+        BestPlan -->|"Janino Bytecode Compiler"| Bytecode["Java Bytecode Loop<br/>(Flattened Inner Loop)"]
     end
 
     subgraph PhysicalPlane ["Physical Tungsten & Hardware Execution Plane"]
         Bytecode -->|"Deploy to Executor Cores"| Driver["Driver DAGScheduler"]
         Driver -->|"Dispatch Task Sets"| Task["Executor Task Thread"]
 
-        subgraph MemoryModel ["Tungsten Memory Layout (Off-Heap sun.misc.Unsafe)"]
-            OffHeap["64-Bit Memory Pointers\n(No JVM Object Header Overhead)"]
-            CacheAware["L1 / L2 / L3 CPU Cache Line Alignment\n(Continuous 8-Byte Pointers)"]
-            ExecutionMem["Execution Memory Pool\n(Shuffle / Hash Joins / Sort)"]
+        subgraph MemoryModel ["Tungsten Memory Layout (Off-Heap<br/>sun.misc.Unsafe)"]
+            OffHeap["64-Bit Memory Pointers<br/>(No JVM Object Header Overhead)"]
+            CacheAware["L1 / L2 / L3 CPU Cache Line<br/>Alignment<br/>(Continuous 8-Byte Pointers)"]
+            ExecutionMem["Execution Memory Pool<br/>(Shuffle / Hash Joins / Sort)"]
         end
 
         Task --> MemoryModel
@@ -93,14 +93,14 @@ flowchart TD
         UI["Databricks Web Workspace UI"]
         JobsScheduler["Lakeflow Jobs Scheduler"]
         ClusterMgr["Cluster Manager Coordinator"]
-        UCMetastore["Unity Catalog Metastore Service\n(Cross-Workspace Regional Anchor)"]
+        UCMetastore["Unity Catalog Metastore Service<br/>(Cross-Workspace Regional Anchor)"]
     end
 
-    subgraph ComputePlane ["Customer Compute Plane (VNet / Customer Cloud Account)"]
+    subgraph ComputePlane ["Customer Compute Plane (VNet / Customer Cloud<br/>Account)"]
         subgraph ComputeTypes ["Compute Engine Options"]
-            ClassicCluster["Classic Job Clusters\n(Customer VNet VM Allocation)"]
-            ServerlessCompute["Serverless Compute Pools\n(2-6 Second Ephemeral Container Spin-Up)"]
-            SQLWarehouse["Serverless SQL Warehouses\n(Photon C++ Vectorized Analytics)"]
+            ClassicCluster["Classic Job Clusters<br/>(Customer VNet VM Allocation)"]
+            ServerlessCompute["Serverless Compute Pools<br/>(2-6 Second Ephemeral Container<br/>Spin-Up)"]
+            SQLWarehouse["Serverless SQL Warehouses<br/>(Photon C++ Vectorized Analytics)"]
         end
 
         subgraph UnityCatalogModel ["Unity Catalog 3-Tier Namespace"]
@@ -111,14 +111,14 @@ flowchart TD
         end
 
         subgraph SecurityControls ["Governance & Security Policies"]
-            RLS["Row-Level Security (Row Filters)\nIS_ACCOUNT_GROUP_MEMBER()"]
-            Masking["Dynamic Data Masking (Column Masks)\nSHA-256 PII Redaction"]
+            RLS["Row-Level Security (Row Filters)<br/>IS_ACCOUNT_GROUP_MEMBER()"]
+            Masking["Dynamic Data Masking (Column<br/>Masks)<br/>SHA-256 PII Redaction"]
             Lineage["Automated Column-Level Lineage"]
         end
     end
 
-    subgraph CloudStorage ["Customer Cloud Storage (ADLS Gen2 / S3 Bucket)"]
-        ManagedStorage["Managed Tables (Full Lifecycle Managed)"]
+    subgraph CloudStorage ["Customer Cloud Storage (ADLS Gen2 / S3<br/>Bucket)"]
+        ManagedStorage["Managed Tables (Full Lifecycle<br/>Managed)"]
         ExternalStorage["External Tables (Custom Cloud URI)"]
     end
 
@@ -143,22 +143,22 @@ flowchart TD
 ```mermaid
 flowchart LR
     subgraph Panel1 ["1. Input & ACID Commit Layer"]
-        WriteOp["Write Operation\n(INSERT / MERGE / UPDATE)"]
-        DeltaLog["_delta_log/\n000000.json\n000001.json\n000010.checkpoint.parquet"]
-        OCC["Optimistic Concurrency Control\n(Conflict Validation at Commit)"]
+        WriteOp["Write Operation<br/>(INSERT / MERGE / UPDATE)"]
+        DeltaLog["_delta_log/<br/>000000.json<br/>000001.json<br/>000010.checkpoint.parquet"]
+        OCC["Optimistic Concurrency Control<br/>(Conflict Validation at Commit)"]
         WriteOp --> OCC --> DeltaLog
     end
 
     subgraph Panel2 ["2. Storage Optimization Levers"]
-        Liquid["Liquid Clustering (CLUSTER BY)\nHilbert Curve Dynamic Co-Location\nNo Hive Directory Rigidity"]
-        DV["Deletion Vectors (DVs)\nSoft-Delete Roaring Bitmaps\nSub-Second MERGE / DELETE"]
-        UniForm["Delta UniForm (Universal Format)\nGenerates Iceberg & Hudi Metadata\nRead by Snowflake, Trino & Athena"]
+        Liquid["Liquid Clustering (CLUSTER BY)<br/>Hilbert Curve Dynamic Co-Location<br/>No Hive Directory Rigidity"]
+        DV["Deletion Vectors (DVs)<br/>Soft-Delete Roaring Bitmaps<br/>Sub-Second MERGE / DELETE"]
+        UniForm["Delta UniForm (Universal Format)<br/>Generates Iceberg & Hudi Metadata<br/>Read by Snowflake, Trino & Athena"]
     end
 
     subgraph Panel3 ["3. Physical Storage Layer"]
-        ParquetData["Optimized Parquet Files (~1 GB)\nRow Groups with Min/Max Stats"]
-        DeletedBitmaps["deletion_vector_*.bin\n(Row Position Mask)"]
-        CleanStorage["VACUUM Pruning\n(Purges unreferenced tombstones)"]
+        ParquetData["Optimized Parquet Files (~1 GB)<br/>Row Groups with Min/Max Stats"]
+        DeletedBitmaps["deletion_vector_*.bin<br/>(Row Position Mask)"]
+        CleanStorage["VACUUM Pruning<br/>(Purges unreferenced tombstones)"]
         ParquetData --> CleanStorage
         DeletedBitmaps --> CleanStorage
     end
@@ -181,26 +181,26 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    subgraph IngestionFlow ["High-Throughput Prefix Partitioning & Ingestion"]
-        Producers["High-Volume Ingestion Producers\n(100,000 Files / Second)"]
+    subgraph IngestionFlow ["High-Throughput Prefix Partitioning &<br/>Ingestion"]
+        Producers["High-Volume Ingestion Producers<br/>(100,000 Files / Second)"]
 
         subgraph StoragePrefixes ["S3 / ADLS Hash-Distributed Prefixes"]
-            P1["bucket/data/prefix_a1/... (3,500 PUT/s)"]
-            P2["bucket/data/prefix_b2/... (3,500 PUT/s)"]
-            P3["bucket/data/prefix_c3/... (3,500 PUT/s)"]
+            P1["bucket/data/prefix_a1/... (3,500<br/>PUT/s)"]
+            P2["bucket/data/prefix_b2/... (3,500<br/>PUT/s)"]
+            P3["bucket/data/prefix_c3/... (3,500<br/>PUT/s)"]
         end
 
-        AutoLoader["Databricks Auto Loader (cloudFiles)\nFile Notification Mode (AWS SQS / Azure Event Grid)"]
+        AutoLoader["Databricks Auto Loader<br/>(cloudFiles)<br/>File Notification Mode (AWS SQS /<br/>Azure Event Grid)"]
         Producers --> StoragePrefixes --> AutoLoader
     end
 
     subgraph BCDREngine ["Cross-Region BCDR & Failover Architecture"]
-        PrimaryRegion["Primary Region (e.g., East US)\nActive Compute & Ingestion"]
-        StorageReplication["Cloud Storage Geo-Replication\n(Azure GRS / S3 Cross-Region Replication)"]
-        SecondaryRegion["Secondary Region (e.g., West US)\nStandby Disaster Recovery Workspace"]
+        PrimaryRegion["Primary Region (e.g., East US)<br/>Active Compute & Ingestion"]
+        StorageReplication["Cloud Storage Geo-Replication<br/>(Azure GRS / S3 Cross-Region<br/>Replication)"]
+        SecondaryRegion["Secondary Region (e.g., West US)<br/>Standby Disaster Recovery<br/>Workspace"]
 
         PrimaryRegion --> StorageReplication --> SecondaryRegion
-        FailoverDNS["Global Traffic Manager / Route 53\n(Automated DNS Failover on Outage)"]
+        FailoverDNS["Global Traffic Manager / Route 53<br/>(Automated DNS Failover on Outage)"]
         FailoverDNS -.-> PrimaryRegion
         FailoverDNS -.-> SecondaryRegion
     end
@@ -224,17 +224,17 @@ flowchart TD
 flowchart TD
     subgraph ControlPlane ["Airflow Orchestration Control Plane"]
         Webserver["Airflow Webserver (UI / RBAC)"]
-        Scheduler["Airflow Scheduler (Heartbeat & DAG Parsing)"]
-        MetadataDB["Metadata Database (PostgreSQL / MySQL)\n(Job States, Variables, Connections)"]
-        Triggerer["Airflow Triggerer (AsyncIO Event Loop)\n(Runs 10,000+ Deferrable Sensors on 1 Thread)"]
+        Scheduler["Airflow Scheduler (Heartbeat & DAG<br/>Parsing)"]
+        MetadataDB["Metadata Database (PostgreSQL /<br/>MySQL)<br/>(Job States, Variables,<br/>Connections)"]
+        Triggerer["Airflow Triggerer (AsyncIO Event<br/>Loop)<br/>(Runs 10,000+ Deferrable Sensors<br/>on 1 Thread)"]
 
         Scheduler <--> MetadataDB
         Webserver <--> MetadataDB
         Scheduler <--> Triggerer
     end
 
-    subgraph QueuePlane ["Distributed Work Queue (Celery / Redis / K8s API)"]
-        Queue["Redis / RabbitMQ Broker\n(Task Execution Queue)"]
+    subgraph QueuePlane ["Distributed Work Queue (Celery / Redis / K8s<br/>API)"]
+        Queue["Redis / RabbitMQ Broker<br/>(Task Execution Queue)"]
         Scheduler -->|"Pushes Task Instances"| Queue
     end
 
@@ -245,10 +245,10 @@ flowchart TD
         Queue --> Worker2
 
         subgraph Tasks ["Dynamic Task Mapping (expand)"]
-            TaskMap["Dynamic Task Mapping\n(Spawns N parallel sub-tasks dynamically)"]
+            TaskMap["Dynamic Task Mapping<br/>(Spawns N parallel sub-tasks<br/>dynamically)"]
         end
         Worker1 --> TaskMap
-        Worker2 -->|"Yields to Triggerer (Deferrable)"| Triggerer
+        Worker2 -->|"Yields to Triggerer<br/>(Deferrable)"| Triggerer
     end
 ```
 
@@ -267,32 +267,32 @@ flowchart TD
 ```mermaid
 flowchart TD
     subgraph DecisionMatrix ["1. Distributed Join Strategy Selection"]
-        JoinCondition{"Is it an Equi-Join\n(= condition)?"}
+        JoinCondition{"Is it an Equi-Join<br/>(= condition)?"}
 
-        JoinCondition -->|No| BNLJ["Broadcast Nested Loop Join (BNLJ)\n(Extreme CPU $O(N \times M)$, avoid)"]
-        JoinCondition -->|Yes| SizeCheck{"Is Table A or B < 10 MB\n(or broadcast hint)?"}
+        JoinCondition -->|No| BNLJ["Broadcast Nested Loop Join (BNLJ)<br/>(Extreme CPU $O(N \times M)$,<br/>avoid)"]
+        JoinCondition -->|Yes| SizeCheck{"Is Table A or B &lt; 10 MB<br/>(or broadcast hint)?"}
 
-        SizeCheck -->|Yes| BHJ["Broadcast Hash Join (BHJ)\n🏆 Zero Network Shuffle on Fact Table"]
-        SizeCheck -->|No| SortCheck{"Are keys sortable\nand large?"}
+        SizeCheck -->|Yes| BHJ["Broadcast Hash Join (BHJ)<br/>🏆 Zero Network Shuffle on Fact<br/>Table"]
+        SizeCheck -->|No| SortCheck{"Are keys sortable<br/>and large?"}
 
-        SortCheck -->|Default| SMJ["Sort-Merge Join (SMJ)\n🛡️ Scalable, Full Shuffle + Disk Sort"]
-        SortCheck -->|Photon / RAM fit| SHJ["Shuffle Hash Join (SHJ)\n⚡ Fast, Shuffles but No Sort"]
+        SortCheck -->|Default| SMJ["Sort-Merge Join (SMJ)<br/>🛡️ Scalable, Full Shuffle + Disk<br/>Sort"]
+        SortCheck -->|"Photon / RAM fit"| SHJ["Shuffle Hash Join (SHJ)<br/>⚡ Fast, Shuffles but No Sort"]
     end
 
     subgraph MemoryTriage ["2. Executor Unified Memory & Spill Mechanics"]
-        TotalMem["Total Container Memory (Allocated by YARN / K8s)"]
-        Overhead["Memory Overhead (10-30%)\n(PySpark daemons, off-heap buffers)"]
-        Heap["JVM Heap Memory\n(Storage 50% vs Execution 50%)"]
+        TotalMem["Total Container Memory (Allocated<br/>by YARN / K8s)"]
+        Overhead["Memory Overhead (10-30%)<br/>(PySpark daemons, off-heap<br/>buffers)"]
+        Heap["JVM Heap Memory<br/>(Storage 50% vs Execution 50%)"]
 
-        Heap -->|"Execution Buffer Exceeded"| SpillMemory["Spill (Memory): Deserialized Java Objects in RAM"]
-        SpillMemory -->|"Flushed to Local Disk"| SpillDisk["Spill (Disk): Compressed Blocks on SSD"]
+        Heap -->|"Execution Buffer Exceeded"| SpillMemory["Spill (Memory): Deserialized Java<br/>Objects in RAM"]
+        SpillMemory -->|"Flushed to Local Disk"| SpillDisk["Spill (Disk): Compressed Blocks on<br/>SSD"]
         TotalMem -->|"Exceeded Limit"| Exit137["Container Killed: Exit Code 137"]
     end
 
     subgraph SkewMitigation ["3. Skew & Salting Remediation"]
-        HotKey["Hot Key Skew\n(e.g., NULLs or Mega Customer)"]
-        AQESkew["Level 1: Enable AQE Skew Join\nspark.sql.adaptive.skewJoin.enabled = true"]
-        SelectiveSalting["Level 2: Selective Two-Phase Salting\nAdd random 0..K-1 suffix to HOT keys\nReplicate dimension table by K"]
+        HotKey["Hot Key Skew<br/>(e.g., NULLs or Mega Customer)"]
+        AQESkew["Level 1: Enable AQE Skew Join<br/>spark.sql.adaptive.skewJoin.enabled<br/>= true"]
+        SelectiveSalting["Level 2: Selective Two-Phase<br/>Salting<br/>Add random 0..K-1 suffix to HOT<br/>keys<br/>Replicate dimension table by K"]
 
         HotKey --> AQESkew --> SelectiveSalting
     end
@@ -315,33 +315,33 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    subgraph AzureCloudPlane ["Azure Cloud Platform (Control & Public Orchestration)"]
-        ADF["Azure Data Factory / Synapse Pipeline\n(Master Pipeline Orchestrator)"]
-        KeyVault["Azure Key Vault\n(Credential & Connection Secret Vault)"]
-        EventGrid["Azure Event Grid\n(Storage Event Ingestion Trigger)"]
+    subgraph AzureCloudPlane ["Azure Cloud Platform (Control & Public<br/>Orchestration)"]
+        ADF["Azure Data Factory / Synapse<br/>Pipeline<br/>(Master Pipeline Orchestrator)"]
+        KeyVault["Azure Key Vault<br/>(Credential & Connection Secret<br/>Vault)"]
+        EventGrid["Azure Event Grid<br/>(Storage Event Ingestion Trigger)"]
 
         EventGrid --> ADF
         KeyVault <--> ADF
     end
 
     subgraph HybridGateway ["Hybrid Security & Gateway Boundary"]
-        subgraph SHIR_Cluster ["Self-Hosted Integration Runtime (SHIR) HA Cluster"]
-            SHIR_Node1["SHIR Node 1 (Active)\n(Encrypted Outbound Port 443 only)"]
-            SHIR_Node2["SHIR Node 2 (Passive Failover)\n(Auto-Sync & Load Balancing)"]
+        subgraph SHIR_Cluster ["Self-Hosted Integration Runtime (SHIR) HA<br/>Cluster"]
+            SHIR_Node1["SHIR Node 1 (Active)<br/>(Encrypted Outbound Port 443 only)"]
+            SHIR_Node2["SHIR Node 2 (Passive Failover)<br/>(Auto-Sync & Load Balancing)"]
         end
     end
 
     subgraph OnPremiseSource ["On-Premise / Private Corporate Network"]
-        OracleDB["On-Premise Oracle / SAP ERP\n(High-Transaction OLTP)"]
-        WatermarkTable["Watermark Control Table\n(LastProcessedTime / LSN)"]
+        OracleDB["On-Premise Oracle / SAP ERP<br/>(High-Transaction OLTP)"]
+        WatermarkTable["Watermark Control Table<br/>(LastProcessedTime / LSN)"]
     end
 
     subgraph TargetLakehouse ["Target Azure Data Lake Storage Gen2"]
-        RawParquet["Raw Zone (Delta Parquet Ingestion)\n(Partitioned by year/month/day/hour)"]
+        RawParquet["Raw Zone (Delta Parquet Ingestion)<br/>(Partitioned by<br/>year/month/day/hour)"]
     end
 
-    ADF -.->|"Dispatches Copy Activity (HTTPS 443)"| SHIR_Cluster
-    SHIR_Cluster -->|"Reads Delta Records (WHERE updated_at > Watermark)"| OracleDB
+    ADF -.->|"Dispatches Copy Activity<br/>(HTTPS 443)"| SHIR_Cluster
+    SHIR_Cluster -->|"Reads Delta Records (WHERE<br/>updated_at &gt; Watermark)"| OracleDB
     SHIR_Cluster -->|"Updates Watermark"| WatermarkTable
     SHIR_Cluster -->|"Streams Encrypted Payload"| RawParquet
 ```
@@ -361,29 +361,29 @@ flowchart TD
 ```mermaid
 flowchart LR
     subgraph Panel1 ["1. Upstream Staging (Sources & Raw)"]
-        Source1["Raw Lakehouse Tables\n(bronze.orders, bronze.customers)"]
-        Staging["Staging Models (stg_orders.sql)\n(Type Casting, Renaming, Cleaning)"]
+        Source1["Raw Lakehouse Tables<br/>(bronze.orders, bronze.customers)"]
+        Staging["Staging Models (stg_orders.sql)<br/>(Type Casting, Renaming, Cleaning)"]
         Source1 --> Staging
     end
 
     subgraph Panel2 ["2. dbt Mesh & Core Transformations"]
         subgraph DataProduct1 ["Finance Domain Mesh Project"]
-            DimCustomer["dim_customers.sql\n(SCD Type 1 & Type 2)"]
-            FactOrders["fct_orders.sql\n(Incremental: is_incremental())"]
+            DimCustomer["dim_customers.sql<br/>(SCD Type 1 & Type 2)"]
+            FactOrders["fct_orders.sql<br/>(Incremental: is_incremental())"]
         end
         Staging --> DimCustomer
         Staging --> FactOrders
 
-        Tests["dbt Test Engine\n(unique, not_null, accepted_values,\nrelationship foreign-key constraints)"]
+        Tests["dbt Test Engine<br/>(unique, not_null,<br/>accepted_values,<br/>relationship foreign-key<br/>constraints)"]
         FactOrders --> Tests
     end
 
     subgraph Panel3 ["3. Downstream Semantic Marts & Contracts"]
         subgraph DataProduct2 ["Marketing Domain Project (Cross-Project Ref)"]
-            CustomerLTV["mart_customer_ltv.sql\n(ref('finance_project', 'fct_orders'))"]
+            CustomerLTV["mart_customer_ltv.sql<br/>(ref('finance_project',<br/>'fct_orders'))"]
         end
         FactOrders --> CustomerLTV
-        Docs["dbt Documentation & Lineage DAG\n(Catalog Metadata Generation)"]
+        Docs["dbt Documentation & Lineage DAG<br/>(Catalog Metadata Generation)"]
         CustomerLTV --> Docs
     end
 
@@ -411,29 +411,29 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    subgraph MultiEngineCompute ["Multi-Engine Fabric Compute Plane (F-SKU Capacity)"]
-        FabricSpark["Fabric Spark Engine\n(Notebooks, Spark Jobs)"]
-        SynapseDW["Synapse Data Warehouse\n(High-Performance T-SQL Engine)"]
-        KQL["KQL Eventhouse\n(Real-Time Streaming Telemetry)"]
-        PowerBI["Power BI Direct Lake Mode\n(VertiPaq In-Memory Semantic Engine)"]
+    subgraph MultiEngineCompute ["Multi-Engine Fabric Compute Plane (F-SKU<br/>Capacity)"]
+        FabricSpark["Fabric Spark Engine<br/>(Notebooks, Spark Jobs)"]
+        SynapseDW["Synapse Data Warehouse<br/>(High-Performance T-SQL Engine)"]
+        KQL["KQL Eventhouse<br/>(Real-Time Streaming Telemetry)"]
+        PowerBI["Power BI Direct Lake Mode<br/>(VertiPaq In-Memory Semantic<br/>Engine)"]
     end
 
-    subgraph UnifiedOneLake ["Unified Storage: OneLake (onelake.dfs.fabric.microsoft.com)"]
+    subgraph UnifiedOneLake ["Unified Storage: OneLake<br/>(onelake.dfs.fabric.microsoft.com)"]
         subgraph Workspaces ["Single Tenant Namespace"]
-            WorkspaceA["Finance Workspace Lakehouse\n(Delta Parquet with V-Order)"]
-            WorkspaceB["Marketing Workspace Lakehouse\n(Delta Parquet with V-Order)"]
+            WorkspaceA["Finance Workspace Lakehouse<br/>(Delta Parquet with V-Order)"]
+            WorkspaceB["Marketing Workspace Lakehouse<br/>(Delta Parquet with V-Order)"]
         end
 
         subgraph Shortcuts ["Zero-Copy Cross-Cloud Shortcuts"]
-            S3Shortcut["Shortcut -> AWS S3 Bucket\n(IAM AssumedRole Delegation)"]
-            ADLSShortcut["Shortcut -> External ADLS Gen2\n(Zero Egress Duplication)"]
+            S3Shortcut["Shortcut -> AWS S3 Bucket<br/>(IAM AssumedRole Delegation)"]
+            ADLSShortcut["Shortcut -> External ADLS Gen2<br/>(Zero Egress Duplication)"]
         end
 
         WorkspaceA <--> Shortcuts
     end
 
-    MultiEngineCompute <-->|"Read/Write Standard Delta Format"| UnifiedOneLake
-    PowerBI -->|"Direct Memory-Mapped Column Paging (Zero-Copy)"| WorkspaceA
+    MultiEngineCompute <-->|"Read/Write Standard Delta<br/>Format"| UnifiedOneLake
+    PowerBI -->|"Direct Memory-Mapped Column<br/>Paging (Zero-Copy)"| WorkspaceA
 ```
 
 ### Key Architectural Takeaways:
@@ -450,13 +450,13 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    subgraph Panel1 ["1. B+Tree Storage Engine (OLTP / SQL Server / Postgres)"]
+    subgraph Panel1 ["1. B+Tree Storage Engine (OLTP / SQL Server /<br/>Postgres)"]
         RootPage["Root Index Page"] --> BranchPages["Branch Index Pages"]
-        BranchPages --> LeafPages["Leaf Data Pages (Doubly-Linked)\nFast Point Lookups: O(log N)\nWrite Amplification on In-Place Updates"]
+        BranchPages --> LeafPages["Leaf Data Pages (Doubly-Linked)<br/>Fast Point Lookups: O(log N)<br/>Write Amplification on In-Place<br/>Updates"]
     end
 
-    subgraph Panel2 ["2. LSM-Tree Storage Engine (Cassandra / RocksDB / Bigtable)"]
-        MemTable["In-Memory MemTable (SkipList)\n(All Writes Sequential Append)"]
+    subgraph Panel2 ["2. LSM-Tree Storage Engine (Cassandra /<br/>RocksDB / Bigtable)"]
+        MemTable["In-Memory MemTable (SkipList)<br/>(All Writes Sequential Append)"]
         WAL["Write-Ahead Log (WAL on Disk)"]
         MemTable -->|"Flush when Full"| SSTable1["SSTable Level 0 (Immutable)"]
         SSTable1 -->|"Compaction"| SSTable2["SSTable Level 1 (Sorted Runs)"]
@@ -464,9 +464,9 @@ flowchart LR
     end
 
     subgraph Panel3 ["3. ARIES Crash Recovery (ACID Durability)"]
-        Analysis["1. Analysis Phase:\nScan WAL forward from checkpoint\nIdentify dirty pages & active txns"]
-        Redo["2. Redo Phase:\nReplay all logged operations forward\nRestore DB to exact crash moment"]
-        Undo["3. Undo Phase:\nRoll back uncommitted txns backward\nWrite Compensation Log Records (CLRs)"]
+        Analysis["1. Analysis Phase:<br/>Scan WAL forward from checkpoint<br/>Identify dirty pages & active txns"]
+        Redo["2. Redo Phase:<br/>Replay all logged operations<br/>forward<br/>Restore DB to exact crash moment"]
+        Undo["3. Undo Phase:<br/>Roll back uncommitted txns<br/>backward<br/>Write Compensation Log Records<br/>(CLRs)"]
         Analysis --> Redo --> Undo
     end
 
@@ -488,28 +488,28 @@ flowchart LR
 ```mermaid
 flowchart TD
     subgraph RowstoreModel ["Traditional Rowstore (OLTP)"]
-        DataPage1["Data Page: Row 1 (ID, Name, Date, Amount)"]
-        DataPage2["Data Page: Row 2 (ID, Name, Date, Amount)"]
-        DataPage3["Data Page: Row 3 (ID, Name, Date, Amount)"]
-        DataPage1 -.->|"Scans Entire Row to read 1 column"| ReadIOPenalty["High Memory & I/O Waste for Analytics"]
+        DataPage1["Data Page: Row 1 (ID, Name, Date,<br/>Amount)"]
+        DataPage2["Data Page: Row 2 (ID, Name, Date,<br/>Amount)"]
+        DataPage3["Data Page: Row 3 (ID, Name, Date,<br/>Amount)"]
+        DataPage1 -.->|"Scans Entire Row to read 1<br/>column"| ReadIOPenalty["High Memory & I/O Waste for<br/>Analytics"]
     end
 
     subgraph ColumnstoreModel ["Clustered Columnstore Index (CCI) (OLAP)"]
         subgraph RowGroup1 ["Row Group (1,048,576 Rows)"]
-            Col1["Column Chunk: ID\n(Delta Encoding)"]
-            Col2["Column Chunk: Name\n(Dictionary Encoded)"]
-            Col3["Column Chunk: Date\n(Run-Length Encoded)"]
-            Col4["Column Chunk: Amount\n(Bit-Packed Decimal)"]
+            Col1["Column Chunk: ID<br/>(Delta Encoding)"]
+            Col2["Column Chunk: Name<br/>(Dictionary Encoded)"]
+            Col3["Column Chunk: Date<br/>(Run-Length Encoded)"]
+            Col4["Column Chunk: Amount<br/>(Bit-Packed Decimal)"]
         end
 
-        DeltaStore["Delta Store (B-Tree Rowstore Buffer)\n(Accepts trickle inserts until 1M rows)"]
-        TupleMover["Tuple Mover (Background Daemon)\nCompresses Delta Store into Row Group"]
+        DeltaStore["Delta Store (B-Tree Rowstore<br/>Buffer)<br/>(Accepts trickle inserts until 1M<br/>rows)"]
+        TupleMover["Tuple Mover (Background Daemon)<br/>Compresses Delta Store into Row<br/>Group"]
         DeltaStore --> TupleMover --> RowGroup1
     end
 
     subgraph QueryExecution ["Vectorized Execution & Segment Elimination"]
-        Metadata["Segment Metadata\n(Min / Max values per Column Chunk)"]
-        VectorEngine["Batch Mode Execution (SIMD)\nProcesses 900 Rows per Vector Instruction"]
+        Metadata["Segment Metadata<br/>(Min / Max values per Column<br/>Chunk)"]
+        VectorEngine["Batch Mode Execution (SIMD)<br/>Processes 900 Rows per Vector<br/>Instruction"]
         Metadata -->|"Eliminates Irrelevant Segments"| VectorEngine
     end
 
@@ -530,25 +530,25 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    subgraph Panel1 ["1. Legacy CPython Overhead (Row-by-Row Serialization)"]
-        CPython["CPython Interpreter\n(GIL Bottleneck / Single-Threaded)"]
+    subgraph Panel1 ["1. Legacy CPython Overhead (Row-by-Row<br/>Serialization)"]
+        CPython["CPython Interpreter<br/>(GIL Bottleneck / Single-Threaded)"]
         JavaVM["JVM Spark Executor"]
-        Socket["IPC Socket / Pickle Serialization\n(Object Boxed in Memory: 48 bytes/int)"]
+        Socket["IPC Socket / Pickle Serialization<br/>(Object Boxed in Memory: 48<br/>bytes/int)"]
         JavaVM <--> Socket <--> CPython
     end
 
-    subgraph Panel2 ["2. Apache Arrow Columnar Memory (Zero-Copy Interop)"]
-        ArrowBuffer["Shared Memory: Apache Arrow RecordBatch\n(C++ Columnar Memory Layout)"]
+    subgraph Panel2 ["2. Apache Arrow Columnar Memory (Zero-Copy<br/>Interop)"]
+        ArrowBuffer["Shared Memory: Apache Arrow<br/>RecordBatch<br/>(C++ Columnar Memory Layout)"]
         PyProcess["PySpark Python Daemon"]
         JVM["Spark JVM Engine"]
-        ArrowBuffer -.->|"Zero-Copy Pointer Sharing (No Serialization)"| PyProcess
-        ArrowBuffer -.->|"Zero-Copy Pointer Sharing (No Serialization)"| JVM
+        ArrowBuffer -.->|"Zero-Copy Pointer Sharing (No<br/>Serialization)"| PyProcess
+        ArrowBuffer -.->|"Zero-Copy Pointer Sharing (No<br/>Serialization)"| JVM
     end
 
-    subgraph Panel3 ["3. Polars Vectorized Query Engine (Rust Multi-Threaded)"]
+    subgraph Panel3 ["3. Polars Vectorized Query Engine (Rust<br/>Multi-Threaded)"]
         LazyFrame["Polars LazyFrame (Query Plan AST)"]
-        StreamingEngine["Rust Multi-Threaded Streaming Engine\n(SIMD Vectorization & Work-Stealing)"]
-        OutputMemory["Blisteringly Fast Output (10x-50x vs Pandas)"]
+        StreamingEngine["Rust Multi-Threaded Streaming<br/>Engine<br/>(SIMD Vectorization &<br/>Work-Stealing)"]
+        OutputMemory["Blisteringly Fast Output (10x-50x<br/>vs Pandas)"]
         LazyFrame --> StreamingEngine --> OutputMemory
     end
 
@@ -570,32 +570,32 @@ flowchart LR
 ```mermaid
 flowchart TD
     subgraph OperationalPlane ["Operational OLTP & CDC Streaming Plane"]
-        Postgres["PostgreSQL Database\n(Transactional Writes)"]
-        OutboxTable["Outbox Table (Events Committed in Same Txn)"]
-        Debezium["Debezium Connector (Kafka Connect)\n(Reads PostgreSQL WAL / Logical Replication)"]
-        Kafka["Kafka Topic: cdc.orders\n(Avro Payload + Key + Schema ID)"]
+        Postgres["PostgreSQL Database<br/>(Transactional Writes)"]
+        OutboxTable["Outbox Table (Events Committed in<br/>Same Txn)"]
+        Debezium["Debezium Connector (Kafka Connect)<br/>(Reads PostgreSQL WAL / Logical<br/>Replication)"]
+        Kafka["Kafka Topic: cdc.orders<br/>(Avro Payload + Key + Schema ID)"]
 
         Postgres --> OutboxTable --> Debezium --> Kafka
     end
 
-    subgraph DataVaultPlane ["Data Vault 2.0 Lakehouse Architecture (Raw Vault)"]
+    subgraph DataVaultPlane ["Data Vault 2.0 Lakehouse Architecture (Raw<br/>Vault)"]
         subgraph Hubs ["Hubs (Core Business Concepts)"]
-            HubCustomer["Hub_Customer\n(HK_Customer, Customer_ID, Load_Date, Record_Source)"]
+            HubCustomer["Hub_Customer<br/>(HK_Customer, Customer_ID,<br/>Load_Date, Record_Source)"]
         end
 
         subgraph Links ["Links (Business Relationships)"]
-            LinkOrder["Link_Order_Customer\n(HK_Order_Cust, HK_Order, HK_Customer, Load_Date)"]
+            LinkOrder["Link_Order_Customer<br/>(HK_Order_Cust, HK_Order,<br/>HK_Customer, Load_Date)"]
         end
 
         subgraph Sats ["Satellites (Descriptive Context & History)"]
-            SatCustomer["Sat_Customer (SCD Type 2)\n(HK_Customer, Load_Date, Hash_Diff, Address, Active_Flag)"]
+            SatCustomer["Sat_Customer (SCD Type 2)<br/>(HK_Customer, Load_Date,<br/>Hash_Diff, Address, Active_Flag)"]
         end
 
         HubCustomer --- LinkOrder
         HubCustomer --- SatCustomer
     end
 
-    Kafka -->|"Structured Streaming Bronze Ingestion"| DataVaultPlane
+    Kafka -->|"Structured Streaming Bronze<br/>Ingestion"| DataVaultPlane
 ```
 
 ### Key Architectural Takeaways:
@@ -615,25 +615,25 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    subgraph Panel1 ["1. Storage & Compression (VertiPaq In-Memory DB)"]
+    subgraph Panel1 ["1. Storage & Compression (VertiPaq In-Memory<br/>DB)"]
         RawCols["Raw Relational Columns"]
-        ValueEnc["Value Encoding (Sub-tract min offset)"]
-        DictEnc["Dictionary Encoding (String -> Int ID)"]
-        RLE["Run-Length Encoding (Consecutive Count)"]
+        ValueEnc["Value Encoding (Sub-tract min<br/>offset)"]
+        DictEnc["Dictionary Encoding (String -> Int<br/>ID)"]
+        RLE["Run-Length Encoding (Consecutive<br/>Count)"]
         RawCols --> ValueEnc --> DictEnc --> RLE
     end
 
-    subgraph Panel2 ["2. DAX Context Transition (Row Context -> Filter Context)"]
-        RowContext["Row Context (Iterating over rows in a table)"]
-        Calculate["CALCULATE() Wrapper\n(Forces Context Transition)"]
-        FilterContext["Filter Context (Active filters on the data model)"]
+    subgraph Panel2 ["2. DAX Context Transition (Row Context -><br/>Filter Context)"]
+        RowContext["Row Context (Iterating over rows<br/>in a table)"]
+        Calculate["CALCULATE() Wrapper<br/>(Forces Context Transition)"]
+        FilterContext["Filter Context (Active filters on<br/>the data model)"]
         RowContext --> Calculate --> FilterContext
     end
 
     subgraph Panel3 ["3. Query Execution & Serving Modes"]
-        FormulaEngine["Formula Engine (FE) (Single-Threaded, Evaluates DAX logic)"]
-        StorageEngine["Storage Engine (SE) (Multi-Threaded, Scans VertiPaq/OneLake)"]
-        DirectLake["Direct Lake Mode (Paging OneLake Delta Parquet)"]
+        FormulaEngine["Formula Engine (FE)<br/>(Single-Threaded, Evaluates DAX<br/>logic)"]
+        StorageEngine["Storage Engine (SE)<br/>(Multi-Threaded, Scans<br/>VertiPaq/OneLake)"]
+        DirectLake["Direct Lake Mode (Paging OneLake<br/>Delta Parquet)"]
         FormulaEngine <--> StorageEngine <--> DirectLake
     end
 ```
@@ -653,24 +653,24 @@ flowchart LR
 ```mermaid
 flowchart TD
     subgraph IngestionStream ["Real-Time Event Stream & Multi-Tenant Gateway"]
-        APIGateway["Multi-Tenant API Gateway\n(Tenant ID Injected in Header)"]
-        Kafka["Kafka / Event Hubs (Tenant Partitioned)"]
+        APIGateway["Multi-Tenant API Gateway<br/>(Tenant ID Injected in Header)"]
+        Kafka["Kafka / Event Hubs (Tenant<br/>Partitioned)"]
         APIGateway --> Kafka
     end
 
-    subgraph DualPathExecution ["Dual-Path Architecture: Offline Lakehouse vs Online Store"]
-        SparkStream["Databricks Structured Streaming / Flink"]
+    subgraph DualPathExecution ["Dual-Path Architecture: Offline Lakehouse vs<br/>Online Store"]
+        SparkStream["Databricks Structured Streaming /<br/>Flink"]
         Kafka --> SparkStream
 
         subgraph OfflineStore ["Offline Feature Store (Delta Lake Gold)"]
-            DeltaGold["Delta Lake Feature Store\n(Historical Training Data / Point-in-Time Lookups)"]
-            ModelTraining["ML Model Training (AutoML / Mosaic AI)"]
+            DeltaGold["Delta Lake Feature Store<br/>(Historical Training Data /<br/>Point-in-Time Lookups)"]
+            ModelTraining["ML Model Training (AutoML / Mosaic<br/>AI)"]
             DeltaGold --> ModelTraining
         end
 
-        subgraph OnlineStore ["Online Low-Latency Store (< 10ms SLA)"]
-            RedisCosmos["Redis Enterprise / DynamoDB / Cosmos DB\n(Key-Value Lookups: customer_id -> feature_vector)"]
-            ModelServing["Real-Time ML Model Serving\n(Fraud Detection Endpoint)"]
+        subgraph OnlineStore ["Online Low-Latency Store (&lt; 10ms SLA)"]
+            RedisCosmos["Redis Enterprise / DynamoDB /<br/>Cosmos DB<br/>(Key-Value Lookups: customer_id -><br/>feature_vector)"]
+            ModelServing["Real-Time ML Model Serving<br/>(Fraud Detection Endpoint)"]
             RedisCosmos --> ModelServing
         end
 
@@ -679,8 +679,8 @@ flowchart TD
     end
 
     subgraph MultiTenantGovernance ["Unity Catalog Zero-Trust Multi-Tenancy"]
-        TenantRLS["Row-Level Security (RLS):\ntenant_id = CURRENT_TENANT()"]
-        TenantStorage["Dedicated Cloud Storage Container per Tenant"]
+        TenantRLS["Row-Level Security (RLS):<br/>tenant_id = CURRENT_TENANT()"]
+        TenantStorage["Dedicated Cloud Storage Container<br/>per Tenant"]
         TenantRLS -.-> DeltaGold
     end
 ```
@@ -701,27 +701,27 @@ flowchart TD
 ```mermaid
 flowchart TD
     subgraph Tier1 ["Tier 1: Iceberg Catalog (Catalog Pointer)"]
-        Catalog["REST Catalog / Nessie / Unity Catalog\nPointer: current-metadata-location -> v3.metadata.json"]
+        Catalog["REST Catalog / Nessie / Unity<br/>Catalog<br/>Pointer: current-metadata-location<br/>-> v3.metadata.json"]
     end
 
     subgraph Tier2 ["Tier 2: Metadata File (v3.metadata.json)"]
-        Metadata["v3.metadata.json\nSchema (Field IDs 1..N) | Partition Spec | Snapshots Array\nCurrent Snapshot ID: S102"]
+        Metadata["v3.metadata.json<br/>Schema (Field IDs 1..N) |<br/>Partition Spec | Snapshots Array<br/>Current Snapshot ID: S102"]
         Catalog --> Metadata
     end
 
     subgraph Tier3 ["Tier 3: Manifest List (snap-102.avro)"]
-        ManifestList["snap-102.avro\nManifest 1 Path | Partition Bounds: (date: 2026-01-01 to 2026-01-15)\nManifest 2 Path | Partition Bounds: (date: 2026-01-16 to 2026-01-31)"]
+        ManifestList["snap-102.avro<br/>Manifest 1 Path | Partition<br/>Bounds: (date: 2026-01-01 to<br/>2026-01-15)<br/>Manifest 2 Path | Partition<br/>Bounds: (date: 2026-01-16 to<br/>2026-01-31)"]
         Metadata --> ManifestList
     end
 
-    subgraph Tier4 ["Tier 4: Manifest Files (*.avro) & Physical Data Files"]
-        Manifest1["manifest-1.avro\nList of Data Files: part-1.parquet, part-2.parquet\nColumn Min/Max Stats | Null Counts | Positional Delete Refs"]
+    subgraph Tier4 ["Tier 4: Manifest Files (*.avro) & Physical<br/>Data Files"]
+        Manifest1["manifest-1.avro<br/>List of Data Files:<br/>part-1.parquet, part-2.parquet<br/>Column Min/Max Stats | Null Counts<br/>| Positional Delete Refs"]
         ManifestList --> Manifest1
 
         subgraph PhysicalFiles ["Storage Layer (S3 / ADLS)"]
             DataFile1["part-1.parquet (Active Data)"]
             DataFile2["part-2.parquet (Active Data)"]
-            PosDelete["part-delete-1.parquet\n(file_path: part-1.parquet, pos: 4021)"]
+            PosDelete["part-delete-1.parquet<br/>(file_path: part-1.parquet, pos:<br/>4021)"]
         end
         Manifest1 --> PhysicalFiles
     end
@@ -742,25 +742,25 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    subgraph StreamStream ["1. Input Stream & Checkpoint Barrier Injection"]
+    subgraph StreamStream ["1. Input Stream & Checkpoint Barrier<br/>Injection"]
         KafkaSource["Kafka Partition Stream"] --> Ingest["Flink Source Task"]
-        Barrier["Checkpoint Barrier (Epoch n)\n(Injected into stream without stopping data)"]
+        Barrier["Checkpoint Barrier (Epoch n)<br/>(Injected into stream without<br/>stopping data)"]
         Ingest --> Barrier
     end
 
     subgraph OperatorPipeline ["2. Stateful Operator Pipeline"]
-        WindowOp["Sliding Window Aggregator\n(Keyed State: customer_id -> running_total)"]
+        WindowOp["Sliding Window Aggregator<br/>(Keyed State: customer_id -><br/>running_total)"]
         Barrier --> WindowOp
 
         subgraph LocalState ["Local Off-Heap RocksDB State Store"]
-            SSTable["LSM-Tree Key-Value State\n(Spills to local NVMe SSDs)"]
+            SSTable["LSM-Tree Key-Value State<br/>(Spills to local NVMe SSDs)"]
             MemTable["In-Memory MemTable (Fast Lookups)"]
         end
         WindowOp <--> LocalState
     end
 
     subgraph PersistentStorage ["3. Distributed Durable Storage"]
-        CheckpointDir["Checkpoint Storage (S3 / ADLS)\n(Asynchronous Snapshot Upload)"]
+        CheckpointDir["Checkpoint Storage (S3 / ADLS)<br/>(Asynchronous Snapshot Upload)"]
         LocalState -.->|"Async State Copy"| CheckpointDir
     end
 ```
@@ -779,29 +779,29 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    subgraph TrinoMPP ["Trino Distributed MPP Architecture (Multi-Node Cloud Scale)"]
-        TrinoCoord["Trino Coordinator (Parser, Planner, Cost-Based Optimizer)"]
+    subgraph TrinoMPP ["Trino Distributed MPP Architecture<br/>(Multi-Node Cloud Scale)"]
+        TrinoCoord["Trino Coordinator (Parser,<br/>Planner, Cost-Based Optimizer)"]
 
-        subgraph Workers ["Distributed Worker Nodes (In-Memory Streaming Pipeline)"]
+        subgraph Workers ["Distributed Worker Nodes (In-Memory Streaming<br/>Pipeline)"]
             W1["Worker 1 (Task Exchange / Netty)"]
             W2["Worker 2 (Task Exchange / Netty)"]
             W3["Worker 3 (Task Exchange / Netty)"]
         end
 
-        DynFilter["Dynamic Filtering Engine\n(Pushes Runtime Hash Join Filter down to Lakehouse Scans)"]
+        DynFilter["Dynamic Filtering Engine<br/>(Pushes Runtime Hash Join Filter<br/>down to Lakehouse Scans)"]
         TrinoCoord --> DynFilter --> Workers
     end
 
-    subgraph DuckDBEngine ["DuckDB In-Process Analytical Engine (Embedded Single-Node)"]
-        PythonProcess["Host Process (Python / Node.js / CLI)"]
-        DuckDB["DuckDB Vectorized C++ Engine\n(Direct Pointer Memory Sharing, No TCP Network Transfer)"]
-        SIMD["SIMD Execution Vectors (1024-Row Chunks in CPU L1/L2 Cache)"]
+    subgraph DuckDBEngine ["DuckDB In-Process Analytical Engine (Embedded<br/>Single-Node)"]
+        PythonProcess["Host Process (Python / Node.js /<br/>CLI)"]
+        DuckDB["DuckDB Vectorized C++ Engine<br/>(Direct Pointer Memory Sharing, No<br/>TCP Network Transfer)"]
+        SIMD["SIMD Execution Vectors (1024-Row<br/>Chunks in CPU L1/L2 Cache)"]
 
         PythonProcess <--> DuckDB --> SIMD
     end
 
     subgraph DataLakeStorage ["Cloud Data Lake & Open Table Formats"]
-        ObjectStore["Object Storage (S3 / ADLS / GCS)\n(Delta Lake / Apache Iceberg / Parquet)"]
+        ObjectStore["Object Storage (S3 / ADLS / GCS)<br/>(Delta Lake / Apache Iceberg /<br/>Parquet)"]
     end
 
     Workers <-->|"Zero-Copy S3 Scan"| ObjectStore
@@ -822,22 +822,22 @@ flowchart TD
 ```mermaid
 flowchart TD
     subgraph IngestionPlane ["Offline Vector Ingestion & Indexing Pipeline"]
-        Docs["Enterprise PDF, Markdown, Confluence Documents"]
+        Docs["Enterprise PDF, Markdown,<br/>Confluence Documents"]
         AutoLoader["Auto Loader Document Ingestion"]
-        Chunker["LangChain / Semantic Chunker (512-Token Overlap)"]
-        Embedder["Embedding Model (bge-large / text-embedding-3)"]
-        VectorIndex["Databricks Vector Search / Pinecone / Milvus\n(HNSW Hierarchical Navigable Small World Graph)"]
+        Chunker["LangChain / Semantic Chunker<br/>(512-Token Overlap)"]
+        Embedder["Embedding Model (bge-large /<br/>text-embedding-3)"]
+        VectorIndex["Databricks Vector Search /<br/>Pinecone / Milvus<br/>(HNSW Hierarchical Navigable Small<br/>World Graph)"]
 
         Docs --> AutoLoader --> Chunker --> Embedder --> VectorIndex
     end
 
-    subgraph InferencePlane ["Real-Time Governed RAG Serving Plane (< 200ms SLA)"]
-        UserQuery["User Prompt: 'What is our refund policy?'"]
+    subgraph InferencePlane ["Real-Time Governed RAG Serving Plane (&lt;<br/>200ms SLA)"]
+        UserQuery["User Prompt: 'What is our refund<br/>policy?'"]
         QueryEmbedding["Generate Query Embedding Vector"]
-        ANN_Search["Approximate Nearest Neighbor (ANN) Vector Search\nCosine Similarity Top-K Lookups"]
-        ACL_Filter["Unity Catalog ACL Verification\n(Filter Out Documents User Lacks SELECT On)"]
-        LLM["Foundation Model (Llama-3 / Claude / GPT-4)"]
-        Response["Synthesized Accurate Response with Direct Citations"]
+        ANN_Search["Approximate Nearest Neighbor (ANN)<br/>Vector Search<br/>Cosine Similarity Top-K Lookups"]
+        ACL_Filter["Unity Catalog ACL Verification<br/>(Filter Out Documents User Lacks<br/>SELECT On)"]
+        LLM["Foundation Model (Llama-3 / Claude<br/>/ GPT-4)"]
+        Response["Synthesized Accurate Response with<br/>Direct Citations"]
 
         UserQuery --> QueryEmbedding --> ANN_Search --> ACL_Filter --> LLM --> Response
     end
@@ -859,22 +859,22 @@ flowchart TD
 ```mermaid
 flowchart TD
     subgraph Panel1 ["1. Workload Sizing & Compute Tier Selection"]
-        Interactive["Interactive All-Purpose Compute\n(Cost: 1.50 USD / DBU)"]
-        JobCluster["Automated Job Compute\n(Cost: 0.40 USD / DBU)\n🏆 70% Cheaper for Scheduled ETL"]
-        ServerlessDBSQL["Serverless SQL Warehouses\n(Instant Zero-Scale Idle Timeout: 1 Min)"]
+        Interactive["Interactive All-Purpose Compute<br/>(Cost: 1.50 USD / DBU)"]
+        JobCluster["Automated Job Compute<br/>(Cost: 0.40 USD / DBU)<br/>🏆 70% Cheaper for Scheduled ETL"]
+        ServerlessDBSQL["Serverless SQL Warehouses<br/>(Instant Zero-Scale Idle Timeout:<br/>1 Min)"]
     end
 
     subgraph Panel2 ["2. Spot / Preemptible VM Arbitrage"]
-        Driver["Driver Node: On-Demand VM (Guarantees Pipeline Stability)"]
-        Workers["Worker Executors: 100% Spot Instances (60-80% Discount)"]
-        Decom["Graceful Node Decommissioning\n(Migrates shuffle files before cloud preemption)"]
+        Driver["Driver Node: On-Demand VM<br/>(Guarantees Pipeline Stability)"]
+        Workers["Worker Executors: 100% Spot<br/>Instances (60-80% Discount)"]
+        Decom["Graceful Node Decommissioning<br/>(Migrates shuffle files before<br/>cloud preemption)"]
         Driver --> Workers --> Decom
     end
 
-    subgraph Panel3 ["3. Automated FinOps Governance via System Tables"]
-        SysTables["system.billing.usage & system.compute.clusters"]
-        CostDashboard["Daily DBU Spend by Project, Domain & Owner"]
-        AutoAlert["Budget Anomaly Alerting (Slack/PagerDuty on DBU Spikes)"]
+    subgraph Panel3 ["3. Automated FinOps Governance via System<br/>Tables"]
+        SysTables["system.billing.usage &<br/>system.compute.clusters"]
+        CostDashboard["Daily DBU Spend by Project, Domain<br/>& Owner"]
+        AutoAlert["Budget Anomaly Alerting<br/>(Slack/PagerDuty on DBU Spikes)"]
         SysTables --> CostDashboard --> AutoAlert
     end
 ```
@@ -895,20 +895,20 @@ flowchart TD
 flowchart LR
     subgraph Panel1 ["1. Write Phase (Isolated Staging Branch)"]
         Source["Upstream Raw Records"]
-        StageBranch["Write to Staging Delta Branch\n(e.g., gold.orders_stage / Shallow Clone)"]
+        StageBranch["Write to Staging Delta Branch<br/>(e.g., gold.orders_stage / Shallow<br/>Clone)"]
         Source --> StageBranch
     end
 
     subgraph Panel2 ["2. Audit Phase (Automated Circuit Breaker)"]
-        QualitySuite["Automated Quality Assertion Suite\n1. Zero Null Primary Keys\n2. Metric Drift < 5% vs 30-Day Moving Avg\n3. Referential Integrity Join Check"]
+        QualitySuite["Automated Quality Assertion Suite<br/>1. Zero Null Primary Keys<br/>2. Metric Drift &lt; 5% vs 30-Day<br/>Moving Avg<br/>3. Referential Integrity Join<br/>Check"]
         StageBranch --> QualitySuite
         GateCheck{"Pass All Tests?"}
         QualitySuite --> GateCheck
     end
 
     subgraph Panel3 ["3. Publish or Quarantine Phase"]
-        Publish["Fast Atomic Commit to Production Gold\nALTER TABLE gold.orders SWAP WITH stage"]
-        Quarantine["Trip Circuit Breaker: Halt Job\nAlert On-Call & Route Bad Batch to Quarantine"]
+        Publish["Fast Atomic Commit to Production<br/>Gold<br/>ALTER TABLE gold.orders SWAP WITH<br/>stage"]
+        Quarantine["Trip Circuit Breaker: Halt Job<br/>Alert On-Call & Route Bad Batch to<br/>Quarantine"]
         GateCheck -->|Yes| Publish
         GateCheck -->|No| Quarantine
     end
@@ -929,35 +929,35 @@ flowchart LR
 ```mermaid
 flowchart TD
     subgraph KafkaSourcePlane ["1. Distributed Message Source (Apache Kafka)"]
-        K1["Partition 0 (Committed Offsets: 100..250)"]
-        K2["Partition 1 (Committed Offsets: 400..550)"]
-        ConsumerGroup["Spark Consumer Group (Cooperative Sticky Assignor)"]
+        K1["Partition 0 (Committed Offsets:<br/>100..250)"]
+        K2["Partition 1 (Committed Offsets:<br/>400..550)"]
+        ConsumerGroup["Spark Consumer Group (Cooperative<br/>Sticky Assignor)"]
         K1 --> ConsumerGroup
         K2 --> ConsumerGroup
     end
 
-    subgraph SparkEnginePlane ["2. Spark Structured Streaming Engine (Micro-Batch)"]
-        MicroBatch["Micro-Batch Execution (Trigger: availableNow or ProcessingTime)"]
+    subgraph SparkEnginePlane ["2. Spark Structured Streaming Engine<br/>(Micro-Batch)"]
+        MicroBatch["Micro-Batch Execution (Trigger:<br/>availableNow or ProcessingTime)"]
         ConsumerGroup --> MicroBatch
 
         subgraph StatefulStore ["Off-Heap State Store (RocksDB)"]
-            Watermark["Event-Time Watermark: max(event_time) - 10 mins"]
+            Watermark["Event-Time Watermark:<br/>max(event_time) - 10 mins"]
             StateKey["State Keys: user_id -> cart_events"]
         end
         MicroBatch <--> StatefulStore
     end
 
     subgraph CheckpointWAL ["3. Durable Checkpoint & Write-Ahead Log (WAL)"]
-        OffsetsDir["/checkpoints/offsets/ (Committed Micro-Batch Offsets)"]
-        CommitsDir["/checkpoints/commits/ (Batch Success Confirmation)"]
-        StateSnapshots["/checkpoints/state/ (Asynchronous RocksDB Snapshots)"]
+        OffsetsDir["/checkpoints/offsets/ (Committed<br/>Micro-Batch Offsets)"]
+        CommitsDir["/checkpoints/commits/ (Batch<br/>Success Confirmation)"]
+        StateSnapshots["/checkpoints/state/ (Asynchronous<br/>RocksDB Snapshots)"]
         MicroBatch -.-> OffsetsDir
         MicroBatch -.-> CommitsDir
         StatefulStore -.-> StateSnapshots
     end
 
     subgraph IdempotentSink ["4. Idempotent Target Sink (Delta Lake)"]
-        DeltaTable["Target Delta Table\n(Atomic Commit with txnAppId and txnVersion)"]
+        DeltaTable["Target Delta Table<br/>(Atomic Commit with txnAppId and<br/>txnVersion)"]
         MicroBatch --> DeltaTable
     end
 
@@ -980,26 +980,26 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    subgraph Panel1 ["1. Concurrent Ingestion & OCC Conflict Validation"]
+    subgraph Panel1 ["1. Concurrent Ingestion & OCC Conflict<br/>Validation"]
         TxnA["Job A: Append (Inserts New Orders)"]
-        TxnB["Job B: Merge / Delete (Updates Status)"]
-        OCCEngine["Optimistic Concurrency Control (OCC)\nValidates Disjoint Partitions at Commit Time"]
+        TxnB["Job B: Merge / Delete (Updates<br/>Status)"]
+        OCCEngine["Optimistic Concurrency Control<br/>(OCC)<br/>Validates Disjoint Partitions at<br/>Commit Time"]
         TxnA --> OCCEngine
         TxnB --> OCCEngine
     end
 
     subgraph Panel2 ["2. Delta Lake 3.x Storage Optimization"]
-        DeltaLog["_delta_log/\nAtomic Commit Log"]
+        DeltaLog["_delta_log/<br/>Atomic Commit Log"]
         OCCEngine --> DeltaLog
-        LiquidCluster["Liquid Clustering (CLUSTER BY)\nDynamic Space-Filling Curve Sorting"]
-        DeletionVectors["Deletion Vectors (DVs)\nSoft-Delete Roaring Bitmaps"]
+        LiquidCluster["Liquid Clustering (CLUSTER BY)<br/>Dynamic Space-Filling Curve<br/>Sorting"]
+        DeletionVectors["Deletion Vectors (DVs)<br/>Soft-Delete Roaring Bitmaps"]
         DeltaLog --> LiquidCluster
         DeltaLog --> DeletionVectors
     end
 
     subgraph Panel3 ["3. Background Lifecycle Maintenance"]
-        Optimize["OPTIMIZE (Bin-Packing Compaction)\nConsolidates Small Files into 1 GB Targets"]
-        Vacuum["VACUUM (Tombstone Purging)\nRemoves files past retention (> 7 days)"]
+        Optimize["OPTIMIZE (Bin-Packing Compaction)<br/>Consolidates Small Files into 1 GB<br/>Targets"]
+        Vacuum["VACUUM (Tombstone Purging)<br/>Removes files past retention (&gt;<br/>7 days)"]
         LiquidCluster --> Optimize
         DeletionVectors --> Vacuum
     end
@@ -1021,20 +1021,20 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    subgraph OrchestrationPlane ["AWS Step Functions Serverless Orchestration DAG"]
-        StartNode["Execution Trigger (EventBridge / S3 Notification)"] --> GlueJob["AWS Glue 4.0 ETL Job (Auto-Scaling DPUs)"]
+    subgraph OrchestrationPlane ["AWS Step Functions Serverless Orchestration<br/>DAG"]
+        StartNode["Execution Trigger (EventBridge /<br/>S3 Notification)"] --> GlueJob["AWS Glue 4.0 ETL Job (Auto-Scaling<br/>DPUs)"]
         GlueJob --> QualityCheck{"Pass Great Expectations?"}
-        QualityCheck -->|Yes| EMRServerless["EMR Serverless Spark (Heavy Transformation)"]
+        QualityCheck -->|Yes| EMRServerless["EMR Serverless Spark (Heavy<br/>Transformation)"]
         QualityCheck -->|No| SNS_Alert["SNS Alarm -> PagerDuty / Slack"]
         EMRServerless --> AthenaCrawler["Glue Data Catalog Crawler Update"]
     end
 
     subgraph StorageComputePlane ["AWS Big Data Storage & Query Plane"]
-        S3Landing["Amazon S3 Raw Landing Bucket\n(S3 Express One Zone / Prefix Partitioned)"]
-        GlueCatalog["AWS Glue Data Catalog (Metastore)\n(Iceberg / Delta Table Definitions)"]
-        S3Lakehouse["Amazon S3 Lakehouse Bucket (S3 Standard / Intelligent-Tiering)"]
-        AmazonAthena["Amazon Athena (Presto/Trino Serverless Ad-Hoc SQL)"]
-        AmazonRedshift["Amazon Redshift Serverless (BI Reporting Mart)"]
+        S3Landing["Amazon S3 Raw Landing Bucket<br/>(S3 Express One Zone / Prefix<br/>Partitioned)"]
+        GlueCatalog["AWS Glue Data Catalog (Metastore)<br/>(Iceberg / Delta Table<br/>Definitions)"]
+        S3Lakehouse["Amazon S3 Lakehouse Bucket (S3<br/>Standard / Intelligent-Tiering)"]
+        AmazonAthena["Amazon Athena (Presto/Trino<br/>Serverless Ad-Hoc SQL)"]
+        AmazonRedshift["Amazon Redshift Serverless (BI<br/>Reporting Mart)"]
     end
 
     GlueJob <--> S3Landing
@@ -1058,24 +1058,24 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    subgraph Panel1 ["1. Legacy Bottleneck Architecture (Situation & Task)"]
+    subgraph Panel1 ["1. Legacy Bottleneck Architecture (Situation<br/>& Task)"]
         LegacyDWH["Legacy On-Premise EDW / Hadoop"]
-        DailySLA["Daily Batch Takes 14 Hours\n(Frequent SLA Breaches, High Hardware Cost)"]
+        DailySLA["Daily Batch Takes 14 Hours<br/>(Frequent SLA Breaches, High<br/>Hardware Cost)"]
         DataSilos["Siloed BI & ML Repositories"]
         LegacyDWH --> DailySLA --> DataSilos
     end
 
     subgraph Panel2 ["2. Modernized Lakehouse Migration (Action)"]
         AutoLoader["Auto Loader Event-Driven Ingestion"]
-        DLT["Delta Live Tables (Medallion Pipeline)\nLiquid Clustering + Photon Acceleration"]
-        UnityCatalog["Unity Catalog Zero-Trust Access Control"]
+        DLT["Delta Live Tables (Medallion<br/>Pipeline)<br/>Liquid Clustering + Photon<br/>Acceleration"]
+        UnityCatalog["Unity Catalog Zero-Trust Access<br/>Control"]
         AutoLoader --> DLT --> UnityCatalog
     end
 
-    subgraph Panel3 ["3. Business Impact & 5x Scale Resilience (Result)"]
-        SLAReduction["Pipeline Runtime: 14 Hours -> 42 Minutes\n🏆 95% Latency Improvement"]
-        FinOpsSavings["Annual Cloud Compute Savings: 650,000 USD"]
-        ScaleCapacity["Effortlessly Absorbed 5x Data Volume Spikes\nZero Cluster Downtime during Peak Black Friday"]
+    subgraph Panel3 ["3. Business Impact & 5x Scale Resilience<br/>(Result)"]
+        SLAReduction["Pipeline Runtime: 14 Hours -> 42<br/>Minutes<br/>🏆 95% Latency Improvement"]
+        FinOpsSavings["Annual Cloud Compute Savings:<br/>650,000 USD"]
+        ScaleCapacity["Effortlessly Absorbed 5x Data<br/>Volume Spikes<br/>Zero Cluster Downtime during Peak<br/>Black Friday"]
         SLAReduction --> FinOpsSavings --> ScaleCapacity
     end
 
@@ -1096,25 +1096,25 @@ flowchart LR
 ```mermaid
 flowchart TD
     subgraph IngestionStream ["High-Throughput Ingestion (1,000,000 TPS)"]
-        KafkaCluster["Multi-Cluster Kafka / Azure Event Hubs (128 Partitions)"]
+        KafkaCluster["Multi-Cluster Kafka / Azure Event<br/>Hubs (128 Partitions)"]
     end
 
-    subgraph FastPath ["Real-Time Low-Latency Fraud Scoring Path (< 50ms SLA)"]
-        FlinkCluster["Apache Flink Stream Processor (In-Memory Processing)"]
-        FeatureCache["Redis Enterprise / DynamoDB (Sub-5ms Feature Vector Lookup)"]
-        ScoringModel["ONNX ML Inference Engine (Vectorized Fraud Probability)"]
-        DecisionRules["Decision Engine: Allow / Challenge / Block"]
+    subgraph FastPath ["Real-Time Low-Latency Fraud Scoring Path<br/>(&lt; 50ms SLA)"]
+        FlinkCluster["Apache Flink Stream Processor<br/>(In-Memory Processing)"]
+        FeatureCache["Redis Enterprise / DynamoDB<br/>(Sub-5ms Feature Vector Lookup)"]
+        ScoringModel["ONNX ML Inference Engine<br/>(Vectorized Fraud Probability)"]
+        DecisionRules["Decision Engine: Allow / Challenge<br/>/ Block"]
 
         KafkaCluster --> FlinkCluster
         FlinkCluster <--> FeatureCache
         FlinkCluster --> ScoringModel --> DecisionRules
     end
 
-    subgraph SlowPath ["Analytical Lakehouse & Model Retraining Path (Minutes to Hours)"]
+    subgraph SlowPath ["Analytical Lakehouse & Model Retraining Path<br/>(Minutes to Hours)"]
         DeltaBronze["Bronze Ingestion Delta Table"]
         DLT_Silver["Silver Curated Transactions"]
-        FeatureStore["Delta Lake Feature Store (Feature Engineering)"]
-        ModelRetraining["Continuous Model Retraining Pipeline"]
+        FeatureStore["Delta Lake Feature Store (Feature<br/>Engineering)"]
+        ModelRetraining["Continuous Model Retraining<br/>Pipeline"]
 
         KafkaCluster --> DeltaBronze --> DLT_Silver --> FeatureStore --> ModelRetraining
         ModelRetraining -.->|"Publish New Model Weights"| ScoringModel
@@ -1135,24 +1135,24 @@ flowchart TD
 ```mermaid
 flowchart LR
     subgraph Panel1 ["1. Request for Comments (RFC) Proposal"]
-        ProblemStatement["Problem Definition & Business Justification"]
-        ArchOptions["Evaluated Options Matrix (Option A vs Option B vs Status Quo)"]
-        TradeOffs["Explicit Trade-Offs (Cost, Latency, Complexity, Operational Risk)"]
+        ProblemStatement["Problem Definition & Business<br/>Justification"]
+        ArchOptions["Evaluated Options Matrix (Option A<br/>vs Option B vs Status Quo)"]
+        TradeOffs["Explicit Trade-Offs (Cost,<br/>Latency, Complexity, Operational<br/>Risk)"]
         ProblemStatement --> ArchOptions --> TradeOffs
     end
 
     subgraph Panel2 ["2. Cross-Functional Architecture Review"]
-        LeadArch["Principal / Lead Architect (Security & Scalability)"]
-        StaffDE["Staff Data Engineer (Maintainability & Code Hygiene)"]
-        FinOpsLead["FinOps Lead (DBU Budget & Cloud Spend)"]
-        SecurityOfficer["Security Officer (Zero-Trust & Compliance)"]
+        LeadArch["Principal / Lead Architect<br/>(Security & Scalability)"]
+        StaffDE["Staff Data Engineer<br/>(Maintainability & Code Hygiene)"]
+        FinOpsLead["FinOps Lead (DBU Budget & Cloud<br/>Spend)"]
+        SecurityOfficer["Security Officer (Zero-Trust &<br/>Compliance)"]
         LeadArch <--> StaffDE <--> FinOpsLead <--> SecurityOfficer
     end
 
     subgraph Panel3 ["3. Consensus & Implementation Decision"]
-        ADR["Architectural Decision Record (ADR) Logged in Git"]
-        PoC["Time-Boxed 2-Week Proof-of-Concept (POC) with Success Metrics"]
-        ProductionRollout["Phased Production Rollout with Feature Flags & Rollback Plan"]
+        ADR["Architectural Decision Record<br/>(ADR) Logged in Git"]
+        PoC["Time-Boxed 2-Week Proof-of-Concept<br/>(POC) with Success Metrics"]
+        ProductionRollout["Phased Production Rollout with<br/>Feature Flags & Rollback Plan"]
         ADR --> PoC --> ProductionRollout
     end
 
@@ -1173,24 +1173,24 @@ flowchart LR
 ```mermaid
 flowchart TD
     subgraph FailureSymptoms ["1. Production Failure Symptoms in Spark UI"]
-        Straggler["Stage Stuck at 99%: 1 Task Runs for 45 Mins (Data Skew)"]
-        OOM_137["Executor Container Killed: Exit Code 137 (Memory Overhead)"]
-        SilentNull["NOT IN Subquery Returns 0 Rows (Three-Valued Logic NULL Trap)"]
-        JoinExplosion["Row Count Multiplies 10x After Join (Cartesian Duplicate Key)"]
+        Straggler["Stage Stuck at 99%: 1 Task Runs<br/>for 45 Mins (Data Skew)"]
+        OOM_137["Executor Container Killed: Exit<br/>Code 137 (Memory Overhead)"]
+        SilentNull["NOT IN Subquery Returns 0 Rows<br/>(Three-Valued Logic NULL Trap)"]
+        JoinExplosion["Row Count Multiplies 10x After<br/>Join (Cartesian Duplicate Key)"]
     end
 
     subgraph RootCauseAnalysis ["2. Engine-Level Root Cause Diagnosis"]
-        SkewCause["Root Cause: Uneven Partition Key Hashing (Millions of NULLs on 1 Reducer)"]
-        OOMCause["Root Cause: Non-JVM Memory Breach (PySpark Daemons, Arrow IPC, Off-Heap)"]
-        NullCause["Root Cause: ANSI SQL Three-Valued Logic (NULL in NOT IN produces UNKNOWN)"]
-        ExplodeCause["Root Cause: Exploding Deeply Nested Arrays without Bounded Cardinality"]
+        SkewCause["Root Cause: Uneven Partition Key<br/>Hashing (Millions of NULLs on 1<br/>Reducer)"]
+        OOMCause["Root Cause: Non-JVM Memory Breach<br/>(PySpark Daemons, Arrow IPC,<br/>Off-Heap)"]
+        NullCause["Root Cause: ANSI SQL Three-Valued<br/>Logic (NULL in NOT IN produces<br/>UNKNOWN)"]
+        ExplodeCause["Root Cause: Exploding Deeply<br/>Nested Arrays without Bounded<br/>Cardinality"]
     end
 
     subgraph ProductionRemediation ["3. Defensive Engineering Fixes"]
-        FixSkew["Fix: Selective Key Salting / Enable AQE Skew Join (skewedPartitionFactor=3)"]
-        FixOOM["Fix: Increase spark.executor.memoryOverhead (25-30%) / Reduce Cores (4-5)"]
-        FixNull["Fix: Replace NOT IN with NOT EXISTS or LEFT ANTI JOIN"]
-        FixExplode["Fix: Filter Empty Arrays / Explode in Bounded Batches"]
+        FixSkew["Fix: Selective Key Salting /<br/>Enable AQE Skew Join<br/>(skewedPartitionFactor=3)"]
+        FixOOM["Fix: Increase<br/>spark.executor.memoryOverhead<br/>(25-30%) / Reduce Cores (4-5)"]
+        FixNull["Fix: Replace NOT IN with NOT<br/>EXISTS or LEFT ANTI JOIN"]
+        FixExplode["Fix: Filter Empty Arrays / Explode<br/>in Bounded Batches"]
     end
 
     FailureSymptoms --> RootCauseAnalysis --> ProductionRemediation

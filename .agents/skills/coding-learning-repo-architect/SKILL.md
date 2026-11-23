@@ -52,14 +52,14 @@ When structuring a new learning repository or reorganizing an existing one, sele
 
 ```mermaid
 flowchart TD
-    Start["What is the primary learning objective?"] --> Q1{"Is it theory, code, or a full project?"}
+    Start["What is the primary learning<br/>objective?"] --> Q1{"Is it theory, code, or a full<br/>project?"}
 
     Q1 -->|"Code & Algorithms"| A1["Archetype 2: Code-Test-Doc Triad<br/>(trekhleb, TheAlgorithms)"]
-    Q1 -->|"Building real systems"| A2["Archetype 6: First-Principles Project<br/>(build-your-own-x, project-based)"]
-    Q1 -->|"Engineering standards & idioms"| A3["Archetype 3: Golden Rule & Anti-Pattern<br/>(nodebestpractices, clean-code)"]
-    Q1 -->|"Infrastructure & hands-on ops"| A4["Archetype 4: Step-by-Step Lab / Hard Way<br/>(kubernetes-the-hard-way)"]
-    Q1 -->|"System design & architecture"| A5["Archetype 5: Visual System Blueprint<br/>(system-design-primer, roadmap)"]
-    Q1 -->|"End-to-end multi-month study"| A6["Archetype 7: Master Syllabus & Tracker<br/>(coding-interview-university, ossu)"]
+    Q1 -->|"Building real systems"| A2["Archetype 6: First-Principles<br/>Project<br/>(build-your-own-x, project-based)"]
+    Q1 -->|"Engineering standards & idioms"| A3["Archetype 3: Golden Rule &<br/>Anti-Pattern<br/>(nodebestpractices, clean-code)"]
+    Q1 -->|"Infrastructure & hands-on ops"| A4["Archetype 4: Step-by-Step Lab /<br/>Hard Way<br/>(kubernetes-the-hard-way)"]
+    Q1 -->|"System design & architecture"| A5["Archetype 5: Visual System<br/>Blueprint<br/>(system-design-primer, roadmap)"]
+    Q1 -->|"End-to-end multi-month study"| A6["Archetype 7: Master Syllabus &<br/>Tracker<br/>(coding-interview-university,<br/>ossu)"]
     Q1 -->|"Interactive browser drills"| A7["Archetype 1: Challenge Monorepo<br/>(freeCodeCamp)"]
     Q1 -->|"Quick daily references"| A8["Archetype 8: Atomic Micro-Snippets<br/>(30-seconds-of-code)"]
 ```
@@ -245,10 +245,10 @@ A common failure mode of technical tutorials is overloading beginners with opera
 
 ```mermaid
 flowchart TD
-    T1["Tier 1: Foundations & Mental Model (Level 100)<br/>Target: Novice<br/>Focus: 'What is it?' + First-principles analogy + Hello World"]
-    T2["Tier 2: Core Mechanics & Pragmatic Implementation (Level 200)<br/>Target: Mid-level<br/>Focus: 'How does it work?' + Idiomatic code + Unit tests"]
-    T3["Tier 3: Complex Scenarios & Edge Cases (Level 300)<br/>Target: Senior<br/>Focus: 'Where does it break?' + Concurrency, memory, scale, failure modes"]
-    T4["Tier 4: Production Hardening & Staff Engineering (Level 400)<br/>Target: Lead / Architect<br/>Focus: 'What are the enterprise trade-offs?' + FinOps, security, triage runbooks"]
+    T1["Tier 1: Foundations & Mental Model<br/>(Level 100)<br/>Target: Novice<br/>Focus: 'What is it?' +<br/>First-principles analogy + Hello<br/>World"]
+    T2["Tier 2: Core Mechanics & Pragmatic<br/>Implementation (Level 200)<br/>Target: Mid-level<br/>Focus: 'How does it work?' +<br/>Idiomatic code + Unit tests"]
+    T3["Tier 3: Complex Scenarios & Edge<br/>Cases (Level 300)<br/>Target: Senior<br/>Focus: 'Where does it break?' +<br/>Concurrency, memory, scale,<br/>failure modes"]
+    T4["Tier 4: Production Hardening &<br/>Staff Engineering (Level 400)<br/>Target: Lead / Architect<br/>Focus: 'What are the enterprise<br/>trade-offs?' + FinOps, security,<br/>triage runbooks"]
 
     T1 --> T2 --> T3 --> T4
 ```

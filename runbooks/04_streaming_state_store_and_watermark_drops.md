@@ -10,20 +10,20 @@
 
 ```mermaid
 flowchart TD
-    StreamingAlert["🚨 Streaming Job Fails with State Store OOM or Dropped Data"] --> TriageCategory{"Identify Primary Symptom"}
+    StreamingAlert["🚨 Streaming Job Fails with State<br/>Store OOM or Dropped Data"] --> TriageCategory{"Identify Primary Symptom"}
 
-    TriageCategory -->|"Executor Heap OOM in Stateful Window / Join"| StateLeak["State Store Memory Leak"]
-    TriageCategory -->|"Business Complains Missing Records"| LateDrop["Late Data Silently Dropped by Watermark"]
-    TriageCategory -->|"Streaming Query Fails to Restart"| CheckpointCorrupt["Checkpoint Metadata Mismatch / Corrupt Offsets"]
+    TriageCategory -->|"Executor Heap OOM in Stateful<br/>Window / Join"| StateLeak["State Store Memory Leak"]
+    TriageCategory -->|"Business Complains Missing<br/>Records"| LateDrop["Late Data Silently Dropped by<br/>Watermark"]
+    TriageCategory -->|"Streaming Query Fails to<br/>Restart"| CheckpointCorrupt["Checkpoint Metadata Mismatch /<br/>Corrupt Offsets"]
 
-    StateLeak --> CheckWatermarkConfig{"Is withWatermark() Defined on All Streams?"}
-    CheckWatermarkConfig -->|"No Watermark"| FixAddWatermark["Unbounded State Accumulation<br/>Remediation: Add withWatermark() & time constraints"]
-    CheckWatermarkConfig -->|"Watermark Present but Default HDFS Store"| FixSwitchRocksDB["JVM Heap Exhaustion<br/>Remediation: Switch to RocksDBStateStoreProvider"]
+    StateLeak --> CheckWatermarkConfig{"Is withWatermark() Defined on All<br/>Streams?"}
+    CheckWatermarkConfig -->|"No Watermark"| FixAddWatermark["Unbounded State Accumulation<br/>Remediation: Add withWatermark() &<br/>time constraints"]
+    CheckWatermarkConfig -->|"Watermark Present but Default<br/>HDFS Store"| FixSwitchRocksDB["JVM Heap Exhaustion<br/>Remediation: Switch to<br/>RocksDBStateStoreProvider"]
 
     LateDrop --> CheckWatermarkDelay{"Is Watermark Delay Too Aggressive?"}
-    CheckWatermarkDelay -->|"Yes (e.g. 5 minutes for mobile data)"| FixWidenWatermark["Watermark Delay < Real Network Jitter<br/>Remediation: Widen watermark delay to 2-4 hours"]
+    CheckWatermarkDelay -->|"Yes (e.g. 5 minutes for mobile<br/>data)"| FixWidenWatermark["Watermark Delay &lt; Real Network<br/>Jitter<br/>Remediation: Widen watermark delay<br/>to 2-4 hours"]
 
-    CheckpointCorrupt --> CheckpointRecovery["Checkpoint Recovery Protocol<br/>Remediation: Clear offset locks or roll back commit"]
+    CheckpointCorrupt --> CheckpointRecovery["Checkpoint Recovery Protocol<br/>Remediation: Clear offset locks or<br/>roll back commit"]
 ```
 
 ---

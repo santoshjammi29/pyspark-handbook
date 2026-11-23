@@ -10,20 +10,20 @@
 
 ```mermaid
 flowchart TD
-    Start["🚨 Spark Job Fails with OOM / Container Killed"] --> CheckWhere{"Where Did the Failure Occur?"}
+    Start["🚨 Spark Job Fails with OOM /<br/>Container Killed"] --> CheckWhere{"Where Did the Failure Occur?"}
 
     CheckWhere -->|"Driver Node Crashed"| DriverTriage["Driver OOM Triage"]
     CheckWhere -->|"Executor Node Died"| ExecTriage["Executor OOM Triage"]
 
     DriverTriage --> CheckDriverCause{"Identify Driver Crash Cause"}
-    CheckDriverCause -->|"df.collect() / take(1000000)"| FixCollect["Anti-Pattern: Action Pulled Entire Dataset to Driver<br/>Fix: Replace with .write.parquet() or .limit(10)"]
-    CheckDriverCause -->|"Broadcast Join Table > 2GB"| FixBroadcast["Table Exceeded Driver Broadcast Buffer<br/>Fix: Increase spark.driver.maxResultSize or switch to SMJ"]
-    CheckDriverCause -->|"Too Many Partitions / Metadata"| FixMetadata["Metadata Overhead (1M+ partitions)<br/>Fix: Coalesce partitions, compact Delta table"]
+    CheckDriverCause -->|"df.collect() / take(1000000)"| FixCollect["Anti-Pattern: Action Pulled Entire<br/>Dataset to Driver<br/>Fix: Replace with .write.parquet()<br/>or .limit(10)"]
+    CheckDriverCause -->|"Broadcast Join Table &gt; 2GB"| FixBroadcast["Table Exceeded Driver Broadcast<br/>Buffer<br/>Fix: Increase<br/>spark.driver.maxResultSize or<br/>switch to SMJ"]
+    CheckDriverCause -->|"Too Many Partitions / Metadata"| FixMetadata["Metadata Overhead (1M+ partitions)<br/>Fix: Coalesce partitions, compact<br/>Delta table"]
 
     ExecTriage --> CheckExecCause{"Examine Executor Error Log"}
-    CheckExecCause -->|"Java heap space"| FixHeap["Heap Exhaustion in Execution Pool<br/>Fix: Increase spark.executor.memory, repartition skewed data"]
-    CheckExecCause -->|"Exit code 137 / OS OOM Killer"| FixOverhead["Off-Heap / Overhead Starvation (PyArrow/Native C++)<br/>Fix: Bump spark.executor.memoryOverhead to 20-30%"]
-    CheckExecCause -->|"GC overhead limit exceeded"| FixGC["Severe JVM Garbage Collection Pauses<br/>Fix: Switch to G1GC, avoid custom Python UDF row looping"]
+    CheckExecCause -->|"Java heap space"| FixHeap["Heap Exhaustion in Execution Pool<br/>Fix: Increase<br/>spark.executor.memory, repartition<br/>skewed data"]
+    CheckExecCause -->|"Exit code 137 / OS OOM Killer"| FixOverhead["Off-Heap / Overhead Starvation<br/>(PyArrow/Native C++)<br/>Fix: Bump<br/>spark.executor.memoryOverhead to<br/>20-30%"]
+    CheckExecCause -->|"GC overhead limit exceeded"| FixGC["Severe JVM Garbage Collection<br/>Pauses<br/>Fix: Switch to G1GC, avoid custom<br/>Python UDF row looping"]
 ```
 
 ---
