@@ -470,18 +470,18 @@ Detailed syllabi, topic catalogs, and technical manuals are maintained in dedica
 
 | Resource Hub | Description | Direct Link |
 |:---|:---|:---:|
-| **921-Topic Curriculum Directory** | Complete breakdown of all 14 pillars and difficulty tiers | [`docs/curriculum/topics.md`](docs/README.md) |
-| **Databricks Technical Manual** | 20-page end-to-end platform guide (Level 100–400) | [`docs/manuals/databricks.md`](docs/README.md) |
-| **Whiteboard Blueprints Catalog**| High-resolution visual architecture blueprints | [`docs/architecture/whiteboards.md`](docs/README.md) |
-| **Production Triage Runbooks** | Driver/Executor OOM, shuffle spill, and data skew playbooks | [`docs/manuals/triage.md`](docs/README.md) |
-| **Ecosystem Repositories** | Sister handbooks for PySpark, SQL, dbt, and System Design | [`ecosystem-manifest.json`](ecosystem-manifest.json) |
+| **921-Topic Curriculum Directory** | Complete breakdown of all 14 pillars and difficulty tiers | [`docs/curriculum/topics.md`](https://github.com/santoshjammi29/moderndataengineer/blob/main/docs/README.md) |
+| **Databricks Technical Manual** | 20-page end-to-end platform guide (Level 100–400) | [`docs/manuals/databricks.md`](https://github.com/santoshjammi29/moderndataengineer/blob/main/docs/README.md) |
+| **Whiteboard Blueprints Catalog**| High-resolution visual architecture blueprints | [`docs/architecture/whiteboards.md`](https://github.com/santoshjammi29/moderndataengineer/blob/main/docs/README.md) |
+| **Production Triage Runbooks** | Driver/Executor OOM, shuffle spill, and data skew playbooks | [`docs/manuals/triage.md`](https://github.com/santoshjammi29/moderndataengineer/blob/main/docs/README.md) |
+| **Ecosystem Repositories** | Sister handbooks for PySpark, SQL, dbt, and System Design | [`ecosystem-manifest.json`](https://github.com/santoshjammi29/moderndataengineer/blob/main/ecosystem-manifest.json) |
 
 ---
 
 ## 🤝 5. Contributing & Quality Standards
-Contributions are welcome! Please review [`CONTRIBUTING.md`](CONTRIBUTING.md) for our **Code-Test-Doc Triad** and pre-publish checklist.
+Contributions are welcome! Please review [`CONTRIBUTING.md`](https://github.com/santoshjammi29/moderndataengineer/blob/main/CONTRIBUTING.md) for our **Code-Test-Doc Triad** and pre-publish checklist.
 
-Licensed under the [MIT License](LICENSE).
+Licensed under the [MIT License](https://github.com/santoshjammi29/moderndataengineer/blob/main/LICENSE).
 ```
 
 #### Content Mapping Table:
