@@ -386,6 +386,8 @@ flowchart LR
         Docs["dbt Documentation & Lineage DAG\n(Catalog Metadata Generation)"]
         CustomerLTV --> Docs
     end
+
+    Panel1 ~~~ Panel2 ~~~ Panel3
 ```
 
 ### Key Architectural Takeaways:
@@ -467,6 +469,8 @@ flowchart LR
         Undo["3. Undo Phase:\nRoll back uncommitted txns backward\nWrite Compensation Log Records (CLRs)"]
         Analysis --> Redo --> Undo
     end
+
+    Panel1 ~~~ Panel2 ~~~ Panel3
 ```
 
 ### Key Architectural Takeaways:
@@ -547,6 +551,8 @@ flowchart LR
         OutputMemory["Blisteringly Fast Output (10x-50x vs Pandas)"]
         LazyFrame --> StreamingEngine --> OutputMemory
     end
+
+    Panel1 ~~~ Panel2 ~~~ Panel3
 ```
 
 ### Key Architectural Takeaways:
@@ -954,6 +960,10 @@ flowchart TD
         DeltaTable["Target Delta Table\n(Atomic Commit with txnAppId and txnVersion)"]
         MicroBatch --> DeltaTable
     end
+
+    KafkaSourcePlane --> SparkEnginePlane
+    SparkEnginePlane --> CheckpointWAL
+    CheckpointWAL --> IdempotentSink
 ```
 
 ### Key Architectural Takeaways:
@@ -993,6 +1003,8 @@ flowchart LR
         LiquidCluster --> Optimize
         DeletionVectors --> Vacuum
     end
+
+    Panel1 ~~~ Panel2 ~~~ Panel3
 ```
 
 ### Key Architectural Takeaways:
@@ -1066,6 +1078,8 @@ flowchart LR
         ScaleCapacity["Effortlessly Absorbed 5x Data Volume Spikes\nZero Cluster Downtime during Peak Black Friday"]
         SLAReduction --> FinOpsSavings --> ScaleCapacity
     end
+
+    Panel1 ~~~ Panel2 ~~~ Panel3
 ```
 
 ### Key Architectural Takeaways:
@@ -1141,6 +1155,8 @@ flowchart LR
         ProductionRollout["Phased Production Rollout with Feature Flags & Rollback Plan"]
         ADR --> PoC --> ProductionRollout
     end
+
+    Panel1 ~~~ Panel2 ~~~ Panel3
 ```
 
 ### Key Architectural Takeaways:
