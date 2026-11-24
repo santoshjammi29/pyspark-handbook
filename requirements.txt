@@ -1,5 +1,5 @@
 # Spark Coding Use Cases Masterclass Dependencies
-pyspark>=3.4.0
+pyspark>=4.2.1
 delta-spark>=2.4.0
 pandas>=2.0.0
 pyarrow>=12.0.0
