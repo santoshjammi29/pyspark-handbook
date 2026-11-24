@@ -44,7 +44,7 @@ jobs:
       configured: ${{ steps.check-creds.outputs.configured }}
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Databricks CLI
         uses: databricks/setup-cli@main
@@ -82,7 +82,7 @@ jobs:
     environment: staging
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Databricks CLI
         uses: databricks/setup-cli@main
@@ -106,7 +106,7 @@ jobs:
     environment: production
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Databricks CLI
         uses: databricks/setup-cli@main
