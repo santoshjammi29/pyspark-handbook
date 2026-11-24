@@ -27,3 +27,17 @@ You are assisting on **PySpark Handbook**, an authoritative satellite repository
 
 4. **Skill Reference**:
    - Reference the core agent skill `coding-learning-repo-architect` for curriculum structuring, exercise templates, and 4-tier progressive disclosure models.
+---
+
+## 5. Multi-Repository CI/CD Quality Gates & Mistake Prevention
+- **The Pre-Flight Test Invariant**: Never execute `git push` on `main` without running the local test runner (`python3 scripts/run_tests.py`, `python3 scripts/validate_notebooks.py`, or `pytest tests/`).
+- **52 Whiteboard Blueprint Invariant**: The repository strictly enforces `len(assets/whiteboards/*.webp) == 52`. Never add non-canonical alias files (`enterprise_edge_client_architecture`, `data_edge_client_architecture`, `open_file_formats_storage`, `open_table_formats_lakehouse`) into `assets/whiteboards/`.
+- **Mermaid Diagram Parser Rules**:
+  - **No Unquoted Parentheses in Link Labels**: `-->|Label (text)|` fails syntax parsing. Use `-->|"Label (text)"|` or `-->|Label: text|`.
+  - **No Raw Comparison Operators**: Never use `<`, `>`, or `<=` in labels (`-->|< 100 GB|` fails). Spell out (`under 100 GB`, `above 0.85`) or escape as `&lt;` / `&gt;`.
+  - **No Semicolons in sequenceDiagram Notes**: In `sequenceDiagram`, `;` terminates the command. Use commas or colons (`Note over Sorter: Memory full, spilling to disk`).
+  - **Escape Literal Dollar Signs**: Use `\$` in prose and diagrams to prevent math-mode parsing conflicts.
+- **Markdown Relative Link Resolution**: Verify link path relative to the document's directory depth. Never assume repository root. For cross-repo links, use canonical GitHub URLs.
+- **Python Pip Cache Invariant**: Workflows with `cache: "pip"` MUST have a valid root `requirements.txt`.
+- **Databricks Notebook AST Validation**: All `.py` source notebooks must parse cleanly via `ast.parse()` using `python3 scripts/validate_notebooks.py`.
+- **Skill Reference**: Activate the agent skill `ecosystem-ci-cd-quality-gate` for multi-repository invariant defense protocols.
