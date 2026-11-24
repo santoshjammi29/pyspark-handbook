@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+message: "If you use this handbook, architecture diagrams, or reference exercises, please cite it as below."
+title: "PySpark Handbook"
+authors:
+  - family-names: "Jammi"
+    given-names: "Santosh"
+    orcid: "https://orcid.org/0000-0000-0000-0000"
+version: 1.1.0
+date-released: 2026-11-24
+url: "https://github.com/santoshjammi29/pyspark-handbook"
+repository-code: "https://github.com/santoshjammi29/pyspark-handbook"
+keywords:
+  - pyspark handbook
+  - lakehouse
+  - data-engineering
+  - architecture
+  - apache-spark-distributed-compute
+  - python-for-data-engineering
+license: Apache-2.0

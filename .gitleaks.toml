@@ -1,0 +1,17 @@
+title = "Ecosystem Gitleaks Security Profile"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Global allowlisted mock secrets and test UUIDs"
+regexes = [
+    '''(?i)4f63c679-0db8-40a2-b91a-7b3b7e7136f4''',
+    '''(?i)00000000-0000-0000-0000-000000000000''',
+    '''(?i)[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}''',
+]
+paths = [
+    '''tests/.*''',
+    '''\.agents/.*''',
+    '''docs/.*''',
+]

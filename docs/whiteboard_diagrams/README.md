@@ -4,7 +4,7 @@
 >
 > 📘 **Complete Handbook Blueprints (20 Pillars & 8 Playbooks)**: See [`handbook_whiteboard_blueprints.md`](./handbook_whiteboard_blueprints.md) for the end-to-end Dual-Plane & 3-Panel Mermaid whiteboard diagrams covering all 20 Knowledge Pillars and 8 Playbooks from the [Data Engineering Interview Handbook](https://github.com/santoshjammi29/data-engineering-interview-handbook).
 
-All visual blueprint files are available in this repository under [`assets/whiteboards/`](../../assets/whiteboards) and [`public/diagrams/`](../../public/diagrams).
+All visual blueprint files are available in this repository under [`assets/whiteboards/`](../../assets/whiteboards).
 They can also be interactively inspected with pan/zoom and theme controls on the live website at [/whiteboards](https://moderndataengineer.uk/whiteboards).
 
 ## Domain Table of Contents

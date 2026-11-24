@@ -1,0 +1,39 @@
+name: Content Error or Inaccuracy Report
+description: Report an error, outdated documentation, or technical inaccuracy in an exercise, guide, or diagram.
+title: "[Content Error]: "
+labels: ["triage", "content-error"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for helping improve **PySpark Handbook**! Please report inaccuracies, API deprecations, or errors below.
+  - type: input
+    id: exercise_id
+    attributes:
+      label: Affected Module / Drill ID
+      placeholder: "e.g., 001_..., or architectures/01_..."
+    validations:
+      required: true
+  - type: textarea
+    id: error_description
+    attributes:
+      label: Description of the Inaccuracy or Error
+      description: Explain what is incorrect, why it is incorrect, and reference official primary documentation if available.
+    validations:
+      required: true
+  - type: textarea
+    id: suggested_correction
+    attributes:
+      label: Suggested Correction or Code Diff
+      description: If you have a proposed fix or corrected code, please share it here.
+    validations:
+      required: false
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I have verified this against current official documentation or runtime behavior.
+          required: true
+        - label: I have searched existing issues to ensure this is not a duplicate.
+          required: true

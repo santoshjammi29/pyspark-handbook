@@ -29,7 +29,7 @@ You are assisting on **PySpark Handbook**, an authoritative satellite repository
    - Reference the core agent skill `coding-learning-repo-architect` for curriculum structuring, exercise templates, and 4-tier progressive disclosure models.
 ---
 
-## 5. Multi-Repository CI/CD Quality Gates & Mistake Prevention
+## 2. Multi-Repository CI/CD Quality Gates & Mistake Prevention
 - **The Pre-Flight Test Invariant**: Never execute `git push` on `main` without running the local test runner (`python3 scripts/run_tests.py`, `python3 scripts/validate_notebooks.py`, or `pytest tests/`).
 - **52 Whiteboard Blueprint Invariant**: The repository strictly enforces `len(assets/whiteboards/*.webp) == 52`. Never add non-canonical alias files (`enterprise_edge_client_architecture`, `data_edge_client_architecture`, `open_file_formats_storage`, `open_table_formats_lakehouse`) into `assets/whiteboards/`.
 - **Mermaid Diagram Parser Rules**:

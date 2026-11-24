@@ -1,0 +1,39 @@
+name: New Exercise / Drill Proposal
+description: Propose a new production drill, architecture pattern, or incident scenario.
+title: "[New Drill]: "
+labels: ["enhancement", "new-drill"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Propose a new exercise for **PySpark Handbook**. All drills must satisfy the **Code-Test-Doc Triad**.
+  - type: input
+    id: title
+    attributes:
+      label: Proposed Exercise Title
+      placeholder: "e.g. Dynamic Salting Strategy on High-Cardinality Skewed Joins"
+    validations:
+      required: true
+  - type: textarea
+    id: production_motivation
+    attributes:
+      label: Production Motivation & Operational Failure Mode
+      description: What real-world production challenge does this solve? What happens if done wrong?
+    validations:
+      required: true
+  - type: textarea
+    id: triad_plan
+    attributes:
+      label: Code-Test-Doc Triad Implementation Plan
+      description: Describe the theory/mental model, executable code pattern, and automated test assertion.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Contributor Agreement
+      options:
+        - label: I will follow the Code-Test-Doc Triad with automated test assertions.
+          required: true
+        - label: I will provide a Bad vs Good comparison with explicit operational consequences.
+          required: true
