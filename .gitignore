@@ -24,18 +24,31 @@ wheels/
 .installed.cfg
 *.egg
 
-# Jupyter
+# Jupyter & Notebook Exports
 .ipynb_checkpoints
 */.ipynb_checkpoints/*
+*.ipynb
+jupyter_exports/
 
-# Spark & Hadoop
+# Testing & Linting Caches
+.pytest_cache/
+.ruff_cache/
+
+# Spark, Hadoop & Warehouse Artifacts
 derby.log
 metastore_db/
 spark-warehouse/
 _spark_metadata/
 checkpoint/
 checkpoints/
+checkpoint*/
 .checkpoint/
+
+# Generated / Sample Data Artifacts
+*.csv
+*.parquet
+*.orc
+*.avro
 
 # Delta Lake temp paths
 /tmp/delta_*
