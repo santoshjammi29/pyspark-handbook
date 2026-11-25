@@ -9,7 +9,7 @@
 ## 🧭 Master Blueprints Directory
 
 ### Section A: Core Technical Pillars (Pillars 01–20)
-1. **Pillar 01**: Apache Spark 3.5 & Databricks Engine Architecture (Catalyst, Tungsten, DPP)
+1. **Pillar 01**: Apache Spark 4.0+ & Databricks Engine Architecture (Catalyst, Tungsten, Spark Connect, DPP)
 2. **Pillar 02**: Databricks Lakehouse & Unity Catalog (Split-Plane, 3-Tier Namespace, DABs, Serverless)
 3. **Pillar 03**: Modern Lakehouse (Delta Lake 3.x, Liquid Clustering, Deletion Vectors, UniForm)
 4. **Pillar 04**: Cloud Data Lake Architecture (S3/ADLS Prefix Throttling, Bin-Packing, DR RPO/RTO)
@@ -42,7 +42,7 @@
 
 ---
 
-## 🏛️ Pillar 01: Apache Spark 3.5 & Databricks Engine Architecture
+## 🏛️ Pillar 01: Apache Spark 4.0+ & Databricks Engine Architecture
 
 ### Whiteboard Schematic: Catalyst Query Execution & Tungsten Memory Model
 *Archetype: Dual-Plane Architecture (Top: Catalyst Planning, Bottom: Physical Tungsten Execution)*

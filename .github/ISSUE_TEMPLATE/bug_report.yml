@@ -1,0 +1,39 @@
+name: Bug Report / Content Error
+description: Report a technical inaccuracy, broken link, Spark 4.0+ regression, or CI issue in the PySpark Handbook.
+title: "[Bug]: "
+labels: ["triage", "bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Report an inaccuracy, Spark 4.0+ API change, broken link, or tooling bug in **PySpark Handbook**.
+  - type: input
+    id: target_file
+    attributes:
+      label: Affected File / Module Path
+      placeholder: "e.g., 01_foundations/001_..., 04_spark4_and_modern_api/002_..., or runbooks/01_..."
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description of the Issue
+      description: Explain what is wrong, expected behavior under Apache Spark 4.0+, and reference official documentation if applicable.
+    validations:
+      required: true
+  - type: textarea
+    id: suggested_fix
+    attributes:
+      label: Suggested Fix (Code-Only)
+      description: Optional minimal patch or corrected snippet.
+    validations:
+      required: false
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I have verified this against Apache Spark 4.0+ documentation or current repository files.
+          required: true
+        - label: I searched existing issues to confirm this is not a duplicate.
+          required: true

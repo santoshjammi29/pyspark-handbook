@@ -1,20 +1,20 @@
 ## Description
 
-<!-- Provide a concise summary of the change, motivation, and target module/component. -->
+<!-- Concise summary of the change, affected module(s), and motivation. -->
 
 ## Type of Change
 
-- [ ] 🐛 Bug fix (content correction or tool fix)
-- [ ] ✨ New exercise / drill
-- [ ] 📝 Documentation update (guides, whiteboards, runbooks)
-- [ ] ⚙️ Tooling / CI/CD enhancement
+- [ ] 🐛 Bug fix / Spark 4.0+ accuracy update
+- [ ] ✨ New pattern module (5-part blueprint)
+- [ ] 📝 Documentation / architecture / runbook / interview update
+- [ ] ⚙️ Static CI / tooling improvement
 
-## Code-Test-Doc Triad Checklist
+## Code-Only & Quality Checklist
 
-In accordance with [`CONTRIBUTING.md`](../CONTRIBUTING.md), verify the following invariants:
+In accordance with [`CONTRIBUTING.md`](../CONTRIBUTING.md):
 
-- [ ] **1. Triad Compliance**: Does the change provide theoretical mental model, runnable code, and automated test assertions?
-- [ ] **2. Automated Test Assertions**: Does the exercise include automated tests or asserts verifying behavior?
-- [ ] **3. Anti-Pattern Demonstrated**: Is there a side-by-side `Bad` vs `Good` comparison with operational consequences?
-- [ ] **4. Tests Passing**: Local tests (`python3 scripts/run_tests.py` or test runner) pass 100%.
-- [ ] **5. Secret Sanitization**: No credentials, tokens, or live cloud resource identifiers are committed.
+- [ ] **Code-Only PR**: No datasets (`*.csv`, `*.parquet`, `*.orc`, `*.avro`), no `.ipynb` notebooks, no lab runners, and no file > 500 KB.
+- [ ] **5-Part Blueprint** *(for `.py` pattern modules)*: Includes (1) Scenario/Scale docstring, (2) `# ❌ Bad Practice` + `# Otherwise:`, (3) `# ✅ Good Practice` (ANSI-safe PySpark 4.0+), (4) `explain("formatted")` / Spark UI diagnostic notes, and (5) 2–4 Production/Interview Gotchas.
+- [ ] **Core vs. Platform Separation**: Modules in `01_`–`05_` have zero `# Databricks notebook source` headers and zero `spark.sparkContext` calls; vendor-specific adapters live in `06_platform_adapters/`.
+- [ ] **Static Verification Passed**: `python -m compileall -q .`, `ruff check .`, and `pytest tests/` pass locally.
+- [ ] **Secret Sanitization**: No real credentials, tokens, or live cloud resource identifiers committed.

@@ -6,38 +6,43 @@
 
 ---
 
-## 1. Architectural Role & Invariants
+## 1. Repository Architecture & Code-Only Invariants
 
-You are assisting on **PySpark Handbook**, an authoritative satellite repository within the **Modern Data Engineering Lakehouse Ecosystem**.
+**PySpark Handbook** is a lightweight, **code-only Apache Spark 4.0+ reference handbook** organized into 6 cleanly separated code directories plus architectural docs:
 
-1. **Design System & Typography**:
-   - **Primary Typeface**: Use `Inter` with system fallbacks (`system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`).
-   - **Monospace Family**: Use `JetBrains Mono, Fira Code, monospace` for code blocks and tabular counters.
-   - **WCAG 2.2 AA Contrast**: Ensure all text has $\ge 4.5:1$ contrast against light, dark, and e-ink backgrounds.
-   - **Natural Text Wrapping**: Avoid arbitrary truncation (`truncate` or `line-clamp`). Use `overflow-wrap: anywhere` and `text-wrap: pretty`.
+- `01_foundations/` — Core DataFrame API, complex types, SQL, windows, joins
+- `02_production_patterns/` — Ingestion, Medallion/SCD modeling, UDFs, E2E patterns, pytest testing
+- `03_performance_and_streaming/` — Catalyst, AQE, skew salting, OOM triage, Structured Streaming
+- `04_spark4_and_modern_api/` — Spark Connect, ANSI default, `VARIANT`, Python Data Source API, Polymorphic UDTFs, SQL Pipe syntax, structured JSON logging
+- `05_lakehouse_formats/` — Delta Lake ACID, Liquid Clustering, Iceberg vs Delta vs Parquet
+- `06_platform_adapters/` — Isolated vendor adapters (Databricks + DABs under `databricks_asset_bundles/`, Microsoft Fabric, AWS EMR, GCP Dataproc, Kubernetes)
 
-2. **Code Authoring Standards (The Triad)**:
-   - When authoring code samples or notebooks, always provide:
-     1. Conceptual explanation with an ASCII/Mermaid architecture diagram.
-     2. Clean, idiomatically typed code.
-     3. Executable assertions / tests (doctests or pytest).
+### Code Authoring Invariants
+1. **5-Part Blueprint**: Every `.py` pattern module follows:
+   1. Scenario & Scale docstring
+   2. `# ❌ Bad Practice` + `# Otherwise: <blast radius>`
+   3. `# ✅ Good Practice` (ANSI-safe PySpark 4.0+)
+   4. `explain("formatted")` / Spark UI diagnostic notes (comments)
+   5. 2–4 Production / Interview Gotchas
+2. **Core vs. Platform Boundary**: Modules in `01_foundations/` .. `05_lakehouse_formats/` must contain **zero** `# Databricks notebook source` headers, **zero** `spark.sparkContext` calls, and **zero** hardcoded `/tmp/` writes.
+3. **Zero Bloat**: Never commit `notebooks/`, `scripts/`, `apps/`, `*.csv`, `*.parquet`, `*.orc`, `*.avro`, `*.ipynb`, `Dockerfile*`, `*devcontainer*`, or any file > 500 KB.
 
-3. **Anti-Pattern Standards**:
-   - Contrast `❌ Bad Practice` with `✅ Good Practice` and quantify the "Otherwise" operational blast radius.
-
-4. **Skill Reference**:
-   - Reference the core agent skill `coding-learning-repo-architect` for curriculum structuring, exercise templates, and 4-tier progressive disclosure models.
 ---
 
-## 2. Multi-Repository CI/CD Quality Gates & Mistake Prevention
-- **The Pre-Flight Test Invariant**: Never execute `git push` on `main` without running the local test runner (`python3 scripts/run_tests.py`, `python3 scripts/validate_notebooks.py`, or `pytest tests/`).
-- **52 Whiteboard Blueprint Invariant**: The repository strictly enforces `len(assets/whiteboards/*.webp) == 52`. Never add non-canonical alias files (`enterprise_edge_client_architecture`, `data_edge_client_architecture`, `open_file_formats_storage`, `open_table_formats_lakehouse`) into `assets/whiteboards/`.
+## 2. CI/CD Quality Gates & Mistake Prevention
+
+- **Zero-JVM Static Pre-Flight Gate**: Before pushing or finalizing changes, always run:
+  ```bash
+  python -m compileall -q .
+  ruff check .
+  pytest tests/
+  ```
+- **52 Whiteboard Blueprint Invariant**: `assets/whiteboards/` strictly enforces `len(assets/whiteboards/*.webp) == 52`. Never add `.jpg` files or non-canonical aliases (`enterprise_edge_client_architecture`, `data_edge_client_architecture`, `open_file_formats_storage`, `open_table_formats_lakehouse`).
 - **Mermaid Diagram Parser Rules**:
-  - **No Unquoted Parentheses in Link Labels**: `-->|Label (text)|` fails syntax parsing. Use `-->|"Label (text)"|` or `-->|Label: text|`.
-  - **No Raw Comparison Operators**: Never use `<`, `>`, or `<=` in labels (`-->|< 100 GB|` fails). Spell out (`under 100 GB`, `above 0.85`) or escape as `&lt;` / `&gt;`.
-  - **No Semicolons in sequenceDiagram Notes**: In `sequenceDiagram`, `;` terminates the command. Use commas or colons (`Note over Sorter: Memory full, spilling to disk`).
+  - **No Unquoted Parentheses in Link Labels**: Use `-->|"Label (text)"|` or `-->|Label: text|`.
+  - **No Raw Comparison Operators**: Never use `<`, `>`, or `<=` in labels; spell out (`under 100 GB`) or escape as `&lt;` / `&gt;`.
+  - **No Semicolons in `sequenceDiagram` Notes**: Use commas or colons (`Note over Sorter: Memory full, spilling to disk`).
   - **Escape Literal Dollar Signs**: Use `\$` in prose and diagrams to prevent math-mode parsing conflicts.
-- **Markdown Relative Link Resolution**: Verify link path relative to the document's directory depth. Never assume repository root. For cross-repo links, use canonical GitHub URLs.
-- **Python Pip Cache Invariant**: Workflows with `cache: "pip"` MUST have a valid root `requirements.txt`.
-- **Databricks Notebook AST Validation**: All `.py` source notebooks must parse cleanly via `ast.parse()` using `python3 scripts/validate_notebooks.py`.
-- **Skill Reference**: Activate the agent skill `ecosystem-ci-cd-quality-gate` for multi-repository invariant defense protocols.
+- **Markdown Relative Link Resolution**: Verify link paths relative to the document's directory depth (`docs/ROADMAP.md` uses `../01_foundations/...` and `../topics/README.md`). For cross-repo links, use canonical GitHub URLs.
+- **Python Pip Cache Invariant**: Workflows with `cache: "pip"` require a valid root `requirements.txt`.
+- **Design & Accessibility Standards**: Use `Inter` + `JetBrains Mono`, WCAG 2.2 AA contrast ($\ge 4.5:1$ normal text), and natural text wrapping (`overflow-wrap: anywhere`, `text-wrap: pretty`) for any web/Pages output.

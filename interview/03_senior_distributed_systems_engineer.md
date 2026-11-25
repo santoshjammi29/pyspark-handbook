@@ -910,7 +910,7 @@ except NameError:
     spark = (
         SparkSession.builder
         .appName("UseCase_017_Recursive_Schema_Traversal_Flattening_Deeply_Nested_JSONStructs")
-        .master("local[*]")
+        # Spark 4.0+ / Spark Connect: omit .master(); pass .remote("sc://localhost:15002") for remote server
         .config("spark.sql.shuffle.partitions", "4")
         .config("spark.sql.adaptive.enabled", "true")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
@@ -922,9 +922,9 @@ from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
+# Spark Connect-safe session check (avoid spark.sparkContext in Spark 4.0+)
 print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+print(f"Session Active: {spark.conf.get('spark.app.name', 'SparkSession')}")
 
 # --- Execution Step ---
 deep_data = [
@@ -942,8 +942,10 @@ deep_data = [
 ]
 
 import json
-rdd_json = spark.sparkContext.parallelize([json.dumps(d) for d in deep_data])
-df_deep = spark.read.json(rdd_json)
+# Spark Connect-safe: avoid spark.sparkContext.parallelize()
+df_raw = spark.createDataFrame([(json.dumps(d),) for d in deep_data], ["raw_json"])
+inferred_schema = spark.range(1).select(F.schema_of_json(F.lit(json.dumps(deep_data[0])))).first()[0]
+df_deep = df_raw.select(F.from_json("raw_json", inferred_schema).alias("doc")).select("doc.*")
 print("Original Deeply Nested Schema:")
 df_deep.printSchema()
 
@@ -1022,7 +1024,7 @@ except NameError:
     spark = (
         SparkSession.builder
         .appName("UseCase_029_Sessionization_and_the_Gaps_and_Islands_Problem_in_PySpark")
-        .master("local[*]")
+        # Spark 4.0+ / Spark Connect: omit .master(); pass .remote("sc://localhost:15002") for remote server
         .config("spark.sql.shuffle.partitions", "4")
         .config("spark.sql.adaptive.enabled", "true")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
@@ -1034,9 +1036,9 @@ from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
+# Spark Connect-safe session check (avoid spark.sparkContext in Spark 4.0+)
 print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+print(f"Session Active: {spark.conf.get('spark.app.name', 'SparkSession')}")
 
 # --- Execution Step ---
 clicks = [
@@ -1121,7 +1123,7 @@ except NameError:
     spark = (
         SparkSession.builder
         .appName("UseCase_039_Z_Order_Multi_Dimensional_Indexing_vs_Liquid_Clustering_CLUSTER_BY")
-        .master("local[*]")
+        # Spark 4.0+ / Spark Connect: omit .master(); pass .remote("sc://localhost:15002") for remote server
         .config("spark.sql.shuffle.partitions", "4")
         .config("spark.sql.adaptive.enabled", "true")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
@@ -1133,9 +1135,9 @@ from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
+# Spark Connect-safe session check (avoid spark.sparkContext in Spark 4.0+)
 print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+print(f"Session Active: {spark.conf.get('spark.app.name', 'SparkSession')}")
 
 # --- Execution Step ---
 delta_zorder_path = "/tmp/delta_zorder_039"
@@ -1208,7 +1210,7 @@ except NameError:
     spark = (
         SparkSession.builder
         .appName("UseCase_040_Delta_Change_Data_Feed_CDF_Enabling_and_Consuming_Row_Level_Changes")
-        .master("local[*]")
+        # Spark 4.0+ / Spark Connect: omit .master(); pass .remote("sc://localhost:15002") for remote server
         .config("spark.sql.shuffle.partitions", "4")
         .config("spark.sql.adaptive.enabled", "true")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
@@ -1220,9 +1222,9 @@ from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
+# Spark Connect-safe session check (avoid spark.sparkContext in Spark 4.0+)
 print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+print(f"Session Active: {spark.conf.get('spark.app.name', 'SparkSession')}")
 
 # --- Execution Step ---
 from delta.tables import DeltaTable
@@ -1305,7 +1307,7 @@ except NameError:
     spark = (
         SparkSession.builder
         .appName("UseCase_050_Building_a_Metadata_Driven_Multi_Format_Ingestion_Engine")
-        .master("local[*]")
+        # Spark 4.0+ / Spark Connect: omit .master(); pass .remote("sc://localhost:15002") for remote server
         .config("spark.sql.shuffle.partitions", "4")
         .config("spark.sql.adaptive.enabled", "true")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
@@ -1317,9 +1319,9 @@ from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
+# Spark Connect-safe session check (avoid spark.sparkContext in Spark 4.0+)
 print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+print(f"Session Active: {spark.conf.get('spark.app.name', 'SparkSession')}")
 
 # --- Execution Step ---
 pipeline_specs = [
@@ -1433,7 +1435,7 @@ except NameError:
     spark = (
         SparkSession.builder
         .appName("UseCase_052_Handling_Compressed_Archives_zip_targz_bz2_in_Distributed_PySpark")
-        .master("local[*]")
+        # Spark 4.0+ / Spark Connect: omit .master(); pass .remote("sc://localhost:15002") for remote server
         .config("spark.sql.shuffle.partitions", "4")
         .config("spark.sql.adaptive.enabled", "true")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
@@ -1445,9 +1447,9 @@ from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
+# Spark Connect-safe session check (avoid spark.sparkContext in Spark 4.0+)
 print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+print(f"Session Active: {spark.conf.get('spark.app.name', 'SparkSession')}")
 
 # --- Execution Step ---
 import zipfile
@@ -1467,27 +1469,28 @@ with zipfile.ZipFile(zip_path, "w") as zf:
 print(f"Created sample ZIP archive at {zip_path}")
 
 # --- Execution Step ---
-# binaryFiles returns (file_path, PortableDataStream)
-rdd_binary = spark.sparkContext.binaryFiles(str(zip_dir))
+# Spark Connect-safe: use native binaryFile DataSource + mapInPandas instead of sparkContext.binaryFiles
+import pandas as pd
 
-def extract_zip_entries(tuple_item):
-    file_path, byte_stream = tuple_item
-    records = []
-    # Read bytes into ZipFile in memory on executor
-    with zipfile.ZipFile(io.BytesIO(byte_stream)) as z:
-        for inner_filename in z.namelist():
-            if inner_filename.endswith(".csv"):
-                content = z.read(inner_filename).decode("utf-8")
-                lines = content.strip().split("\n")
-                # Skip header, extract rows
-                for line in lines[1:]:
-                    parts = line.split(",")
-                    records.append((inner_filename, parts[0], float(parts[1])))
-    return records
+df_binary = spark.read.format("binaryFile").load(str(zip_dir))
 
-# Distributed flatMap extracts files across cluster executors
-rdd_extracted = rdd_binary.flatMap(extract_zip_entries)
-df_decompressed = spark.createDataFrame(rdd_extracted, ["archive_member", "report_id", "amount"])
+def extract_zip_entries(batches):
+    for pdf in batches:
+        records = []
+        for byte_stream in pdf["content"]:
+            with zipfile.ZipFile(io.BytesIO(bytes(byte_stream))) as z:
+                for inner_filename in z.namelist():
+                    if inner_filename.endswith(".csv"):
+                        content = z.read(inner_filename).decode("utf-8")
+                        for line in content.strip().split("\n")[1:]:
+                            parts = line.split(",")
+                            records.append((inner_filename, parts[0], float(parts[1])))
+        yield pd.DataFrame(records, columns=["archive_member", "report_id", "amount"])
+
+df_decompressed = df_binary.mapInPandas(
+    extract_zip_entries,
+    "archive_member STRING, report_id STRING, amount DOUBLE",
+)
 
 print("Decompressed Records Extracted in Parallel:")
 df_decompressed.show()
@@ -1534,7 +1537,7 @@ except NameError:
     spark = (
         SparkSession.builder
         .appName("UseCase_053_Distributed_REST_API_and_Webhook_Ingestion_without_Driver_OOM")
-        .master("local[*]")
+        # Spark 4.0+ / Spark Connect: omit .master(); pass .remote("sc://localhost:15002") for remote server
         .config("spark.sql.shuffle.partitions", "4")
         .config("spark.sql.adaptive.enabled", "true")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
@@ -1546,52 +1549,41 @@ from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
+# Spark Connect-safe session check (avoid spark.sparkContext in Spark 4.0+)
 print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+print(f"Session Active: {spark.conf.get('spark.app.name', 'SparkSession')}")
 
 # --- Execution Step ---
 tickers = [f"TICKER_{i:04d}" for i in range(1, 21)]
 # Distribute across 4 partitions
 df_tickers = spark.createDataFrame([(t,) for t in tickers], ["ticker"]).repartition(4)
 
-print(f"Total Tickers: {df_tickers.count()} across {df_tickers.rdd.getNumPartitions()} partitions")
+part_count = df_tickers.select(F.spark_partition_id()).distinct().count()
+print(f"Total Tickers: {df_tickers.count()} across {part_count} partitions")
 
 # --- Execution Step ---
 import time
 import json
 
-def fetch_ticker_data_partition(iterator):
-    # Executed ONCE per partition on worker executor
-    # Simulates reusable requests.Session()
-    session_id = f"worker_session_{time.time()}"
-    results = []
+import pandas as pd
 
-    for row in iterator:
-        ticker = row.ticker
-        # Simulate network latency to REST API (e.g. 5ms)
-        time.sleep(0.005)
-        # Mock REST API response payload
-        mock_response = {
-            "ticker": ticker,
-            "price": round(150.0 + (hash(ticker) % 50), 2),
-            "currency": "USD",
-            "status_code": 200,
-            "fetched_at": time.strftime("%Y-%m-%d %H:%M:%S")
-        }
-        results.append((
-            mock_response["ticker"],
-            mock_response["price"],
-            mock_response["currency"],
-            mock_response["status_code"],
-            mock_response["fetched_at"]
-        ))
-    return iter(results)
+def fetch_ticker_data_partition(batches):
+    # Executed ONCE per partition on worker executor (Spark Connect-safe via mapInPandas)
+    for pdf in batches:
+        results = []
+        for ticker in pdf["ticker"]:
+            time.sleep(0.005)
+            results.append({
+                "ticker": ticker,
+                "price": round(150.0 + (hash(ticker) % 50), 2),
+                "currency": "USD",
+                "http_status": 200,
+                "fetched_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+            })
+        yield pd.DataFrame(results)
 
-# Execute parallel extraction across all executors
-rdd_responses = df_tickers.rdd.mapPartitions(fetch_ticker_data_partition)
 schema = "ticker STRING, price DOUBLE, currency STRING, http_status INT, fetched_at STRING"
-df_api_results = spark.createDataFrame(rdd_responses, schema)
+df_api_results = df_tickers.mapInPandas(fetch_ticker_data_partition, schema)
 
 print("Distributed REST API Ingestion Results:")
 df_api_results.show(10)
@@ -1631,7 +1623,7 @@ except NameError:
     spark = (
         SparkSession.builder
         .appName("UseCase_056_Streaming_Window_Aggregations_and_Watermarking_for_Late_Arriving_Events")
-        .master("local[*]")
+        # Spark 4.0+ / Spark Connect: omit .master(); pass .remote("sc://localhost:15002") for remote server
         .config("spark.sql.shuffle.partitions", "4")
         .config("spark.sql.adaptive.enabled", "true")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
@@ -1643,9 +1635,9 @@ from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
+# Spark Connect-safe session check (avoid spark.sparkContext in Spark 4.0+)
 print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+print(f"Session Active: {spark.conf.get('spark.app.name', 'SparkSession')}")
 
 # --- Execution Step ---
 # Architectural Blueprint:

@@ -1,0 +1,53 @@
+name: New Pattern Proposal
+description: Propose a new code-only PySpark 4.0+ pattern, diagnostic recipe, or platform adapter module.
+title: "[New Pattern]: "
+labels: ["enhancement", "new-pattern"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Propose a new pattern for **PySpark Handbook**. All code modules are **code-only** (no datasets, no `.ipynb` files, no binaries >500 KB) and follow the **5-part blueprint**.
+  - type: dropdown
+    id: target_section
+    attributes:
+      label: Target Module Directory
+      options:
+        - "01_foundations/"
+        - "02_production_patterns/"
+        - "03_performance_and_streaming/"
+        - "04_spark4_and_modern_api/"
+        - "05_lakehouse_formats/"
+        - "06_platform_adapters/"
+        - "runbooks/ or architectures/"
+    validations:
+      required: true
+  - type: input
+    id: title
+    attributes:
+      label: Proposed Pattern Title
+      placeholder: "e.g., Spark 4.0 transformWithState Stateful Session Expiration"
+    validations:
+      required: true
+  - type: textarea
+    id: scenario
+    attributes:
+      label: Production Scenario & Blast Radius
+      description: What real-world failure mode or production pattern does this cover? What breaks if implemented poorly?
+    validations:
+      required: true
+  - type: textarea
+    id: blueprint_plan
+    attributes:
+      label: 5-Part Blueprint Outline
+      description: Summarize (1) Scenario/Scale, (2) Anti-pattern + Otherwise, (3) ANSI-safe PySpark 4.0+ Fix, (4) explain("formatted") / UI notes, (5) 2-4 Gotchas.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Contributor Agreement
+      options:
+        - label: This proposal is code-only (no sample datasets, labs, or binaries >500 KB).
+          required: true
+        - label: Core Spark patterns (01-05) will avoid spark.sparkContext and vendor-specific APIs.
+          required: true

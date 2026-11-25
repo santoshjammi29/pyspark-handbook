@@ -4,32 +4,35 @@
 
 | Version | Supported |
 |---------|-----------|
-| 1.1.x (Latest) | :white_check_mark: |
-| 1.0.x | :white_check_mark: |
-| < 1.0.0 | :x: |
+| `main` (Spark 4.0+ Code-Only Handbook) | :white_check_mark: |
+| Legacy `< 2.0` releases | :x: |
+
+## Scope & Architecture
+
+**PySpark Handbook** is a **code-only educational and architectural reference repository** with no live runtime services, no committed datasets, and no production credentials. All static CI checks run without JVM execution or external network access.
 
 ## Reporting a Vulnerability
 
-We prioritize the security and confidentiality of our data systems, curriculum, and users. If you discover a vulnerability or potential security flaw:
+If you discover a security vulnerability, exposed secret, or unsafe pattern in this repository:
 
 - **Security Contact**: [santu.jammi@gmail.com](mailto:santu.jammi@gmail.com)
-- **Security Advisor**: Modern Data Engineering Ecosystem (`https://moderndataengineer.uk/.well-known/security.txt`)
+- **Ecosystem Security Advisory**: `https://moderndataengineer.uk/.well-known/security.txt`
 
-Please do **NOT** open public issues or pull requests for security vulnerabilities.
+Please do **NOT** open public issues or pull requests for sensitive security disclosures.
 
-### Submission Guidelines
+### What to Include
 
-When reporting an issue, please include:
-1. A clear description of the vulnerability, affected components, or parameters.
-2. Step-by-step reproduction instructions or a minimal proof of concept (PoC).
-3. The potential impact of the issue (e.g., privilege escalation, data exposure, credential leakage).
+1. Affected file path or workflow (e.g., `.github/workflows/*.yml`, `06_platform_adapters/...`).
+2. Reproduction steps or minimal proof of concept.
+3. Potential impact (e.g., workflow injection, credential exposure, unsafe deserialization).
 
 ### Response Timeline
 
 - **Initial Acknowledgment**: Within 48 hours
-- **Triage & Remediation Plan**: Within 7 business days
-- **Coordinated Disclosure**: 90-day coordinated disclosure period before public reporting
+- **Triage & Remediation**: Within 7 business days
+- **Coordinated Disclosure**: 90-day disclosure window
 
 ### Hardening Invariants
 
-This repository enforces automated secret scanning via `.gitleaks.toml`, dependency vulnerability audits via GitHub Actions, and zero-credential commit policies. All sample secrets in exercises, tests, and documentation must use RFC-compliant mock identifiers.
+- Automated secret scanning via `.gitleaks.toml` and dependency auditing (`pip-audit`) in `.github/workflows/security.yml`.
+- All sample keys, buckets, and endpoints in code patterns and DAB configs must use RFC-compliant placeholder identifiers.

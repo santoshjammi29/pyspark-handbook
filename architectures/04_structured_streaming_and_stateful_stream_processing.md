@@ -91,10 +91,11 @@ In stateful streaming (session windows, stream-stream joins, deduplication, runn
   - State size is strictly limited by executor RAM (typically < 10–20 GB state per cluster).
 
 ### 2. Enterprise RocksDB State Store Provider
-- Available in Spark 3.2+ and Databricks Runtime:
+- Available in Spark 3.2+ and hardened in **Spark 4.0+ (`transformWithState`)**:
 - Stores state off-heap in a high-performance, embedded C++ key-value store (**RocksDB**) written to local NVMe SSDs.
 - Only a configurable LRU memory cache is held in RAM; the rest spills seamlessly to SSD without JVM garbage collection pressure!
 - Backed by asynchronous background snapshot uploads to cloud storage checkpoint directories.
+- Pairs with Spark 4.0's **`transformWithState`** API (the successor to legacy `flatMapGroupsWithState`) for typed `ValueState` / `ListState` / `MapState` and event-time / processing-time timers.
 - Can easily handle **terabytes of state** (hundreds of millions of active keys) with flat, predictable sub-millisecond latencies.
 
 ### Configuration to Enable RocksDB in PySpark:
