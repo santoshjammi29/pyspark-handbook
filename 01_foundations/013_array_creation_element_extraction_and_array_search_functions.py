@@ -1,134 +1,105 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 013: Array Creation, Element Extraction and Array Search Functions
-# MAGIC
-# MAGIC **Module:** Module 02: Complex Data Types & Nested Structures Handling
-# MAGIC **Difficulty:** `Intermediate`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC A digital streaming platform logs user engagement tags, genre preferences, and content playlists as arrays. Marketing analysts need to inspect array length, test for specific genre membership, and extract primary tags.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Master array operations: create arrays from multiple columns (`array()`), test element membership (`array_contains()`), retrieve element by index with 1-based and negative indexing (`element_at`), sort array elements (`array_sort`), and compute array sizes.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC Spark represents ArrayType as native columnar array buffers in Tungsten memory. `element_at` uses 1-based indexing for positive indices (1 = first element) and -1 for the last element, differing from standard Python 0-based indexing.
+"""Scenario & Scale: Streaming platform user genre & feature tagging (120M profiles/day).
 
-# COMMAND ----------
+Business Context:
+Inspect user preference arrays, test membership, safely extract first/last elements
+under Spark 4.0 ANSI mode, and compute set unions/intersections without row explosion.
+"""
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import functions as F
+from pyspark.sql import types as T
 
-# COMMAND ----------
 
-import os
-import sys
-import shutil
-from pathlib import Path
-
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_013_Array_Creation_Element_Extraction_and_Array_Search_Functions")
-        .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
+def build_spark(app_name: str = "013_Array_Creation_Extraction_Search") -> SparkSession:
+    """Create or reuse a portable SparkSession with ANSI mode enabled."""
+    return (
+        SparkSession.builder.appName(app_name)
+        .config("spark.sql.ansi.enabled", "true")
         .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
         .getOrCreate()
     )
 
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+# ---------------------------------------------------------------------------
+# 1. Anti-Pattern
+# ---------------------------------------------------------------------------
+# ❌ Bad Practice:
+#   df.withColumn("second_genre", F.element_at(F.col("genres"), 2))
+#   df.withColumn("second_zero_based", F.col("genres")[1])
+# Otherwise:
+# - In Spark 4.0 ANSI mode (`spark.sql.ansi.enabled=true`), `F.element_at(arr, idx)`
+#   and `arr[idx]` raise `INVALID_ARRAY_INDEX` whenever an array has fewer elements
+#   than `idx`, crashing the entire job on a single short-array row.
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 1: Generating Streaming User Preferences
-# MAGIC Create mock streaming user records with tags and category arrays.
-
-# COMMAND ----------
-
-user_media = [
-    ("U-101", ["Sci-Fi", "Action", "Thriller"], ["HD", "Dolby Atmos", "4K"]),
-    ("U-102", ["Romance", "Comedy"], ["SD"]),
-    ("U-103", ["Documentary"], ["HD", "Subtitles"]),
-    ("U-104", ["Action", "Anime", "Fantasy", "Adventure"], ["4K", "HDR10"])
-]
-
-schema = "user_id STRING, genres ARRAY<STRING>, stream_features ARRAY<STRING>"
-df_users = spark.createDataFrame(user_media, schema)
-df_users.show(truncate=False)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 2: Array Membership, Length and Extraction
-# MAGIC Inspect arrays with array_contains, size, element_at, and array_sort.
-
-# COMMAND ----------
-
-df_array_ops = df_users.withColumn(
-    "genre_count", F.size(F.col("genres"))
-).withColumn(
-    "likes_action", F.array_contains(F.col("genres"), "Action")
-).withColumn(
-    "primary_genre", F.element_at(F.col("genres"), 1)  # 1-based index: first
-).withColumn(
-    "last_genre", F.element_at(F.col("genres"), -1)     # negative index: last
-).withColumn(
-    "sorted_genres", F.array_sort(F.col("genres"))
+# ---------------------------------------------------------------------------
+# 2. ANSI-Safe PySpark 4.0+ Fix
+# ---------------------------------------------------------------------------
+# ✅ Good Practice: Use `F.try_element_at` (1-based) or `F.get` (0-based) for safe lookup.
+USER_MEDIA_SCHEMA = T.StructType(
+    [
+        T.StructField("user_id", T.StringType(), nullable=False),
+        T.StructField("genres", T.ArrayType(T.StringType()), nullable=False),
+        T.StructField("stream_features", T.ArrayType(T.StringType()), nullable=False),
+    ]
 )
 
-df_array_ops.select("user_id", "genre_count", "likes_action", "primary_genre", "last_genre", "sorted_genres").show(truncate=False)
 
-# COMMAND ----------
+def analyze_user_arrays(df: DataFrame) -> DataFrame:
+    """Compute array metrics, ANSI-safe element extraction, and set intersections."""
+    recommended = F.array(F.lit("Action"), F.lit("Mystery"), F.lit("Sci-Fi"))
 
-# MAGIC %md
-# MAGIC ### Step 3: Array Set Operations: Union, Intersection & Distinct
-# MAGIC Compute combined tags across multiple arrays using array_union, array_intersect, and array_distinct.
+    return df.withColumns(
+        {
+            "genre_count": F.size(F.col("genres")),
+            "likes_action": F.array_contains(F.col("genres"), "Action"),
+            "primary_genre": F.try_element_at(F.col("genres"), F.lit(1)),
+            "second_genre_safe": F.try_element_at(F.col("genres"), F.lit(2)),
+            "last_genre": F.try_element_at(F.col("genres"), F.lit(-1)),
+            "sorted_genres": F.array_sort(F.col("genres")),
+            "all_genres_union": F.array_distinct(F.array_union(F.col("genres"), recommended)),
+            "common_genres": F.array_intersect(F.col("genres"), recommended),
+        }
+    )
 
-# COMMAND ----------
 
-# Simulate secondary recommendations array
-df_with_recs = df_users.withColumn("recommended_genres", F.array(F.lit("Action"), F.lit("Mystery"), F.lit("Sci-Fi")))
+def main() -> None:
+    spark = build_spark()
 
-df_sets = df_with_recs.withColumn(
-    "all_genres_union", F.array_distinct(F.array_union(F.col("genres"), F.col("recommended_genres")))
-).withColumn(
-    "common_genres", F.array_intersect(F.col("genres"), F.col("recommended_genres"))
-)
+    user_media = [
+        ("U-101", ["Sci-Fi", "Action", "Thriller"], ["HD", "Dolby Atmos", "4K"]),
+        ("U-102", ["Romance", "Comedy"], ["SD"]),
+        ("U-103", ["Documentary"], ["HD", "Subtitles"]),
+        ("U-104", ["Action", "Anime", "Fantasy", "Adventure"], ["4K", "HDR10"]),
+    ]
+    df_users = spark.createDataFrame(user_media, schema=USER_MEDIA_SCHEMA)
+    df_result = analyze_user_arrays(df_users)
 
-df_sets.select("user_id", "all_genres_union", "common_genres").show(truncate=False)
+    u103 = df_result.filter(F.col("user_id") == "U-103").first()
+    u101 = df_result.filter(F.col("user_id") == "U-101").first()
+    assert u103["genre_count"] == 1
+    assert u103["second_genre_safe"] is None
+    assert u101["likes_action"] is True and u101["last_genre"] == "Thriller"
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **`element_at(col, 1)` uses 1-based indexing for positive numbers and -1 for the last element.**
-# MAGIC - **`array_contains()` is optimized for fast binary scans across Tungsten array representations.**
-# MAGIC - **Use `array_union` paired with `array_distinct` to combine distinct sets without exploding into rows.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. How does `element_at` handle out-of-bounds indices in Spark SQL?
-# MAGIC 2. What is the difference between `array_distinct` and exploding an array followed by `distinct()`?
-# MAGIC 3. How does Spark's Tungsten memory format store nested ArrayType values internally?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+# ---------------------------------------------------------------------------
+# 3. explain("formatted") / Spark UI Diagnostic Notes
+# ---------------------------------------------------------------------------
+# - `df_result.explain("formatted")` executes strictly inside a single `Project` on
+#   Tungsten `ArrayData` buffers with zero shuffle (`Exchange`) stages.
+# - Verify in Spark UI SQL tab that no `Explode` / `Generate` + `HashAggregate` pair
+#   is emitted for array set deduplication (`array_union` / `array_distinct`).
+
+# ---------------------------------------------------------------------------
+# 4. Production & Interview Gotchas
+# ---------------------------------------------------------------------------
+# 1. `F.element_at` uses 1-based indexing (`-1` for last), whereas `F.get(arr, 0)` and
+#    bracket indexing `arr[0]` use 0-based indexing; under ANSI mode, prefer
+#    `F.try_element_at` or `F.get` to return NULL instead of failing on out-of-bounds.
+# 2. `F.size(None)` returns `-1` in legacy Spark SQL, or `NULL` depending on config
+#    (`spark.sql.legacy.sizeOfNull`); guard nullable arrays with `F.coalesce`.
+# 3. `F.array_union` deduplicates elements internally, whereas `F.concat(arr1, arr2)`
+#    preserves duplicates and is faster when deduplication is unnecessary.
+
+if __name__ == "__main__":
+    main()

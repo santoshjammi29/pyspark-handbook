@@ -1,137 +1,105 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 031: Broadcast Hash Joins, Threshold Tuning and Memory Limits
-# MAGIC
-# MAGIC **Module:** Module 03: Advanced SQL, Aggregations & Analytical Window Functions
-# MAGIC **Difficulty:** `Intermediate`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC A point-of-sale stream joins billions of transaction rows with a small 2MB store metadata lookup table. Default join configuration causes an unnecessary multi-gigabyte shuffle across all executors, degrading cluster performance.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Eliminate shuffle overhead using Broadcast Hash Joins: apply explicit `broadcast(df)` hint, inspect the Catalyst physical plan to verify `BroadcastHashJoinExec`, understand `spark.sql.autoBroadcastJoinThreshold`, and identify the risks of driver OutOfMemory (OOM) when broadcasting large tables.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC In a Broadcast Hash Join, the driver downloads the small DataFrame, builds an in-memory hash table, and broadcasts it to all worker executors via Spark's peer-to-peer torrent protocol. Workers join streaming partition data locally with zero network shuffle. The default auto-broadcast threshold is 10MB (10485760 bytes).
+"""Scenario & Scale: Point-of-Sale fact-to-store dimension enrichment (2B txns/day).
 
-# COMMAND ----------
+Business Context:
+Eliminate multi-gigabyte `SortMergeJoin` shuffles when joining massive POS facts with
+small 2MB store lookup tables using `F.broadcast()` and auto-broadcast threshold tuning.
+"""
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import functions as F
+from pyspark.sql import types as T
 
-# COMMAND ----------
 
-import os
-import sys
-import shutil
-from pathlib import Path
-
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_031_Broadcast_Hash_Joins_Threshold_Tuning_and_Memory_Limits")
-        .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
+def build_spark(app_name: str = "031_Broadcast_Hash_Join_Tuning") -> SparkSession:
+    """Create or reuse a portable SparkSession with ANSI mode enabled."""
+    return (
+        SparkSession.builder.appName(app_name)
+        .config("spark.sql.ansi.enabled", "true")
         .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
         .getOrCreate()
     )
 
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+# ---------------------------------------------------------------------------
+# 1. Anti-Pattern
+# ---------------------------------------------------------------------------
+# ❌ Bad Practice:
+# - Disabling AQE or leaving `autoBroadcastJoinThreshold` too low when joining a small
+#   computed dimension (causing a 2B-row `SortMergeJoin`), OR blindly wrapping a 4GB
+#   table in `F.broadcast(df_large)`.
+# Otherwise:
+# - Missing broadcast triggers two massive `Exchange` shuffles and external disk sort.
+# - Over-broadcasting a multi-GB table forces the Driver to collect the entire table
+#   into JVM heap, triggering `OutOfMemoryError` or `BroadcastExchange` timeout.
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 1: Generating Fact and Small Dimension Tables
-# MAGIC Create large transaction table and small store dimension.
-
-# COMMAND ----------
-
-# Simulate 20,000 transactions (Fact Table)
-df_transactions = spark.range(1, 20001, 1, 4).select(
-    F.col("id").alias("txn_id"),
-    (F.col("id") % 10 + 1).alias("store_id"),
-    F.round(F.rand(seed=42) * 200 + 5, 2).alias("amount")
+# ---------------------------------------------------------------------------
+# 2. ANSI-Safe PySpark 4.0+ Fix
+# ---------------------------------------------------------------------------
+# ✅ Good Practice: Explicit `F.broadcast()` on verified small dimensions + AQE threshold awareness.
+STORE_SCHEMA = T.StructType(
+    [
+        T.StructField("store_id", T.LongType(), nullable=False),
+        T.StructField("store_name", T.StringType(), nullable=False),
+        T.StructField("city", T.StringType(), nullable=False),
+    ]
 )
 
-# Small Store Dimension Table (10 rows)
-stores = [
-    (1, "Downtown Flagship", "New York"),
-    (2, "Airport Kiosk", "Chicago"),
-    (3, "Suburban Mall", "Dallas"),
-    (4, "Tech Center", "San Francisco"),
-    (5, "Metro Hub", "Atlanta"),
-    (6, "Harbor Outlet", "Boston"),
-    (7, "Plaza Central", "Seattle"),
-    (8, "Galleria", "Houston"),
-    (9, "Old Town", "Denver"),
-    (10, "Express Mart", "Miami")
-]
-df_stores = spark.createDataFrame(stores, ["store_id", "store_name", "city"])
 
-print(f"Transactions: {df_transactions.count()} | Stores: {df_stores.count()}")
+def enrich_transactions_with_stores(df_txns: DataFrame, df_stores: DataFrame) -> DataFrame:
+    """Join large POS fact stream with small store lookup via BroadcastHashJoin."""
+    return df_txns.join(F.broadcast(df_stores), on="store_id", how="inner")
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 2: Applying Explicit Broadcast Join Hint & Physical Plan Inspection
-# MAGIC Force broadcast join using F.broadcast() and verify execution plan.
+def main() -> None:
+    spark = build_spark()
 
-# COMMAND ----------
+    df_transactions = spark.range(1, 20001, 1, 4).select(
+        F.col("id").alias("txn_id"),
+        (F.col("id") % 10 + 1).alias("store_id"),
+        F.round(F.rand(seed=42) * 200 + 5, 2).alias("amount"),
+    )
 
-# Join with broadcast hint
-df_joined = df_transactions.join(F.broadcast(df_stores), on="store_id", how="inner")
+    stores = [
+        (1, "Downtown Flagship", "New York"),
+        (2, "Airport Kiosk", "Chicago"),
+        (3, "Suburban Mall", "Dallas"),
+        (4, "Tech Center", "San Francisco"),
+        (5, "Metro Hub", "Atlanta"),
+        (6, "Harbor Outlet", "Boston"),
+        (7, "Plaza Central", "Seattle"),
+        (8, "Galleria", "Houston"),
+        (9, "Old Town", "Denver"),
+        (10, "Express Mart", "Miami"),
+    ]
+    df_stores = spark.createDataFrame(stores, schema=STORE_SCHEMA)
 
-print("Joined Sample:")
-df_joined.show(5)
+    df_joined = enrich_transactions_with_stores(df_transactions, df_stores)
+    df_joined.explain(mode="formatted")
 
-print("=== PHYSICAL PLAN (Notice BroadcastHashJoinExec and absence of Exchange/Shuffle) ===")
-df_joined.explain(mode="simple")
+    threshold_bytes = int(spark.conf.get("spark.sql.autoBroadcastJoinThreshold"))
+    assert threshold_bytes > 0
+    assert df_joined.count() == 20000
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 3: Understanding autoBroadcastJoinThreshold
-# MAGIC Inspect and tune the auto-broadcast threshold in Spark configurations.
+# ---------------------------------------------------------------------------
+# 3. explain("formatted") / Spark UI Diagnostic Notes
+# ---------------------------------------------------------------------------
+# - `df_joined.explain("formatted")` displays `BroadcastHashJoin` with `BroadcastExchange`
+#   ONLY on the `df_stores` build side and ZERO `Exchange` on the 20,000-row fact side.
+# - In Spark UI (SQL tab), verify `data size` of the `BroadcastExchange` node stays well
+#   under `spark.driver.maxResultSize` and executor memory limits.
 
-# COMMAND ----------
+# ---------------------------------------------------------------------------
+# 4. Production & Interview Gotchas
+# ---------------------------------------------------------------------------
+# 1. Default `spark.sql.autoBroadcastJoinThreshold` is `10MB`; with AQE enabled, Spark
+#    dynamically converts `SortMergeJoin` to `BroadcastHashJoin` at runtime if post-filter
+#    shuffle statistics fall below the threshold.
+# 2. A small Parquet/Delta table on disk (e.g. 8MB Zstd-compressed) can expand 10x-20x
+#    when materialized as uncompressed JVM hash-map rows in memory—causing Driver OOM!
+# 3. Explicit `F.broadcast(df)` overrides `autoBroadcastJoinThreshold`, but you cannot
+#    broadcast the left side of a `left_outer` join or the right side of a `right_outer` join.
 
-current_threshold = spark.conf.get("spark.sql.autoBroadcastJoinThreshold")
-print(f"Current Auto Broadcast Threshold: {int(current_threshold) / (1024*1024):.1f} MB")
-
-# To disable auto-broadcast: spark.conf.set("spark.sql.autoBroadcastJoinThreshold", "-1")
-# To increase threshold to 50MB: spark.conf.set("spark.sql.autoBroadcastJoinThreshold", str(50 * 1024 * 1024))
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **Broadcast joins completely eliminate shuffle exchange, providing order-of-magnitude speedups for asymmetric table joins.**
-# MAGIC - **The small broadcasted table is collected to the driver node first—broadcasting tables larger than driver memory triggers Driver OOM.**
-# MAGIC - **Default auto-broadcast threshold is 10MB; setting to -1 disables auto-broadcasting.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. How does the Driver node distribute a broadcasted table to worker executors?
-# MAGIC 2. What error occurs if you broadcast a DataFrame that is larger than the Driver's available memory?
-# MAGIC 3. Why can broadcast joins fail or hang on datasets with massive row counts even if disk size is small?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+if __name__ == "__main__":
+    main()

@@ -1,157 +1,185 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 061: Arbitrary Stateful Streaming Operations with FlatMapGroupsWithState Concepts
-# MAGIC
-# MAGIC **Module:** Module 06: Streaming & Near Real-Time Processing
-# MAGIC **Difficulty:** `Advanced`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC A telecommunications security monitor detects SIM-swap and fraud patterns across customer cell towers. A fraud flag must trigger only if a user connects to two distinct cell towers separated by 500+ miles within a 15-minute window.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Master arbitrary stateful streaming concepts: compare simple window aggregations with custom state machines, understand the mechanics of `mapGroupsWithState` and `flatMapGroupsWithState`, manage state expiration timeouts (ProcessingTime vs EventTime), and handle state state eviction.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC `mapGroupsWithState` and `flatMapGroupsWithState` allow developers to maintain arbitrary user-defined state objects across streaming batches. While full API implementation requires Scala/Java or PySpark with custom encoders, understanding the stateful machine model is critical for senior data engineers.
+"""Scenario & Scale: Telecom SIM-swap & impossible-travel fraud detector.
 
-# COMMAND ----------
+Tracks per-user tower transitions across millions of mobile subscribers using
+PySpark 4.0 transformWithState (StatefulProcessor, ValueState & EventTime Timers).
+"""
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+import math
+from typing import Iterator, Tuple
 
-# COMMAND ----------
-
-import os
-import sys
-import shutil
-from pathlib import Path
-
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_061_Arbitrary_Stateful_Streaming_Operations_with_FlatMapGroupsWithState_Concepts")
-        .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
-        .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-        .getOrCreate()
-    )
-
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
-
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 1: Arbitrary Stateful Processing Architectural Blueprint
-# MAGIC Illustrate how state machines track custom sessions and timeout states.
-
-# COMMAND ----------
-
-# State Machine Model:
-# Inputs: (Key: user_id, Value: current_cell_event, State: UserTravelHistory)
-# Operations:
-# 1. If State is Empty: Initialize state with current tower and timestamp.
-# 2. If State Exists: Calculate speed/distance from last tower.
-# 3. If impossible velocity detected (> 500 mph): Emit FRAUD_ALERT event!
-# 4. Update state with current tower.
-# 5. Set Timeout: Evict state after 30 minutes of inactivity to bound RocksDB memory.
-
-print("Arbitrary state machine architecture mapped.")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 2: Simulating Stateful Machine Transitions in PySpark
-# MAGIC Model state transitions using window state tracking.
-
-# COMMAND ----------
-
-tower_events = [
-    ("USER-1", "TOWER-NYC", 40.7128, -74.0060, "2023-11-20 10:00:00"),
-    ("USER-1", "TOWER-BOS", 42.3601, -71.0589, "2023-11-20 10:08:00"), # 200 miles in 8 min -> Impossible speed!
-    ("USER-2", "TOWER-SFO", 37.7749, -122.4194, "2023-11-20 10:00:00"),
-    ("USER-2", "TOWER-OAK", 37.8044, -122.2712, "2023-11-20 10:30:00") # 10 miles in 30 min -> Normal
-]
-
-schema = "user_id STRING, tower_id STRING, lat DOUBLE, lon DOUBLE, event_time STRING"
-df_towers = spark.createDataFrame(tower_events, schema).withColumn("ts", F.to_timestamp("event_time"))
-
-# Stateful calculation: compare with previous tower event in state
-user_state_win = Window.partitionBy("user_id").orderBy("ts")
-
-df_state_transitions = (
-    df_towers
-    .withColumn("prev_tower", F.lag("tower_id").over(user_state_win))
-    .withColumn("prev_lat", F.lag("lat").over(user_state_win))
-    .withColumn("prev_lon", F.lag("lon").over(user_state_win))
-    .withColumn("prev_ts", F.lag("ts").over(user_state_win))
-    .withColumn(
-        "elapsed_minutes",
-        (F.col("ts").cast("long") - F.col("prev_ts").cast("long")) / 60.0
-    )
-    .withColumn(
-        # Approximate distance in miles
-        "distance_miles",
-        F.round(F.sqrt(F.pow((F.col("lat") - F.col("prev_lat")) * 69.0, 2) + F.pow((F.col("lon") - F.col("prev_lon")) * 55.0, 2)), 1)
-    )
-    .withColumn(
-        "calculated_mph",
-        F.when(F.col("elapsed_minutes") > 0, F.round(F.col("distance_miles") / (F.col("elapsed_minutes") / 60.0), 1)).otherwise(0.0)
-    )
-    .withColumn(
-        "is_fraud_velocity",
-        F.when(F.col("calculated_mph") > 500.0, True).otherwise(False)
-    )
+from pyspark.sql import DataFrame, Row, SparkSession, functions as F, types as T
+from pyspark.sql.streaming import (
+    StatefulProcessor,
+    StatefulProcessorHandle,
+    TimerValues,
 )
 
-print("Stateful Machine Velocity Analysis:")
-df_state_transitions.select("user_id", "tower_id", "prev_tower", "elapsed_minutes", "distance_miles", "calculated_mph", "is_fraud_velocity").show(truncate=False)
 
-# COMMAND ----------
+# -----------------------------------------------------------------------------
+# 2. Anti-Pattern
+# -----------------------------------------------------------------------------
+# ❌ Bad Practice: Legacy Spark 3.x flatMapGroupsWithState / mapGroupsWithState
+# using untyped Pandas blobs and GroupStateTimeout.NoTimeout.
+# Otherwise: No native TTL/multiple state variables, forced Arrow/Pandas
+# serialization overhead per group, incompatible with structured state schema
+# evolution, and unbounded RocksDB memory leaks without explicit state timeouts.
+def bad_legacy_flatmap_groups(df_stream: DataFrame) -> DataFrame:
+    def _legacy_fn(key, pdf_iter, state):
+        # Spark 3.x legacy pattern: single untyped tuple state, manual timeout
+        for pdf in pdf_iter:
+            yield pdf
 
-# MAGIC %md
-# MAGIC ### Step 3: State Timeout & Eviction Strategy
-# MAGIC Highlight how timeout policies prevent state store memory leaks.
+    return df_stream.groupBy("user_id").flatMapGroupsWithState(
+        _legacy_fn,
+        outputStructType=df_stream.schema,
+        stateStructType=T.StructType([T.StructField("last_ts", T.LongType())]),
+        outputMode="append",
+        timeoutConf="NoTimeout",  # Leaks state memory permanently
+    )
 
-# COMMAND ----------
 
-# Production Timeout Guidelines:
-# 1. EventTimeTimeout: State expires based on the watermark timestamp (reproducible across replays).
-# 2. ProcessingTimeTimeout: State expires based on wall-clock time (simpler, but non-deterministic in replays).
-# Always call state.remove() upon session termination to reclaim RocksDB memory!
+# -----------------------------------------------------------------------------
+# 3. ANSI-safe PySpark 4.0+ Fix
+# -----------------------------------------------------------------------------
+# ✅ Good Practice: PySpark 4.0 transformWithState with StatefulProcessor,
+# typed ValueState, and EventTime timers for deterministic state eviction.
+# Note: For timeMode="ProcessingTime", use ttlDurationMs=1_800_000 instead.
+STATE_SCHEMA = T.StructType([
+    T.StructField("tower_id", T.StringType(), nullable=False),
+    T.StructField("lat", T.DoubleType(), nullable=False),
+    T.StructField("lon", T.DoubleType(), nullable=False),
+    T.StructField("event_ts_ms", T.LongType(), nullable=False),
+])
 
-print("State timeout and memory cleanup rules verified.")
+OUTPUT_SCHEMA = T.StructType([
+    T.StructField("user_id", T.StringType(), nullable=False),
+    T.StructField("tower_id", T.StringType(), nullable=False),
+    T.StructField("prev_tower", T.StringType(), nullable=True),
+    T.StructField("mph", T.DoubleType(), nullable=False),
+    T.StructField("is_fraud_velocity", T.BooleanType(), nullable=False),
+])
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **`mapGroupsWithState` enables custom complex state machines beyond simple tumbling/sliding aggregations.**
-# MAGIC - **Always configure timeouts (`GroupStateTimeout.EventTimeTimeout`) to evict stale keys from state stores.**
-# MAGIC - **RocksDB is the recommended state store provider for large stateful pipelines in production.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. What is the difference between `mapGroupsWithState` and `flatMapGroupsWithState`?
-# MAGIC 2. What are the two timeout types supported in stateful streaming and how do they differ?
-# MAGIC 3. How does RocksDB state store overcome JVM heap limitations for multi-gigabyte streaming states?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+class TowerVelocityProcessor(StatefulProcessor):
+    """PySpark 4.0 StatefulProcessor detecting impossible-travel velocities."""
+
+    def init(self, handle: StatefulProcessorHandle) -> None:
+        self.handle = handle
+        # TTL (ttlDurationMs=...) is supported ONLY in ProcessingTime mode;
+        # EventTime mode uses registerTimer() + handleExpiredTimer() below.
+        self.last_tower = handle.getValueState(
+            stateName="lastTower",
+            schema=STATE_SCHEMA,
+        )
+
+    def handleInputRows(
+        self,
+        key: Tuple[str],
+        rows: Iterator[Row],
+        timerValues: TimerValues,
+    ) -> Iterator[Row]:
+        user_id = key[0]
+        ordered = sorted(rows, key=lambda r: r.event_ts_ms)
+        prev = self.last_tower.get()
+
+        for row in ordered:
+            mph = 0.0
+            prev_tower = None
+            if prev is not None and row.event_ts_ms > prev.event_ts_ms:
+                prev_tower = prev.tower_id
+                hours = (row.event_ts_ms - prev.event_ts_ms) / 3_600_000.0
+                miles = math.sqrt(
+                    ((row.lat - prev.lat) * 69.0) ** 2
+                    + ((row.lon - prev.lon) * 55.0) ** 2
+                )
+                mph = round(miles / hours, 1)
+
+            is_fraud = mph > 500.0
+            self.last_tower.update((
+                row.tower_id,
+                row.lat,
+                row.lon,
+                row.event_ts_ms,
+            ))
+            prev = row
+            # Register event-time inactivity timer 30m beyond latest event
+            self.handle.registerTimer(row.event_ts_ms + 1_800_000)
+
+            yield Row(
+                user_id=user_id,
+                tower_id=row.tower_id,
+                prev_tower=prev_tower,
+                mph=mph,
+                is_fraud_velocity=is_fraud,
+            )
+
+    def handleExpiredTimer(
+        self,
+        key: Tuple[str],
+        timerValues: TimerValues,
+        expiredTimerInfo,
+    ) -> Iterator[Row]:
+        # Reclaim RocksDB key state cleanly upon session inactivity
+        self.last_tower.clear()
+        return iter([])
+
+
+def apply_velocity_state_machine(
+    df_tower_stream: DataFrame,
+    watermark_delay: str = "15 minutes",
+) -> DataFrame:
+    """Apply PySpark 4.0 transformWithState with RocksDB state store."""
+    df_prep = (
+        df_tower_stream.withColumn(
+            "ts", F.to_timestamp(F.col("event_time"))
+        )
+        .withColumn("event_ts_ms", (F.col("ts").cast("long") * F.lit(1000)))
+        .withWatermark("ts", watermark_delay)
+    )
+    return df_prep.groupBy("user_id").transformWithState(
+        statefulProcessor=TowerVelocityProcessor(),
+        outputStructType=OUTPUT_SCHEMA,
+        outputMode="Update",
+        timeMode="EventTime",
+    )
+
+
+# -----------------------------------------------------------------------------
+# 4. explain("formatted") / Spark UI Diagnostic Notes
+# -----------------------------------------------------------------------------
+# df_out.explain("formatted") shows:
+#   Exchange hashpartitioning(user_id)
+#   -> TransformWithStateExec (RocksDBStateStoreProvider, EventTime)
+# Spark UI -> Structured Streaming tab -> State Operators:
+#   - `transformWithState` uses RocksDB column families per state variable
+#     (`lastTower`), keeping state off-heap and bounded by EventTime timers.
+#   - Monitor `numRegisteredTimers` vs `numDeletedTimers` and RocksDB
+#     `totalBytesUsed` to confirm expired keys are evicted promptly.
+
+
+# -----------------------------------------------------------------------------
+# 5. Production / Interview Gotchas
+# -----------------------------------------------------------------------------
+# 1. `transformWithState` (Spark 4.0+) requires RocksDBStateStoreProvider
+#    (`spark.sql.streaming.stateStore.providerClass`); the HDFS-backed provider
+#    does NOT support multiple state variables, TTLs, or column families.
+# 2. Prefer EventTime timers over ProcessingTime timers when deterministic
+#    checkpoint replay after outages is required.
+# 3. PySpark forbids combining `ttlDurationMs` with `timeMode="EventTime"`
+#    (STATEFUL_PROCESSOR_INCORRECT_TIME_MODE_TO_ASSIGN_TTL); use
+#    `registerTimer` + `state.clear()` in `handleExpiredTimer()` for EventTime,
+#    or `ttlDurationMs` (milliseconds) when running in `ProcessingTime` mode.
+
+
+if __name__ == "__main__":
+    spark = (
+        SparkSession.builder.appName("061_TransformWithState")
+        .config(
+            "spark.sql.streaming.stateStore.providerClass",
+            "org.apache.spark.sql.execution.streaming.state."
+            "RocksDBStateStoreProvider",
+        )
+        .config("spark.sql.shuffle.partitions", "4")
+        .getOrCreate()
+    )
+    print("TowerVelocityProcessor configured for Spark 4.0 transformWithState.")

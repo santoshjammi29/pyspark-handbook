@@ -1,166 +1,132 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 001: SparkSession Initialization & DataFrame Creation Strategies
-# MAGIC
-# MAGIC **Module:** Module 01: Core PySpark Foundations & DataFrame API
-# MAGIC **Difficulty:** `Beginner`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC A digital commerce platform needs to ingest customer profile extracts from multiple legacy sources (in-memory lists, Python dictionaries, Pandas exports, and RDDs) into a unified PySpark DataFrame with strict schema validation.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Demonstrate the creation of a resilient SparkSession, configuring custom execution properties, and creating DataFrames using: (1) Programmatic RDD with StructType schema, (2) Python dictionaries/tuples with DDL string schema, (3) Pandas DataFrame conversion with PyArrow optimization, and (4) Empty DataFrames with explicit schemas for pipeline initialization.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC SparkSession serves as the unified entry point introduced in Spark 2.0, encapsulating SparkContext, SQLContext, and HiveContext. In Databricks, the SparkSession variable `spark` is pre-instantiated. When creating DataFrames from Python collections, PySpark serializes Python objects to Java Virtual Machine (JVM) objects via Py4J. Enabling Arrow (`spark.sql.execution.arrow.pyspark.enabled`) accelerates Pandas-to-Spark conversions by eliminating per-row serialization overhead.
+"""Scenario & Scale: Digital commerce customer profile & order ingestion (10M+ daily rows, <5m SLA).
 
-# COMMAND ----------
+Business Context:
+Ingest batch customer extracts, order tuples, and small Pandas lookup payloads into
+strongly-typed PySpark 4.0+ DataFrames without triggering driver-side schema inference
+or relying on non-portable SparkContext/RDD APIs.
+"""
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+from typing import List, Tuple
 
-# COMMAND ----------
+import pandas as pd
+from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import functions as F
+from pyspark.sql import types as T
 
-import os
-import sys
-import shutil
-from pathlib import Path
 
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_001_SparkSession_Initialization_and_DataFrame_Creation_Strategies")
-        .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
+def build_spark(app_name: str = "001_SparkSession_DataFrame_Creation") -> SparkSession:
+    """Create or reuse a portable SparkSession compatible with Spark Connect."""
+    return (
+        SparkSession.builder.appName(app_name)
+        .config("spark.sql.ansi.enabled", "true")
         .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .config("spark.sql.execution.arrow.pyspark.enabled", "true")
         .getOrCreate()
     )
 
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+# ---------------------------------------------------------------------------
+# 1. Anti-Pattern
+# ---------------------------------------------------------------------------
+# ❌ Bad Practice:
+# - Calling `spark.createDataFrame(raw_rows)` without a schema or reading files with
+#   `inferSchema=True` and calling `.master("local[*]")` / `spark.sparkContext` APIs.
+# - Calling unbounded `df.toPandas()` to inspect or convert distributed tables.
+# Otherwise:
+# - Schema inference triggers an extra full-data scan, misinfers nullable/numeric
+#   types (e.g., ZIP codes as INT), `.sparkContext` fails on Spark Connect, and
+#   unbounded `.toPandas()` triggers Driver OutOfMemoryError on multi-GB datasets.
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Strategy 1: Programmatic Schema with StructType and Tuples
-# MAGIC Explicit StructType schemas prevent costly schema inference passes over distributed data and ensure strict type validation.
+# ---------------------------------------------------------------------------
+# 2. ANSI-Safe PySpark 4.0+ Fix
+# ---------------------------------------------------------------------------
+# ✅ Good Practice: Explicit StructType/DDL schemas, portable SparkSession, Arrow transfer.
+CUSTOMER_SCHEMA = T.StructType(
+    [
+        T.StructField("customer_id", T.StringType(), nullable=False),
+        T.StructField("full_name", T.StringType(), nullable=False),
+        T.StructField("signup_date", T.StringType(), nullable=True),
+        T.StructField("loyalty_tier", T.StringType(), nullable=False),
+        T.StructField("account_balance", T.DoubleType(), nullable=False),
+    ]
+)
 
-# COMMAND ----------
+ORDER_DDL_SCHEMA = (
+    "order_id STRING, customer_id STRING, order_amount DOUBLE, "
+    "order_status STRING, item_count INT"
+)
 
-# 1. Define explicit StructType schema
-customer_schema = T.StructType([
-    T.StructField("customer_id", T.StringType(), nullable=False),
-    T.StructField("full_name", T.StringType(), nullable=False),
-    T.StructField("signup_date", T.StringType(), nullable=True),
-    T.StructField("loyalty_tier", T.StringType(), nullable=False),
-    T.StructField("account_balance", T.DoubleType(), nullable=False)
-])
 
-# 2. Source raw tuples (representing incoming batch extract)
-raw_customers = [
-    ("CUST-1001", "Alice Johnson", "2023-01-15", "Gold", 4520.50),
-    ("CUST-1002", "Bob Smith", "2023-02-20", "Silver", 1250.00),
-    ("CUST-1003", "Charlie Brown", "2023-03-10", "Bronze", 340.25),
-    ("CUST-1004", "Diana Prince", "2023-04-05", "Platinum", 15890.00),
-    ("CUST-1005", "Evan Wright", "2023-05-18", "Silver", 820.75)
-]
+def create_customers_df(
+    spark: SparkSession,
+    rows: List[Tuple[str, str, str, str, float]],
+) -> DataFrame:
+    """Build a DataFrame with an explicit StructType schema (zero inference pass)."""
+    return spark.createDataFrame(data=rows, schema=CUSTOMER_SCHEMA)
 
-# 3. Create DataFrame with explicit schema
-df_customers = spark.createDataFrame(data=raw_customers, schema=customer_schema)
-df_customers.printSchema()
-df_customers.show(truncate=False)
 
-# COMMAND ----------
+def create_empty_pipeline_df(spark: SparkSession) -> DataFrame:
+    """Initialize an empty DataFrame with an explicit schema for union/scaffold steps."""
+    return spark.createDataFrame(data=[], schema=CUSTOMER_SCHEMA)
 
-# MAGIC %md
-# MAGIC ### Strategy 2: DDL-Formatted Schema String
-# MAGIC DDL strings provide a concise, readable alternative to nested StructType declarations while retaining full type safety.
 
-# COMMAND ----------
+def main() -> None:
+    spark = build_spark()
 
-# Define schema using SQL DDL syntax
-ddl_schema = "order_id STRING, customer_id STRING, order_amount DOUBLE, order_status STRING, item_count INT"
+    raw_customers = [
+        ("CUST-1001", "Alice Johnson", "2023-01-15", "Gold", 4520.50),
+        ("CUST-1002", "Bob Smith", "2023-02-20", "Silver", 1250.00),
+        ("CUST-1003", "Charlie Brown", "2023-03-10", "Bronze", 340.25),
+        ("CUST-1004", "Diana Prince", "2023-04-05", "Platinum", 15890.00),
+        ("CUST-1005", "Evan Wright", "2023-05-18", "Silver", 820.75),
+    ]
+    df_customers = create_customers_df(spark, raw_customers)
 
-raw_orders = [
-    ("ORD-901", "CUST-1001", 145.20, "COMPLETED", 3),
-    ("ORD-902", "CUST-1002", 49.99, "PENDING", 1),
-    ("ORD-903", "CUST-1001", 310.00, "COMPLETED", 5),
-    ("ORD-904", "CUST-1004", 1250.40, "SHIPPED", 8)
-]
+    raw_orders = [
+        ("ORD-901", "CUST-1001", 145.20, "COMPLETED", 3),
+        ("ORD-902", "CUST-1002", 49.99, "PENDING", 1),
+        ("ORD-903", "CUST-1001", 310.00, "COMPLETED", 5),
+        ("ORD-904", "CUST-1004", 1250.40, "SHIPPED", 8),
+    ]
+    df_orders = spark.createDataFrame(raw_orders, schema=ORDER_DDL_SCHEMA)
 
-df_orders = spark.createDataFrame(raw_orders, schema=ddl_schema)
-df_orders.show()
+    # Small Pandas lookup -> Spark DataFrame via Apache Arrow zero-copy buffers
+    pdf = pd.DataFrame(
+        {
+            "product_id": [f"PROD-{i}" for i in range(101, 106)],
+            "category": ["Electronics", "Home", "Electronics", "Books", "Fashion"],
+            "unit_price": [299.99, 45.50, 899.00, 19.95, 75.00],
+            "in_stock": [True, True, False, True, True],
+        }
+    )
+    df_products = spark.createDataFrame(pdf)
+    df_empty = create_empty_pipeline_df(spark)
 
-# COMMAND ----------
+    assert df_customers.count() == 5
+    assert df_empty.count() == 0
+    assert df_empty.schema == df_customers.schema
+    assert df_orders.filter(F.col("order_status") == "COMPLETED").count() == 2
+    assert df_products.count() == 5
 
-# MAGIC %md
-# MAGIC ### Strategy 3: High-Performance Pandas Conversion via PyArrow
-# MAGIC When working with data scientist outputs or REST API responses, converting Pandas DataFrames using Apache Arrow offers dramatic speedups.
 
-# COMMAND ----------
+# ---------------------------------------------------------------------------
+# 3. explain("formatted") / Spark UI Diagnostic Notes
+# ---------------------------------------------------------------------------
+# - `df_customers.explain("formatted")` shows a `LocalTableScan` (or Arrow-backed scan
+#   in Spark Connect) with exact column nullability and types baked into the plan.
+# - In Spark UI (SQL tab), verify no unexpected PythonUDF serialization or extra
+#   schema-inference jobs appear before the main write stage.
 
-import pandas as pd
-import numpy as np
+# ---------------------------------------------------------------------------
+# 4. Production & Interview Gotchas
+# ---------------------------------------------------------------------------
+# 1. `spark.sparkContext` is unsupported in Spark Connect (Spark 4.0 default client);
+#    always configure logging/properties via `spark.conf` or cluster configs instead.
+# 2. Omitting `.master(...)` lets `spark-submit` or Spark Connect bind the target cluster
+#    automatically instead of silently forcing single-node local execution.
+# 3. `spark.sql.execution.arrow.pyspark.enabled=true` uses columnar Arrow batches for
+#    small Pandas conversions; never call unbounded `.toPandas()`—always `.limit(N)` first.
 
-# Enable PyArrow optimization
-spark.conf.set("spark.sql.execution.arrow.pyspark.enabled", "true")
-
-pdf = pd.DataFrame({
-    "product_id": [f"PROD-{i}" for i in range(101, 106)],
-    "category": ["Electronics", "Home", "Electronics", "Books", "Fashion"],
-    "unit_price": [299.99, 45.50, 899.00, 19.95, 75.00],
-    "in_stock": [True, True, False, True, True]
-})
-
-df_products = spark.createDataFrame(pdf)
-print(f"Created Spark DataFrame from Pandas with {df_products.count()} rows")
-df_products.show()
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 4: Verification & Pipeline Readiness Check
-# MAGIC Assert non-empty DataFrames, column integrity, and schema compliance before feeding downstream medallion pipelines.
-
-# COMMAND ----------
-
-# Verification assertions
-assert df_customers.count() == 5, "Customer count mismatch"
-assert "loyalty_tier" in df_customers.columns, "Missing loyalty_tier column"
-assert df_orders.filter(F.col("order_status") == "COMPLETED").count() == 2, "Completed orders mismatch"
-
-print("All DataFrame creation strategies and assertions verified successfully!")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **Always supply explicit StructType or DDL schemas in production to avoid schema inference performance penalties.**
-# MAGIC - **Enable Arrow (`spark.sql.execution.arrow.pyspark.enabled`) for zero-copy memory transfers between Pandas and PySpark.**
-# MAGIC - **Spark DataFrames are lazily evaluated representations of Catalyst logical plans—`createDataFrame` only builds the plan until an action is triggered.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. What happens under the hood when you omit a schema in `spark.createDataFrame(data)`?
-# MAGIC 2. How does Apache Arrow optimize PySpark-to-Pandas serialization compared to default Py4J pickling?
-# MAGIC 3. What is the difference between `master('local[*]')` and cluster mode execution when configuring a SparkSession?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+if __name__ == "__main__":
+    main()

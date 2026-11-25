@@ -1,139 +1,109 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 044: CSV Ingestion Edge Cases: Multiline, Escaped Quotes and Custom Delimiters
-# MAGIC
-# MAGIC **Module:** Module 05: Data Ingestion Patterns, Auto Loader & File Formats
-# MAGIC **Difficulty:** `Intermediate`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC A financial auditing pipeline imports legacy bank statement extracts. The files contain multiline transaction descriptions with embedded newlines, pipe delimiters (`|`), quotes with backslash escapes, and corrupted header rows.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Configure robust CSV reader options in PySpark: handle multiline records (`multiLine=True`), custom delimiters (`sep='|'`), escape characters (`escape='\\'`), quote handling, explicit datetime inference, and graceful handling of malformed lines.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC By default, Spark splits CSV files across byte boundaries for parallel reading, which breaks if records contain embedded newlines. Setting `multiLine=true` disables byte-offset splitting for that file, forcing a single thread per file to parse line boundaries safely.
+"""CSV Ingestion Edge Cases: Multiline, Escaped Quotes & Custom Delimiters.
 
-# COMMAND ----------
+Scenario & Scale:
+    A financial auditing pipeline ingests 20 GB/day of legacy bank statement
+    extracts using pipe (`|`) delimiters, backslash-escaped quotes, embedded
+    newlines inside notes, and occasional malformed rows under a 20-minute SLA.
+"""
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
-
-# COMMAND ----------
-
-import os
-import sys
-import shutil
+import tempfile
 from pathlib import Path
 
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_044_CSV_Ingestion_Edge_Cases_Multiline_Escaped_Quotes_and_Custom_Delimiters")
-        .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
-        .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-        .getOrCreate()
+from pyspark.sql import DataFrame, SparkSession, functions as F, types as T
+
+
+BANK_CSV_SCHEMA = T.StructType([
+    T.StructField("txn_id", T.StringType(), nullable=True),
+    T.StructField("customer_name", T.StringType(), nullable=True),
+    T.StructField("raw_amount", T.StringType(), nullable=True),
+    T.StructField("notes", T.StringType(), nullable=True),
+    T.StructField("raw_txn_date", T.StringType(), nullable=True),
+    T.StructField("_corrupt_record", T.StringType(), nullable=True),
+])
+
+
+# ---------------------------------------------------------------------------
+# Anti-Pattern
+# ---------------------------------------------------------------------------
+# ❌ Bad Practice: Reading complex CSVs without explicit schema or multiline/escape
+# configuration (`spark.read.option("header", "true").csv(uri)`).
+# Otherwise: Embedded newlines split single records into corrupt multi-row garbage,
+# unescaped quotes shift columns silently, and schema inference wastes an extra pass.
+def read_bank_csv_bad(spark: SparkSession, source_uri: str) -> DataFrame:
+    return spark.read.option("header", "true").csv(source_uri)
+
+
+# ---------------------------------------------------------------------------
+# ANSI-Safe PySpark 4.0+ Fix
+# ---------------------------------------------------------------------------
+# ✅ Good Practice: Enforce explicit StructType, explicit escape/quote/multiLine
+# options, PERMISSIVE corrupt-record capture, and ANSI-safe `try_cast` parsing.
+def read_bank_csv(spark: SparkSession, source_uri: str) -> DataFrame:
+    """Read pipe-delimited multiline CSV with explicit schema and quarantine col."""
+    return (
+        spark.read.format("csv")
+        .schema(BANK_CSV_SCHEMA)
+        .option("header", "true")
+        .option("sep", "|")
+        .option("multiLine", "true")
+        .option("quote", '"')
+        .option("escape", "\\")
+        .option("mode", "PERMISSIVE")
+        .option("columnNameOfCorruptRecord", "_corrupt_record")
+        .load(source_uri)
     )
 
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+def transform_parse_bank_csv(df: DataFrame) -> DataFrame:
+    """Cast CSV strings safely under Spark 4.0 ANSI mode and flag invalid rows."""
+    return (
+        df.withColumn("txn_id_num", F.try_cast(F.col("txn_id"), T.LongType()))
+        .withColumn("amount", F.try_cast(F.col("raw_amount"), T.DecimalType(14, 2)))
+        .withColumn("txn_date", F.try_to_date(F.col("raw_txn_date"), "yyyy-MM-dd"))
+        .withColumn(
+            "is_valid",
+            F.col("_corrupt_record").isNull()
+            & F.col("txn_id_num").isNotNull()
+            & F.col("amount").isNotNull()
+            & F.col("txn_date").isNotNull(),
+        )
+    )
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 1: Creating Edge-Case CSV File on Disk
-# MAGIC Write raw CSV data with embedded newlines, pipe delimiter, and escaped quotes.
+# ---------------------------------------------------------------------------
+# explain("formatted") / Spark UI Diagnostic Notes
+# ---------------------------------------------------------------------------
+# - `explain("formatted")` shows `FileScan csv [...] ReadSchema` matching the
+#   explicit StructType with zero preceding schema-inference job in Spark UI.
+# - With `multiLine=true`, Spark UI shows 1 task per CSV file (file splitting is
+#   disabled); keep raw CSV files <= 256 MB or pre-split upstream.
 
-# COMMAND ----------
 
-import shutil
-from pathlib import Path
+# ---------------------------------------------------------------------------
+# Production & Interview Gotchas
+# ---------------------------------------------------------------------------
+# 1. `multiLine=true` disables byte-offset splitting: a single 10 GB CSV file
+#    runs on 1 executor core and frequently causes executor OOM.
+# 2. If you omit `_corrupt_record` in `.select(...)` during `PERMISSIVE` reads,
+#    Spark throws an analysis error unless `_corrupt_record` is cached or selected.
+# 3. Always parse raw numeric/date CSV columns as STRING first and convert via
+#    `F.try_cast` / `F.try_to_date` so one dirty row does not abort the whole batch.
 
-csv_dir = Path("/tmp/csv_edge_cases_044")
-if csv_dir.exists():
-    shutil.rmtree(csv_dir)
-csv_dir.mkdir(parents=True, exist_ok=True)
 
-csv_content = """id|customer|amount|notes|txn_date
-101|Alice Corp|1500.50|Invoice #1234\nPayment split across accounts|2023-11-01
-102|Bob & Co|450.00|Standard payment for \"consulting services\"|2023-11-02
-103|Charlie Ltd|8900.25|Rush order\nDirect wire transfer|2023-11-03"""
-
-file_path = csv_dir / "transactions.csv"
-with open(file_path, "w") as f:
-    f.write(csv_content)
-
-print(f"Sample edge-case CSV created at {file_path}")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 2: Configuring Resilient PySpark CSV Reader
-# MAGIC Apply multiLine, sep, escape, and quote options.
-
-# COMMAND ----------
-
-# Configure options to handle all edge cases
-df_csv = (
-    spark.read
-    .option("header", "true")
-    .option("sep", "|")
-    .option("multiLine", "true")
-    .option("quote", "\"")
-    .option("escape", "\\")
-    .option("inferSchema", "true")
-    .csv(str(csv_dir))
-)
-
-print("Parsed Schema:")
-df_csv.printSchema()
-
-print("Parsed Data (Notice multi-line notes preserved within rows):")
-df_csv.show(truncate=False)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 3: Verifying Row Integrity Assertions
-# MAGIC Verify exactly 3 records were ingested without split-line corruption.
-
-# COMMAND ----------
-
-assert df_csv.count() == 3, f"Expected 3 rows, found {df_csv.count()} (Multiline issue!)"
-assert "\n" in df_csv.filter(F.col("id") == 101).select("notes").first()[0], "Embedded newline lost"
-print("All CSV edge-case ingestion assertions passed successfully!")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **`multiLine=true` is required when fields contain embedded newlines; note that it disables file splitting.**
-# MAGIC - **Always specify explicit `escape` and `quote` characters when ingesting non-standard CSV extracts.**
-# MAGIC - **For production pipelines, prefer Parquet/Delta over CSV to eliminate textual parsing ambiguities.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. How does `multiLine=true` affect the parallelism and performance of reading large CSV files in Spark?
-# MAGIC 2. What is the difference between `inferSchema=true` and providing an explicit StructType on CSV ingestion?
-# MAGIC 3. How do you handle CSV files where the header appears periodically throughout the file (concatenated extracts)?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+if __name__ == "__main__":
+    spark = (
+        SparkSession.builder.appName("044_csv_edge_cases")
+        .master("local[*]")
+        .config("spark.sql.ansi.enabled", "true")
+        .getOrCreate()
+    )
+    sample_csv = (
+        "txn_id|customer_name|raw_amount|notes|raw_txn_date\n"
+        '101|Alice Corp|1500.50|"Invoice #1234\nSplit payment"|2025-01-01\n'
+        '102|Bob & Co|450.00|"Payment for \\"consulting\\""|2025-01-02\n'
+    )
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        csv_file = Path(tmp_dir) / "statements.csv"
+        csv_file.write_text(sample_csv, encoding="utf-8")
+        df_raw = read_bank_csv(spark, tmp_dir)
+        transform_parse_bank_csv(df_raw).show(truncate=False)

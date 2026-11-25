@@ -1,134 +1,130 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 019: Parsing Raw JSON Payloads: from_json, to_json and schema_of_json
-# MAGIC
-# MAGIC **Module:** Module 02: Complex Data Types & Nested Structures Handling
-# MAGIC **Difficulty:** `Intermediate`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC A payment gateway streams raw JSON transaction events via Apache Kafka or cloud storage. Each record arrives as a single raw string column containing nested transaction data that must be parsed into typed columns.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Master JSON string handling: dynamically infer schema using `schema_of_json()`, parse stringified JSON into structured structs using `from_json()`, serialize DataFrames back to JSON using `to_json()`, and handle schema evolution options.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC `from_json()` parses JSON strings inside JVM tasks using Jackson parser, avoiding Python serialization. Specifying an explicit schema avoids costly full-table scans to infer JSON structure.
+"""Scenario & Scale: Kafka JSON event parsing & serialization pipeline (300M events/day).
 
-# COMMAND ----------
+Business Context:
+Parse raw JSON payload strings streamed from Kafka using an explicit `StructType`
+schema inside JVM Jackson parsers, and serialize structured outputs via `to_json()`.
+"""
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import functions as F
+from pyspark.sql import types as T
 
-# COMMAND ----------
 
-import os
-import sys
-import shutil
-from pathlib import Path
-
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_019_Parsing_Raw_JSON_Payloads_from_json_to_json_and_schema_of_json")
-        .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
+def build_spark(app_name: str = "019_JSON_Parsing_Serialization") -> SparkSession:
+    """Create or reuse a portable SparkSession with ANSI mode enabled."""
+    return (
+        SparkSession.builder.appName(app_name)
+        .config("spark.sql.ansi.enabled", "true")
         .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
         .getOrCreate()
     )
 
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+# ---------------------------------------------------------------------------
+# 1. Anti-Pattern
+# ---------------------------------------------------------------------------
+# ❌ Bad Practice:
+# - Calling `F.udf(lambda s: json.loads(s), ...)` in Python, or running
+#   `schema_of_json` / `spark.read.json(..., inferSchema=True)` on every production batch.
+# Otherwise:
+# - Python `json.loads` UDFs serialize every payload across Py4J/pickle (10x-30x slower).
+# - Production schema inference triggers an extra full scan and risks schema drift
+#   (e.g. `amount` inferred as `LONG` in one batch and `DOUBLE` in the next).
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 1: Generating Raw Kafka-like Message Strings
-# MAGIC Create sample DataFrame with raw JSON payload strings.
-
-# COMMAND ----------
-
-kafka_stream = [
-    ("K-001", '{"order_id": "ORD-1", "customer": {"id": "C-10", "email": "c10@mail.com"}, "amount": 149.99, "tags": ["sale", "prime"]}'),
-    ("K-002", '{"order_id": "ORD-2", "customer": {"id": "C-20", "email": "c20@mail.com"}, "amount": 89.50, "tags": ["clearance"]}'),
-    ("K-003", '{"order_id": "ORD-3", "customer": {"id": "C-30", "email": "c30@mail.com"}, "amount": 420.00, "tags": []}')
-]
-
-df_kafka = spark.createDataFrame(kafka_stream, ["kafka_offset", "payload"])
-df_kafka.show(truncate=False)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 2: Inferring Schema via schema_of_json & Explicit Parsing
-# MAGIC Extract schema from a sample row and parse payloads into typed structs.
-
-# COMMAND ----------
-
-# 1. Infer sample DDL schema using schema_of_json
-sample_json = df_kafka.select("payload").first()[0]
-inferred_ddl = spark.range(1).select(F.schema_of_json(F.lit(sample_json))).first()[0]
-print(f"Inferred Schema DDL: {inferred_ddl}")
-
-# 2. Parse using explicit StructType schema for production safety
-order_schema = T.StructType([
-    T.StructField("order_id", T.StringType(), True),
-    T.StructField("customer", T.StructType([
-        T.StructField("id", T.StringType(), True),
-        T.StructField("email", T.StringType(), True)
-    ]), True),
-    T.StructField("amount", T.DoubleType(), True),
-    T.StructField("tags", T.ArrayType(T.StringType()), True)
-])
-
-df_parsed = df_kafka.withColumn("data", F.from_json(F.col("payload"), order_schema))
-df_parsed.printSchema()
-df_parsed.select("kafka_offset", "data.order_id", "data.customer.email", "data.amount", "data.tags").show(truncate=False)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 3: Serializing Structs Back to JSON with to_json
-# MAGIC Serialize structured data back into JSON strings for downstream API dispatch.
-
-# COMMAND ----------
-
-df_re_serialized = df_parsed.select(
-    "kafka_offset",
-    F.to_json("data").alias("exported_json")
+# ---------------------------------------------------------------------------
+# 2. ANSI-Safe PySpark 4.0+ Fix
+# ---------------------------------------------------------------------------
+# ✅ Good Practice: Explicit `StructType` with `F.from_json()` and `F.to_json()`.
+KAFKA_RAW_SCHEMA = T.StructType(
+    [
+        T.StructField("kafka_offset", T.StringType(), nullable=False),
+        T.StructField("payload", T.StringType(), nullable=True),
+    ]
 )
 
-df_re_serialized.show(truncate=False)
+ORDER_PAYLOAD_SCHEMA = T.StructType(
+    [
+        T.StructField("order_id", T.StringType(), nullable=True),
+        T.StructField(
+            "customer",
+            T.StructType(
+                [
+                    T.StructField("id", T.StringType(), nullable=True),
+                    T.StructField("email", T.StringType(), nullable=True),
+                ]
+            ),
+            nullable=True,
+        ),
+        T.StructField("amount", T.DoubleType(), nullable=True),
+        T.StructField("tags", T.ArrayType(T.StringType()), nullable=True),
+    ]
+)
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **Always supply explicit schemas to `from_json()` to avoid driver-side inference bottlenecks.**
-# MAGIC - **`schema_of_json()` is a helpful utility for deriving schema DDL strings from representative payloads.**
-# MAGIC - **`to_json()` serializes complex structs and maps back into compact JSON strings.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. What happens when a JSON payload contains keys that are not defined in the `from_json` schema?
-# MAGIC 2. How does `from_json` performance compare to parsing JSON with Python's built-in `json.loads` UDF?
-# MAGIC 3. How do you handle schema evolution when incoming JSON payloads gain new fields over time?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+def parse_and_reserialize_orders(df_kafka: DataFrame) -> DataFrame:
+    """Parse JSON payloads with an explicit schema and re-serialize normalized JSON."""
+    return (
+        df_kafka.withColumn("data", F.from_json(F.col("payload"), ORDER_PAYLOAD_SCHEMA))
+        .select(
+            "kafka_offset",
+            F.col("data.order_id").alias("order_id"),
+            F.col("data.customer.email").alias("customer_email"),
+            F.col("data.amount").alias("amount"),
+            F.col("data.tags").alias("tags"),
+            F.to_json(F.col("data")).alias("exported_json"),
+        )
+    )
+
+
+def main() -> None:
+    spark = build_spark()
+
+    kafka_stream = [
+        (
+            "K-001",
+            '{"order_id": "ORD-1", "customer": {"id": "C-10", "email": "c10@mail.com"}, '
+            '"amount": 149.99, "tags": ["sale", "prime"]}',
+        ),
+        (
+            "K-002",
+            '{"order_id": "ORD-2", "customer": {"id": "C-20", "email": "c20@mail.com"}, '
+            '"amount": 89.50, "tags": ["clearance"]}',
+        ),
+        (
+            "K-003",
+            '{"order_id": "ORD-3", "customer": {"id": "C-30", "email": "c30@mail.com"}, '
+            '"amount": 420.00, "tags": []}',
+        ),
+    ]
+    df_kafka = spark.createDataFrame(kafka_stream, schema=KAFKA_RAW_SCHEMA)
+
+    # Dev-time helper only: derive a starter DDL string from one sample literal
+    sample_json = df_kafka.select("payload").first()[0]
+    inferred_ddl = spark.range(1).select(F.schema_of_json(F.lit(sample_json))).first()[0]
+    assert "order_id" in inferred_ddl
+
+    df_parsed = parse_and_reserialize_orders(df_kafka)
+    k001 = df_parsed.filter(F.col("kafka_offset") == "K-001").first()
+    assert k001["order_id"] == "ORD-1" and k001["customer_email"] == "c10@mail.com"
+    assert k001["amount"] == 149.99
+
+
+# ---------------------------------------------------------------------------
+# 3. explain("formatted") / Spark UI Diagnostic Notes
+# ---------------------------------------------------------------------------
+# - `df_parsed.explain("formatted")` shows native JVM `JsonToStructs` and `StructsToJson`
+#   expressions inside `Project`—zero Python UDF serialization overhead.
+
+# ---------------------------------------------------------------------------
+# 4. Production & Interview Gotchas
+# ---------------------------------------------------------------------------
+# 1. `F.from_json` silently ignores extra JSON keys not in `ORDER_PAYLOAD_SCHEMA`; add a
+#    `unparsed_ext STRING` / `VARIANT` or `_corrupt_record` field if unknown keys matter.
+# 2. Keep `schema_of_json()` strictly for offline schema discovery; never invoke `.first()`
+#    to infer schemas dynamically inside a production streaming micro-batch.
+# 3. For deeply dynamic JSON with changing keys in Spark 4.0+, store the column as
+#    `VARIANT` (`F.parse_json`) instead of brittle rigid `StructType` definitions.
+
+if __name__ == "__main__":
+    main()

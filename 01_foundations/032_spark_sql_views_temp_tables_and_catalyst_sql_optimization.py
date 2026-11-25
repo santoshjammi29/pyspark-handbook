@@ -1,97 +1,54 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 032: Spark SQL Views, Temp Tables and Catalyst SQL Optimization
-# MAGIC
-# MAGIC **Module:** Module 03: Advanced SQL, Aggregations & Analytical Window Functions
-# MAGIC **Difficulty:** `Beginner`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC A hybrid analytics team consists of Python data engineers and SQL business analysts. The data engineering team prepares sanitized DataFrames that SQL analysts query using ANSI SQL queries and Common Table Expressions (CTEs).
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Demonstrate seamless interoperability between PySpark DataFrames and Spark SQL: register temporary views (`createOrReplaceTempView`), global temporary views (`createGlobalTempView`), run complex SQL with CTEs via `spark.sql()`, pass dynamic parameters, and inspect Catalyst optimization.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC Temporary views exist purely as logical metadata pointers in the SparkSession catalog without materializing data to disk. Calling `spark.sql()` compiles SQL text through the same Catalyst parser and optimizer as DataFrame API code, producing identical physical plans.
+"""Scenario & Scale: Hybrid Python/SQL analytics team (50M HR & payroll records/day).
 
-# COMMAND ----------
+Business Context:
+Expose sanitized DataFrames via session-scoped temporary views, execute parameterized
+SQL CTE queries safely without SQL injection, and verify Catalyst plan equivalence.
+"""
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import functions as F
+from pyspark.sql import types as T
 
-# COMMAND ----------
 
-import os
-import sys
-import shutil
-from pathlib import Path
-
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_032_Spark_SQL_Views_Temp_Tables_and_Catalyst_SQL_Optimization")
-        .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
+def build_spark(app_name: str = "032_Spark_SQL_Views_Parameterized") -> SparkSession:
+    """Create or reuse a portable SparkSession with ANSI mode enabled."""
+    return (
+        SparkSession.builder.appName(app_name)
+        .config("spark.sql.ansi.enabled", "true")
         .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
         .getOrCreate()
     )
 
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+# ---------------------------------------------------------------------------
+# 1. Anti-Pattern
+# ---------------------------------------------------------------------------
+# ❌ Bad Practice:
+#   spark.sql(f"SELECT * FROM v_employees WHERE dept = '{user_input}' AND salary >= {min_sal}")
+# Otherwise:
+# - String-interpolated SQL queries allow SQL injection (`' OR '1'='1`), break on
+#   embedded quotes, and pollute Catalyst's query plan cache with unique literal strings.
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 1: Creating DataFrame & Registering Temporary Views
-# MAGIC Register local temporary views and global temporary views.
+# ---------------------------------------------------------------------------
+# 2. ANSI-Safe PySpark 4.0+ Fix
+# ---------------------------------------------------------------------------
+# ✅ Good Practice: `createOrReplaceTempView` + parameterized `spark.sql(..., args={...})`.
+EMPLOYEE_SCHEMA = T.StructType(
+    [
+        T.StructField("emp_id", T.StringType(), nullable=False),
+        T.StructField("name", T.StringType(), nullable=False),
+        T.StructField("dept", T.StringType(), nullable=False),
+        T.StructField("salary", T.DoubleType(), nullable=False),
+        T.StructField("hire_date", T.StringType(), nullable=False),
+    ]
+)
 
-# COMMAND ----------
-
-employees = [
-    ("E-1", "Alice", "Engineering", 130000, "2020-03-15"),
-    ("E-2", "Bob", "Engineering", 145000, "2019-06-01"),
-    ("E-3", "Charlie", "Marketing", 95000, "2021-01-10"),
-    ("E-4", "Diana", "Marketing", 105000, "2018-11-20"),
-    ("E-5", "Evan", "Finance", 115000, "2022-04-05")
-]
-
-schema = "emp_id STRING, name STRING, dept STRING, salary DOUBLE, hire_date STRING"
-df_emp = spark.createDataFrame(employees, schema)
-
-# Register local temporary view (scoped to this SparkSession)
-df_emp.createOrReplaceTempView("v_employees")
-print("Temporary view 'v_employees' registered in SparkSession catalog.")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 2: Executing Complex SQL with CTEs and Window Functions
-# MAGIC Run standard ANSI SQL queries over registered DataFrames.
-
-# COMMAND ----------
-
-sql_query = """
+DEPT_BENCHMARK_SQL = """
 WITH dept_stats AS (
     SELECT
         dept,
-        AVG(salary) AS avg_dept_salary,
-        MAX(salary) AS max_dept_salary
+        AVG(salary) AS avg_dept_salary
     FROM v_employees
     GROUP BY dept
 )
@@ -107,48 +64,56 @@ JOIN dept_stats d ON e.dept = d.dept
 ORDER BY diff_from_avg DESC
 """
 
-df_sql_result = spark.sql(sql_query)
-df_sql_result.show()
 
-# COMMAND ----------
+def filter_employees_parameterized(
+    spark: SparkSession,
+    min_salary: float,
+    target_dept: str,
+) -> DataFrame:
+    """Execute a parameterized Spark SQL query safely against a registered temp view."""
+    return spark.sql(
+        "SELECT * FROM v_employees WHERE salary >= :min_sal AND dept = :dept",
+        args={"min_sal": min_salary, "dept": target_dept},
+    )
 
-# MAGIC %md
-# MAGIC ### Step 3: Parameterized SQL Queries via Python Formatting & Identical Plans
-# MAGIC Inject dynamic variables safely into SQL queries and verify Catalyst equivalence.
 
-# COMMAND ----------
+def main() -> None:
+    spark = build_spark()
 
-min_salary = 100000
-target_dept = "Engineering"
+    employees = [
+        ("E-1", "Alice", "Engineering", 130000.0, "2020-03-15"),
+        ("E-2", "Bob", "Engineering", 145000.0, "2019-06-01"),
+        ("E-3", "Charlie", "Marketing", 95000.0, "2021-01-10"),
+        ("E-4", "Diana", "Marketing", 105000.0, "2018-11-20"),
+        ("E-5", "Evan", "Finance", 115000.0, "2022-04-05"),
+    ]
+    df_emp = spark.createDataFrame(employees, schema=EMPLOYEE_SCHEMA)
+    df_emp.createOrReplaceTempView("v_employees")
 
-# Parameterized SQL execution
-df_filtered_sql = spark.sql(
-    "SELECT * FROM v_employees WHERE salary >= :min_sal AND dept = :dept",
-    args={"min_sal": min_salary, "dept": target_dept}
-)
-df_filtered_sql.show()
+    df_cte = spark.sql(DEPT_BENCHMARK_SQL)
+    df_sql = filter_employees_parameterized(spark, min_salary=100000.0, target_dept="Engineering")
+    df_api = df_emp.filter((F.col("salary") >= 100000.0) & (F.col("dept") == "Engineering"))
 
-# Verify that DataFrame API produces the exact same physical plan as Spark SQL
-df_api = df_emp.filter((F.col("salary") >= min_salary) & (F.col("dept") == target_dept))
+    assert df_cte.count() == 5
+    assert df_sql.collect() == df_api.collect()
 
-print("SQL and DataFrame API produce identical Catalyst plans:")
-assert df_filtered_sql.collect() == df_api.collect(), "Plan execution result mismatch"
-print("Verification passed!")
 
-# COMMAND ----------
+# ---------------------------------------------------------------------------
+# 3. explain("formatted") / Spark UI Diagnostic Notes
+# ---------------------------------------------------------------------------
+# - Comparing `df_sql.explain("formatted")` and `df_api.explain("formatted")` yields
+#   identical `LocalTableScan` + `Filter` physical operators—SQL and DataFrame API
+#   compile through the exact same Catalyst analyzer, optimizer, and Tungsten engine.
 
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **Temporary views are lightweight metadata aliases that require zero disk storage or computation until queried.**
-# MAGIC - **`createOrReplaceTempView` is scoped to the current SparkSession; `createGlobalTempView` is accessible across sessions under the `global_temp` database.**
-# MAGIC - **DataFrame API and Spark SQL share the exact same Catalyst compiler and Tungsten execution engine.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. What is the difference between a Temporary View and a Managed Table in Spark?
-# MAGIC 2. How does `createGlobalTempView` differ from `createOrReplaceTempView`?
-# MAGIC 3. Does writing code in Spark SQL perform slower or faster than writing PySpark DataFrame API code?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+# ---------------------------------------------------------------------------
+# 4. Production & Interview Gotchas
+# ---------------------------------------------------------------------------
+# 1. `createOrReplaceTempView` is scoped to a single `SparkSession` (zero disk storage);
+#    `createGlobalTempView` registers under `global_temp.<view>` across sessions.
+# 2. Parameterized `spark.sql(..., args={...})` (Spark 3.4+) binds parameters safely
+#    inside Catalyst without string concatenation or SQL injection risk.
+# 3. Temp views lazily re-evaluate their upstream DataFrame on every query unless
+#    explicitly cached (`spark.catalog.cacheTable("v_employees")`).
+
+if __name__ == "__main__":
+    main()

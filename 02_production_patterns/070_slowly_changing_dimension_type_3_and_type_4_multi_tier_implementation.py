@@ -1,132 +1,116 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 070: Slowly Changing Dimension Type 3 and Type 4 Multi-Tier Implementation
-# MAGIC
-# MAGIC **Module:** Module 07: Lakehouse Data Modeling, CDC & SCD Implementation
-# MAGIC **Difficulty:** `Intermediate`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC A sales commission system tracks territory reassignments. Sales reps occasionally switch regions. Compensation analysts only need to compare sales under the 'current territory' vs 'immediately previous territory', while enterprise audit requires an external historical archive.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Implement SCD Type 3 (adding `current_territory` and `previous_territory` columns in the active table) and SCD Type 4 (maintaining a fast current-state table paired with a separate append-only historical audit archive table).
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC SCD Type 3 stores previous and current attribute values side-by-side in the same row, simplifying year-over-year territory comparisons. SCD Type 4 splits storage: the main dimension holds only current rows for fast lookups, while an external history table records all historical mutation events.
+"""Slowly Changing Dimensions Type 3 & Type 4 Multi-Tier Implementation.
 
-# COMMAND ----------
+Scenario & Scale:
+    A sales commission engine tracks territory moves for 500k reps. Analysts
+    compare current vs immediately prior territory (SCD3), while compliance
+    queries full multi-year reassignment history in a separate archive (SCD4).
+"""
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+from __future__ import annotations
 
-# COMMAND ----------
+from pyspark.sql import DataFrame, SparkSession, functions as F
 
-import os
-import sys
-import shutil
-from pathlib import Path
 
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_070_Slowly_Changing_Dimension_Type_3_and_Type_4_Multi_Tier_Implementation")
-        .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
-        .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-        .getOrCreate()
+# ---------------------------------------------------------------------------
+# Anti-Pattern
+# ---------------------------------------------------------------------------
+# ❌ Bad Practice: Mixing unbounded history rows into the hot lookup dimension
+# when 99% of joins only need current state, or chaining `prev_1`, `prev_2`...
+# Otherwise: Hot operational joins scan bloated historical partitions, while
+# ad-hoc `prev_N` columns require constant DDL migrations.
+def transform_scd3_unbounded_bad(df: DataFrame) -> DataFrame:
+    return df.withColumn("prev_territory_2", F.col("previous_territory"))  # Schema sprawl
+
+
+# ---------------------------------------------------------------------------
+# ANSI-Safe PySpark 4.0+ Fix
+# ---------------------------------------------------------------------------
+# ✅ Good Practice: Use SCD Type 3 (`current_*` / `previous_*`) for bounded
+# 1-step side-by-side comparisons, and SCD Type 4 (hot current table + append-only
+# history table) when rapid current lookups + full audit history are both needed.
+def transform_apply_scd3_reassignment(
+    df_dim: DataFrame, df_moves: DataFrame
+) -> DataFrame:
+    """Shift `current_territory` -> `previous_territory` on territory changes."""
+    return (
+        df_dim.alias("d")
+        .join(df_moves.alias("m"), on="rep_id", how="left")
+        .select(
+            F.col("d.rep_id"),
+            F.col("d.rep_name"),
+            F.when(
+                F.col("m.new_territory").isNotNull()
+                & (F.col("m.new_territory") != F.col("d.current_territory")),
+                F.col("m.new_territory"),
+            )
+            .otherwise(F.col("d.current_territory"))
+            .alias("current_territory"),
+            F.when(
+                F.col("m.new_territory").isNotNull()
+                & (F.col("m.new_territory") != F.col("d.current_territory")),
+                F.col("d.current_territory"),
+            )
+            .otherwise(F.col("d.previous_territory"))
+            .alias("previous_territory"),
+            F.try_to_date(
+                F.coalesce(F.col("m.effective_date"), F.col("d.last_reassigned")),
+                "yyyy-MM-dd",
+            ).alias("last_reassigned"),
+        )
     )
 
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+def transform_build_scd4_tiers(
+    df_updated_dim: DataFrame,
+) -> tuple[DataFrame, DataFrame]:
+    """Split output into (1) fast SCD4 active table and (2) append-only audit log."""
+    df_active = df_updated_dim.select("rep_id", "rep_name", "current_territory")
+    df_history_delta = df_updated_dim.select(
+        "rep_id",
+        F.col("current_territory").alias("territory"),
+        F.col("last_reassigned").alias("effective_from"),
+        F.current_timestamp().alias("_archived_at"),
+    )
+    return df_active, df_history_delta
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 1: Implementing SCD Type 3 (Previous vs Current Columns)
-# MAGIC Create sales rep table with current and prior territory columns.
+# ---------------------------------------------------------------------------
+# explain("formatted") / Spark UI Diagnostic Notes
+# ---------------------------------------------------------------------------
+# - `transform_apply_scd3_reassignment` triggers a single left join; broadcast
+#   `df_moves` when daily reassignment volume < 100 MB (`F.broadcast(df_moves)`).
+# - In SCD Type 4, queries against `df_active` avoid `is_current = true` filter
+#   overhead and maintain 1 row per business key for Broadcast Hash Joins.
 
-# COMMAND ----------
 
-scd3_data = [
-    ("REP-01", "Alice", "West", None, "2023-01-01"),
-    ("REP-02", "Bob", "East", None, "2023-01-01")
-]
+# ---------------------------------------------------------------------------
+# Production & Interview Gotchas
+# ---------------------------------------------------------------------------
+# 1. SCD Type 3 only retains 1 prior snapshot (`previous_territory`); never use
+#    it if regulators require a complete chronological audit trail.
+# 2. SCD Type 4 is ideal for high-churn dimensions (10+ updates/day/entity)
+#    where SCD Type 2 would explode dimension size by 100x and hurt BI joins.
+# 3. Keep SCD4 active + history writes coordinated via Delta Change Data Feed
+#    (CDF) or atomic multi-table orchestration so history never misses an update.
 
-schema3 = "rep_id STRING, rep_name STRING, current_territory STRING, previous_territory STRING, last_reassigned STRING"
-df_scd3 = spark.createDataFrame(scd3_data, schema3)
-print("Initial SCD Type 3 Dimension Table:")
-df_scd3.show()
 
-# Alice moves from West to North territory
-df_scd3_updated = df_scd3.withColumn(
-    "previous_territory",
-    F.when(F.col("rep_id") == "REP-01", F.col("current_territory")).otherwise(F.col("previous_territory"))
-).withColumn(
-    "current_territory",
-    F.when(F.col("rep_id") == "REP-01", F.lit("North")).otherwise(F.col("current_territory"))
-).withColumn(
-    "last_reassigned",
-    F.when(F.col("rep_id") == "REP-01", F.lit("2023-11-20")).otherwise(F.col("last_reassigned"))
-)
-
-print("Updated SCD Type 3 Dimension (Comparing Current vs Previous):")
-df_scd3_updated.show()
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 2: Implementing SCD Type 4 (Current Table + Separate Historical Archive)
-# MAGIC Maintain a fast active table and append modifications to history table.
-
-# COMMAND ----------
-
-# Active Table (Current state only -> ultra-fast lookups)
-active_table = [("REP-01", "Alice", "North"), ("REP-02", "Bob", "East")]
-df_active = spark.createDataFrame(active_table, ["rep_id", "name", "current_territory"])
-
-# Historical Archive Table (Append-only audit trail)
-archive_table = [
-    ("REP-01", "West", "2023-01-01", "2023-11-20"),
-    ("REP-01", "North", "2023-11-20", "9999-12-31"),
-    ("REP-02", "East", "2023-01-01", "9999-12-31")
-]
-df_archive = spark.createDataFrame(archive_table, ["rep_id", "territory", "effective_from", "effective_to"])
-
-print("SCD Type 4 Active Dimension:")
-df_active.show()
-print("SCD Type 4 Historical Archive Table:")
-df_archive.show()
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **SCD Type 3 tracks immediate prior state by adding a `previous_value` column to the same row.**
-# MAGIC - **SCD Type 4 maintains two physical tables: a fast current-state table and a separate historical audit log.**
-# MAGIC - **SCD Type 4 maximizes query performance on current records while retaining full compliance history.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. When is SCD Type 3 preferred over SCD Type 2 in dimensional modeling?
-# MAGIC 2. What are the operational advantages of SCD Type 4 for high-frequency update tables?
-# MAGIC 3. How do fact tables join against an SCD Type 4 architecture?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+if __name__ == "__main__":
+    spark = (
+        SparkSession.builder.appName("070_scd_type_3_and_4")
+        .master("local[*]")
+        .config("spark.sql.ansi.enabled", "true")
+        .getOrCreate()
+    )
+    df_dim = spark.createDataFrame(
+        [("REP-01", "Alice", "West", None, "2025-01-01"), ("REP-02", "Bob", "East", None, "2025-01-01")],
+        "rep_id STRING, rep_name STRING, current_territory STRING, previous_territory STRING, last_reassigned STRING",
+    )
+    df_moves = spark.createDataFrame(
+        [("REP-01", "North", "2025-02-01")],
+        "rep_id STRING, new_territory STRING, effective_date STRING",
+    )
+    df_scd3 = transform_apply_scd3_reassignment(df_dim, df_moves)
+    df_active, df_hist = transform_build_scd4_tiers(df_scd3)
+    df_scd3.show()
+    df_active.show()
+    df_hist.show()

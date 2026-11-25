@@ -1,161 +1,162 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 017: Recursive Schema Traversal: Flattening Deeply Nested JSON/Structs
-# MAGIC
-# MAGIC **Module:** Module 02: Complex Data Types & Nested Structures Handling
-# MAGIC **Difficulty:** `Advanced`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC An enterprise integration hub ingests complex payloads from ERP and CRM systems containing 5+ levels of nested structs and arrays. Analysts require a completely flattened tabular DataFrame where column names reflect their full dot-delimited path.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Develop a generic, production-ready recursive schema flattener in Python that traverses any arbitrarily deep Spark schema. The function must explode nested arrays and flatten all nested structs into top-level columns (`parent_child_field`).
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC Deeply nested schemas can cause severe query compilation overhead. Traversing the schema programmatically inspects `df.schema.fields` and constructs a projection expression list dynamically without executing any JVM actions.
+"""Scenario & Scale: Enterprise CRM/ERP multi-level payload flattener (25M docs/day).
 
-# COMMAND ----------
+Business Context:
+Flatten deeply nested `StructType` payloads (5+ levels) into BI-ready tabular columns
+using metadata-driven schema traversal without running JVM actions or SparkContext APIs.
+"""
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+from typing import List
 
-# COMMAND ----------
+from pyspark.sql import Column, DataFrame, SparkSession
+from pyspark.sql import functions as F
+from pyspark.sql import types as T
 
-import os
-import sys
-import shutil
-from pathlib import Path
 
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_017_Recursive_Schema_Traversal_Flattening_Deeply_Nested_JSONStructs")
-        .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
+def build_spark(app_name: str = "017_Recursive_Schema_Flattening") -> SparkSession:
+    """Create or reuse a portable SparkSession with ANSI mode enabled."""
+    return (
+        SparkSession.builder.appName(app_name)
+        .config("spark.sql.ansi.enabled", "true")
         .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
         .getOrCreate()
     )
 
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+# ---------------------------------------------------------------------------
+# 1. Anti-Pattern
+# ---------------------------------------------------------------------------
+# ❌ Bad Practice:
+# - Using `spark.sparkContext.parallelize([json.dumps(d) ...])` + `spark.read.json(rdd)`
+#   to infer nested schemas, or hardcoding dozens of `col("a.b.c.d").alias(...)` paths.
+# Otherwise:
+# - `sparkContext.parallelize` breaks on Spark Connect and forces an expensive schema
+#   inference pass across the entire payload corpus.
+# - Calling `df = df.select(...)` recursively across 20+ nesting levels creates a deep
+#   `Project` stack that can hit Catalyst planning limits or 64KB JVM bytecode limits.
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 1: Generating Arbitrarily Deep Nested Schema
-# MAGIC Create a multi-level nested customer record with structs inside structs.
+# ---------------------------------------------------------------------------
+# 2. ANSI-Safe PySpark 4.0+ Fix
+# ---------------------------------------------------------------------------
+# ✅ Good Practice: Build an explicit nested `StructType` and flatten all struct levels
+# into a SINGLE flat `df.select(...)` projection list via pure Python schema traversal.
+DEEP_SCHEMA = T.StructType(
+    [
+        T.StructField("id", T.StringType(), nullable=False),
+        T.StructField(
+            "company",
+            T.StructType(
+                [
+                    T.StructField("name", T.StringType(), nullable=False),
+                    T.StructField(
+                        "headquarters",
+                        T.StructType(
+                            [
+                                T.StructField("city", T.StringType(), nullable=False),
+                                T.StructField(
+                                    "geo",
+                                    T.StructType(
+                                        [
+                                            T.StructField("lat", T.DoubleType(), nullable=False),
+                                            T.StructField("lon", T.DoubleType(), nullable=False),
+                                        ]
+                                    ),
+                                    nullable=False,
+                                ),
+                            ]
+                        ),
+                        nullable=False,
+                    ),
+                ]
+            ),
+            nullable=False,
+        ),
+        T.StructField(
+            "metrics",
+            T.StructType(
+                [
+                    T.StructField(
+                        "financials",
+                        T.StructType(
+                            [
+                                T.StructField("revenue", T.DoubleType(), nullable=False),
+                                T.StructField("ebitda", T.DoubleType(), nullable=False),
+                            ]
+                        ),
+                        nullable=False,
+                    )
+                ]
+            ),
+            nullable=False,
+        ),
+    ]
+)
 
-# COMMAND ----------
 
-deep_data = [
-    {
-        "id": "ACC-99",
-        "company": {
-            "name": "Acme Corp",
-            "headquarters": {
-                "geo": {"lat": 37.7749, "lon": -122.4194},
-                "city": "San Francisco"
-            }
-        },
-        "metrics": {"financials": {"revenue": 5000000.0, "ebitda": 1200000.0}}
-    }
-]
-
-import json
-rdd_json = spark.sparkContext.parallelize([json.dumps(d) for d in deep_data])
-df_deep = spark.read.json(rdd_json)
-print("Original Deeply Nested Schema:")
-df_deep.printSchema()
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 2: Recursive Flattening Algorithm
-# MAGIC Implement recursive schema inspection function.
-
-# COMMAND ----------
-
-def flatten_dataframe(df):
-    """
-    Recursively flattens all StructType columns in a DataFrame into top-level columns.
-    """
-    flat_cols = []
-    has_struct = False
-
-    for field in df.schema.fields:
+def _collect_flat_columns(
+    schema: T.StructType,
+    prefix: str = "",
+    alias_prefix: str = "",
+) -> List[Column]:
+    """Traverse StructType metadata in Python and emit leaf Column aliases in one pass."""
+    cols: List[Column] = []
+    for field in schema.fields:
+        col_path = f"{prefix}.{field.name}" if prefix else field.name
+        alias_name = f"{alias_prefix}_{field.name}" if alias_prefix else field.name
         if isinstance(field.dataType, T.StructType):
-            has_struct = True
-            for child in field.dataType.fields:
-                flat_cols.append(
-                    F.col(f"{field.name}.{child.name}").alias(f"{field.name}_{child.name}")
-                )
+            cols.extend(_collect_flat_columns(field.dataType, col_path, alias_name))
         else:
-            flat_cols.append(F.col(field.name))
+            cols.append(F.col(f"`{col_path.replace('.', '`.`')}`").alias(alias_name))
+    return cols
 
-    df_result = df.select(*flat_cols)
-    # If any struct columns were flattened, recurse until all structs are resolved
-    if has_struct:
-        return flatten_dataframe(df_result)
-    return df_result
 
-df_flattened = flatten_dataframe(df_deep)
-print("Completely Flattened Schema:")
-df_flattened.printSchema()
-df_flattened.show(truncate=False)
+def flatten_dataframe(df: DataFrame) -> DataFrame:
+    """Flatten all nested StructType fields into top-level columns in a single Project."""
+    return df.select(*_collect_flat_columns(df.schema))
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 3: Validation & Column Verification
-# MAGIC Verify all leaf columns are top-level primitives.
+def main() -> None:
+    spark = build_spark()
 
-# COMMAND ----------
+    deep_data = [
+        (
+            "ACC-99",
+            ("Acme Corp", ("San Francisco", (37.7749, -122.4194))),
+            ((5000000.0, 1200000.0),),
+        )
+    ]
+    df_deep = spark.createDataFrame(deep_data, schema=DEEP_SCHEMA)
+    df_flattened = flatten_dataframe(df_deep)
 
-expected_cols = [
-    "id",
-    "company_name",
-    "company_headquarters_city",
-    "company_headquarters_geo_lat",
-    "company_headquarters_geo_lon",
-    "metrics_financials_ebitda",
-    "metrics_financials_revenue"
-]
+    expected_cols = {
+        "id",
+        "company_name",
+        "company_headquarters_city",
+        "company_headquarters_geo_lat",
+        "company_headquarters_geo_lon",
+        "metrics_financials_revenue",
+        "metrics_financials_ebitda",
+    }
+    assert set(df_flattened.columns) == expected_cols
+    assert df_flattened.first()["company_headquarters_geo_lat"] == 37.7749
 
-for c in expected_cols:
-    assert c in df_flattened.columns, f"Expected column {c} missing from flattened DataFrame"
 
-print(f"Successfully flattened deep schema into {len(df_flattened.columns)} scalar columns!")
+# ---------------------------------------------------------------------------
+# 3. explain("formatted") / Spark UI Diagnostic Notes
+# ---------------------------------------------------------------------------
+# - Because `_collect_flat_columns` resolves recursion purely on driver metadata,
+#   `df_flattened.explain("formatted")` contains only ONE `Project` node rather than
+#   one `Project` per nesting depth.
 
-# COMMAND ----------
+# ---------------------------------------------------------------------------
+# 4. Production & Interview Gotchas
+# ---------------------------------------------------------------------------
+# 1. Always check for column name collisions (`a_b_c` vs `a.b_c`) when flattening
+#    arbitrary third-party schemas—fail fast if duplicate aliases are detected.
+# 2. If `ArrayType(StructType)` appears inside the schema, decide explicitly whether to
+#    `explode_outer` (multiplies rows) or serialize as JSON/VARIANT rather than flattening blindly.
+# 3. Schemas expanding to 1,000+ leaf columns can exceed JVM 64KB codegen method limits
+#    (`CodeGenerator` fallback to interpreted mode) and bloat Parquet footers.
 
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **Programmatic schema inspection via `df.schema.fields` enables dynamic metadata-driven pipelines.**
-# MAGIC - **Recursive flattening eliminates manual column renaming and hardcoded nested selectors.**
-# MAGIC - **Flattened schemas allow downstream BI tools (Power BI, Tableau) to query data without JSON parsing.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. How do you handle nested `ArrayType(StructType)` columns during automated schema flattening?
-# MAGIC 2. What are the performance implications of flattening a schema with 500+ leaf columns in Parquet?
-# MAGIC 3. Why can recursive schema transformations exceed Java bytecode limits (64KB method size) in Spark?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+if __name__ == "__main__":
+    main()

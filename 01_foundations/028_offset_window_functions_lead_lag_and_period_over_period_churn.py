@@ -1,139 +1,122 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 028: Offset Window Functions: lead, lag and Period-over-Period Churn
-# MAGIC
-# MAGIC **Module:** Module 03: Advanced SQL, Aggregations & Analytical Window Functions
-# MAGIC **Difficulty:** `Intermediate`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC A SaaS subscription billing service analyzes customer MRR (Monthly Recurring Revenue). Finance requires month-over-month revenue variance, detection of plan upgrades/downgrades, and churn identification when an active account drops subscription renewal.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Master offset window functions: implement `lag()` to retrieve previous month revenue and `lead()` to inspect subsequent renewal state. Calculate absolute and percentage period-over-period differences, and handle default fallback values on boundary rows.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC Offset functions fetch values from neighboring rows within the same executor partition buffer without self-joining the table. Self-joins require a full Cartesian shuffle, whereas `lag()` operates in single-pass linear time $O(N)$ inside the partition.
+"""Scenario & Scale: SaaS MRR expansion, contraction & churn analytics (30M subs/month).
 
-# COMMAND ----------
+Business Context:
+Compute month-over-month MRR variance, safe percentage growth under Spark 4.0 ANSI
+mode, and subscription lifecycle tags using `lag()` / `lead()` without self-joins.
+"""
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+from pyspark.sql import DataFrame, SparkSession, Window
+from pyspark.sql import functions as F
+from pyspark.sql import types as T
 
-# COMMAND ----------
 
-import os
-import sys
-import shutil
-from pathlib import Path
-
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_028_Offset_Window_Functions_lead_lag_and_Period_over_Period_Churn")
-        .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
+def build_spark(app_name: str = "028_Offset_Windows_Lead_Lag_Churn") -> SparkSession:
+    """Create or reuse a portable SparkSession with ANSI mode enabled."""
+    return (
+        SparkSession.builder.appName(app_name)
+        .config("spark.sql.ansi.enabled", "true")
         .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
         .getOrCreate()
     )
 
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+# ---------------------------------------------------------------------------
+# 1. Anti-Pattern
+# ---------------------------------------------------------------------------
+# ❌ Bad Practice:
+# - Self-joining `df_subs` on `sub_id` and `month == prev_month + 1` to compute MoM
+#   change, and dividing `(mrr - prev_mrr) / prev_mrr` without zero guards.
+# Otherwise:
+# - Self-joins require 2x table scans and a heavy `SortMergeJoin` shuffle, whereas
+#   `lag()` runs in a single $O(N)$ partition scan.
+# - Dividing by `prev_mrr == 0` raises `DIVIDE_BY_ZERO` under Spark 4.0 ANSI mode.
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 1: Generating Monthly SaaS Subscription History
-# MAGIC Create monthly subscription charges per customer account.
-
-# COMMAND ----------
-
-subscription_history = [
-    ("SUB-1", "2023-01", 100.0),
-    ("SUB-1", "2023-02", 100.0),
-    ("SUB-1", "2023-03", 150.0), # Upgrade
-    ("SUB-1", "2023-04", 120.0), # Downgrade
-    ("SUB-2", "2023-01", 50.0),
-    ("SUB-2", "2023-02", 50.0),
-    ("SUB-2", "2023-03", 0.0)    # Churn
-]
-
-schema = "sub_id STRING, billing_month STRING, mrr DOUBLE"
-df_subs = spark.createDataFrame(subscription_history, schema)
-df_subs.show()
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 2: Applying lag() and lead() with Default Values
-# MAGIC Fetch previous month and next month MRR.
-
-# COMMAND ----------
-
-window_sub = Window.partitionBy("sub_id").orderBy("billing_month")
-
-df_lag_lead = df_subs.withColumn(
-    "prev_mrr", F.lag("mrr", 1, default=0.0).over(window_sub)
-).withColumn(
-    "next_mrr", F.lead("mrr", 1, default=0.0).over(window_sub)
+# ---------------------------------------------------------------------------
+# 2. ANSI-Safe PySpark 4.0+ Fix
+# ---------------------------------------------------------------------------
+# ✅ Good Practice: Single-pass `lag()` / `lead()` + `F.try_divide()` for zero-safe growth.
+SUBSCRIPTION_SCHEMA = T.StructType(
+    [
+        T.StructField("sub_id", T.StringType(), nullable=False),
+        T.StructField("billing_month", T.StringType(), nullable=False),
+        T.StructField("mrr", T.DoubleType(), nullable=False),
+    ]
 )
 
-df_lag_lead.show()
 
-# COMMAND ----------
+def classify_mrr_movements(df: DataFrame) -> DataFrame:
+    """Compute MoM MRR deltas, ANSI-safe growth percentages, and churn classifications."""
+    window_sub = Window.partitionBy("sub_id").orderBy("billing_month")
 
-# MAGIC %md
-# MAGIC ### Step 3: Calculating Month-over-Month Growth & Change Classification
-# MAGIC Compute variance and classify subscription status.
+    df_offsets = df.withColumns(
+        {
+            "prev_mrr": F.lag("mrr", 1, default=0.0).over(window_sub),
+            "next_mrr": F.lead("mrr", 1, default=0.0).over(window_sub),
+        }
+    )
 
-# COMMAND ----------
+    delta = F.col("mrr") - F.col("prev_mrr")
+    pct_change = F.when(F.col("prev_mrr") == 0.0, F.lit(None).cast(T.DoubleType())).otherwise(
+        F.round(F.try_divide(delta, F.col("prev_mrr")) * F.lit(100.0), 1)
+    )
 
-df_variance = df_lag_lead.withColumn(
-    "mrr_change", F.round(F.col("mrr") - F.col("prev_mrr"), 2)
-).withColumn(
-    "pct_change",
-    F.when(F.col("prev_mrr") == 0, None)
-     .otherwise(F.round(((F.col("mrr") - F.col("prev_mrr")) / F.col("prev_mrr")) * 100, 1))
-).withColumn(
-    "status_tag",
-    F.when(F.col("prev_mrr") == 0, "NEW")
-     .when(F.col("mrr") > F.col("prev_mrr"), "EXPANSION")
-     .when((F.col("mrr") < F.col("prev_mrr")) & (F.col("mrr") > 0), "CONTRACTION")
-     .when(F.col("mrr") == 0, "CHURNED")
-     .otherwise("RETAINED")
-)
+    return df_offsets.withColumns(
+        {
+            "mrr_change": F.round(delta, 2),
+            "pct_change": pct_change,
+            "status_tag": (
+                F.when(F.col("prev_mrr") == 0.0, "NEW")
+                .when(F.col("mrr") > F.col("prev_mrr"), "EXPANSION")
+                .when((F.col("mrr") < F.col("prev_mrr")) & (F.col("mrr") > 0.0), "CONTRACTION")
+                .when(F.col("mrr") == 0.0, "CHURNED")
+                .otherwise("RETAINED")
+            ),
+        }
+    )
 
-df_variance.select("sub_id", "billing_month", "prev_mrr", "mrr", "mrr_change", "pct_change", "status_tag").show(truncate=False)
 
-# COMMAND ----------
+def main() -> None:
+    spark = build_spark()
 
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **`lag(col, offset, default)` accesses preceding rows without requiring self-joins.**
-# MAGIC - **`lead(col, offset, default)` peeks forward into subsequent rows in the partition.**
-# MAGIC - **Always provide sensible `default` values to avoid propagating accidental nulls on boundary rows.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. Why is `lag()` significantly more efficient than joining a DataFrame to itself on `t.date = t_prev.date + 1`?
-# MAGIC 2. How do you calculate year-over-year growth for missing months using window functions?
-# MAGIC 3. What is the maximum offset value you can safely supply to `lag()` in PySpark?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+    subscription_history = [
+        ("SUB-1", "2023-01", 100.0),
+        ("SUB-1", "2023-02", 100.0),
+        ("SUB-1", "2023-03", 150.0),
+        ("SUB-1", "2023-04", 120.0),
+        ("SUB-2", "2023-01", 50.0),
+        ("SUB-2", "2023-02", 50.0),
+        ("SUB-2", "2023-03", 0.0),
+    ]
+    df_subs = spark.createDataFrame(subscription_history, schema=SUBSCRIPTION_SCHEMA)
+    df_result = classify_mrr_movements(df_subs)
+
+    sub1_mar = df_result.filter(
+        (F.col("sub_id") == "SUB-1") & (F.col("billing_month") == "2023-03")
+    ).first()
+    sub2_mar = df_result.filter(
+        (F.col("sub_id") == "SUB-2") & (F.col("billing_month") == "2023-03")
+    ).first()
+    assert sub1_mar["status_tag"] == "EXPANSION" and sub1_mar["pct_change"] == 50.0
+    assert sub2_mar["status_tag"] == "CHURNED" and sub2_mar["mrr_change"] == -50.0
+
+
+# ---------------------------------------------------------------------------
+# 3. explain("formatted") / Spark UI Diagnostic Notes
+# ---------------------------------------------------------------------------
+# - `df_result.explain("formatted")` fuses `lag` and `lead` into a single `Window`
+#   stage after one `Exchange hashpartitioning(sub_id)` and `Sort`.
+
+# ---------------------------------------------------------------------------
+# 4. Production & Interview Gotchas
+# ---------------------------------------------------------------------------
+# 1. `lag(col, offset, default)` ignores NULLs ONLY if `ignoreNulls=True` is set
+#    (Spark 3.0+); otherwise, a NULL row in the preceding offset returns NULL.
+# 2. `lag` operates on physical row offsets, NOT calendar intervals—if a customer skipped
+#    February (`2023-01` -> `2023-03`), `lag(..., 1)` reads January unless you scaffold
+#    missing calendar months first.
+# 3. Use `F.try_divide(a, b)` whenever denominators can be `0` or `0.0` in Spark 4.0+
+#    ANSI mode so transient zero-revenue records return NULL instead of failing jobs.
+
+if __name__ == "__main__":
+    main()

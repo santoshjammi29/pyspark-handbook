@@ -1,136 +1,115 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 003: Column Manipulation, Batch Addition & Projection Pruning
-# MAGIC
-# MAGIC **Module:** Module 01: Core PySpark Foundations & DataFrame API
-# MAGIC **Difficulty:** `Beginner`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC A SaaS telemetry service needs to enrich raw session events with calculated duration, derived flags, normalized client identifiers, and drop redundant legacy headers without incurring multiple Catalyst plan rebuilds.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Compare single `withColumn` chaining against Spark 3.3+ `withColumns` batch operations. Rename multiple columns dynamically using dictionary mapping, drop unwanted columns, and explain projection pruning optimizations.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC Chaining dozens of `.withColumn()` calls produces a deep Catalyst logical plan tree that can drastically increase driver planning and compilation time. Using `withColumns` (or a single `select` projection with all expressions) flattens the project node into a single Catalyst Project operation.
+"""Scenario & Scale: SaaS telemetry feature enrichment pipeline (200M events/day, 15m SLA).
 
-# COMMAND ----------
+Business Context:
+Enrich raw client telemetry logs with derived duration, engagement flags, and platform
+tags while pruning unused columns early and avoiding deep Catalyst logical plan trees.
+"""
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import functions as F
+from pyspark.sql import types as T
 
-# COMMAND ----------
 
-import os
-import sys
-import shutil
-from pathlib import Path
-
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_003_Column_Manipulation_Batch_Addition_and_Projection_Pruning")
-        .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
+def build_spark(app_name: str = "003_Batch_Column_Ops_Projection_Pruning") -> SparkSession:
+    """Create or reuse a portable SparkSession with ANSI mode enabled."""
+    return (
+        SparkSession.builder.appName(app_name)
+        .config("spark.sql.ansi.enabled", "true")
         .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
         .getOrCreate()
     )
 
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+# ---------------------------------------------------------------------------
+# 1. Anti-Pattern
+# ---------------------------------------------------------------------------
+# ❌ Bad Practice:
+#   for col_name, expr in derived_cols.items():
+#       df = df.withColumn(col_name, expr)
+#   df = df.withColumn("rate", F.col("actions_count") / (F.col("duration_seconds") / 60.0))
+# Otherwise:
+# - Chaining 30+ `.withColumn()` calls in a loop builds a deeply nested `Project` tree,
+#   causing quadratic Catalyst analyzer/optimizer overhead and driver StackOverflow/GC pauses.
+# - Standard `/` division raises `DIVIDE_BY_ZERO` under ANSI mode when `duration_seconds == 0`.
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 1: Mocking Telemetry Events
-# MAGIC Create a dataset of client telemetry logs with raw attributes.
+# ---------------------------------------------------------------------------
+# 2. ANSI-Safe PySpark 4.0+ Fix
+# ---------------------------------------------------------------------------
+# ✅ Good Practice: Single-node `withColumns()`, `withColumnsRenamed()`, and `try_divide()`.
+TELEMETRY_SCHEMA = T.StructType(
+    [
+        T.StructField("event_id", T.StringType(), nullable=False),
+        T.StructField("user_id", T.StringType(), nullable=False),
+        T.StructField("client_type", T.StringType(), nullable=False),
+        T.StructField("client_os", T.StringType(), nullable=False),
+        T.StructField("duration_seconds", T.IntegerType(), nullable=False),
+        T.StructField("actions_count", T.IntegerType(), nullable=False),
+        T.StructField("event_date", T.StringType(), nullable=False),
+    ]
+)
 
-# COMMAND ----------
-
-telemetry_data = [
-    ("EVT-1", "user_101", "mobile_app", "iOS", 120, 2, "2023-11-01"),
-    ("EVT-2", "user_102", "web_browser", "Chrome", 450, 8, "2023-11-01"),
-    ("EVT-3", "user_103", "mobile_app", "Android", 30, 1, "2023-11-01"),
-    ("EVT-4", "user_104", "api_client", "Postman", 600, 15, "2023-11-01")
-]
-
-columns = ["event_id", "user_id", "client_type", "client_os", "duration_seconds", "actions_count", "event_date"]
-df_telemetry = spark.createDataFrame(telemetry_data, columns)
-df_telemetry.show()
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 2: High-Performance Batch Column Addition (withColumns)
-# MAGIC In Spark 3.3+, `withColumns` accepts a dictionary of column names to expressions, constructing a single Project plan.
-
-# COMMAND ----------
-
-# Batch enrichments using withColumns
-enrichments = {
-    "duration_minutes": F.round(F.col("duration_seconds") / 60.0, 2),
-    "is_high_engagement": F.when((F.col("duration_seconds") > 300) & (F.col("actions_count") > 5), True).otherwise(False),
-    "platform_tag": F.concat_ws("::", F.upper(F.col("client_type")), F.col("client_os")),
-    "actions_per_minute": F.round(F.col("actions_count") / (F.col("duration_seconds") / 60.0), 2)
-}
-
-df_enriched = df_telemetry.withColumns(enrichments)
-df_enriched.show(truncate=False)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 3: Dynamic Column Renaming via Dictionary Mapping
-# MAGIC Rename multiple fields programmatically using `toDF` or comprehension projections.
-
-# COMMAND ----------
-
-rename_map = {
+RENAME_MAP = {
     "event_id": "id",
     "user_id": "account_id",
-    "duration_seconds": "duration_sec"
+    "duration_seconds": "duration_sec",
 }
 
-# Apply renaming dynamically
-df_renamed = df_enriched
-for old_col, new_col in rename_map.items():
-    df_renamed = df_renamed.withColumnRenamed(old_col, new_col)
 
-# Drop redundant legacy columns
-df_final = df_renamed.drop("client_type", "client_os")
-df_final.printSchema()
-df_final.show(truncate=False)
+def enrich_telemetry(df: DataFrame) -> DataFrame:
+    """Apply batch column enrichments, renames, and column pruning in minimal Catalyst nodes."""
+    duration_min = F.try_divide(F.col("duration_seconds"), F.lit(60.0))
 
-# COMMAND ----------
+    enrichments = {
+        "duration_minutes": F.round(duration_min, 2),
+        "is_high_engagement": (
+            (F.col("duration_seconds") > 300) & (F.col("actions_count") > 5)
+        ),
+        "platform_tag": F.concat_ws("::", F.upper(F.col("client_type")), F.col("client_os")),
+        "actions_per_minute": F.round(F.try_divide(F.col("actions_count"), duration_min), 2),
+    }
 
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **Avoid chaining 20+ `.withColumn()` calls in loops; use `withColumns()` (Spark 3.3+) or `.select()` projections.**
-# MAGIC - **Projection pruning ensures Catalyst only reads and transmits requested columns from Parquet/Delta storage.**
-# MAGIC - **`withColumnRenamed()` is a metadata operation that doesn't trigger shuffles.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. Why is chaining many `.withColumn()` calls considered an anti-pattern in PySpark?
-# MAGIC 2. How does Catalyst Optimizer optimize a single `.select()` containing multiple expressions compared to multiple `.withColumn()` steps?
-# MAGIC 3. What is projection pruning and how does it leverage columnar storage like Parquet/Delta?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+    return (
+        df.withColumns(enrichments)
+        .withColumnsRenamed(RENAME_MAP)
+        .drop("client_type", "client_os")
+    )
+
+
+def main() -> None:
+    spark = build_spark()
+
+    telemetry_data = [
+        ("EVT-1", "user_101", "mobile_app", "iOS", 120, 2, "2023-11-01"),
+        ("EVT-2", "user_102", "web_browser", "Chrome", 450, 8, "2023-11-01"),
+        ("EVT-3", "user_103", "mobile_app", "Android", 0, 1, "2023-11-01"),
+        ("EVT-4", "user_104", "api_client", "Postman", 600, 15, "2023-11-01"),
+    ]
+    df_telemetry = spark.createDataFrame(telemetry_data, schema=TELEMETRY_SCHEMA)
+    df_final = enrich_telemetry(df_telemetry)
+
+    assert "id" in df_final.columns and "client_os" not in df_final.columns
+    assert df_final.filter(F.col("id") == "EVT-3").select("actions_per_minute").first()[0] is None
+    assert df_final.filter(F.col("is_high_engagement")).count() == 2
+
+
+# ---------------------------------------------------------------------------
+# 3. explain("formatted") / Spark UI Diagnostic Notes
+# ---------------------------------------------------------------------------
+# - `df_final.explain("formatted")` collapses all `withColumns` + `withColumnsRenamed` +
+#   `drop` into a single `Project` node with zero shuffle (`Exchange`) stages.
+# - When backed by Parquet/Delta, Catalyst's `ColumnPruning` rule pushes projected
+#   columns into `FileScan` (`ReadSchema`), skipping unreferenced columns at I/O time.
+
+# ---------------------------------------------------------------------------
+# 4. Production & Interview Gotchas
+# ---------------------------------------------------------------------------
+# 1. Prefer `df.withColumns({...})` or a single `df.select(...)` over looping `.withColumn()`;
+#    also prefer `df.withColumnsRenamed({...})` (Spark 3.4+) over looping `withColumnRenamed`.
+# 2. Note that `withColumns` expressions cannot reference another newly added key from
+#    the same dictionary—reuse a Python `Column` variable like `duration_min` instead.
+# 3. `F.try_divide(num, denom)` returns `NULL` on division by zero in Spark 4.0 ANSI mode
+#    rather than throwing `ArithmeticException: divide by zero`.
+
+if __name__ == "__main__":
+    main()

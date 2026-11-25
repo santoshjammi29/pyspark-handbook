@@ -1,138 +1,107 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 008: Sorting, Ordering Semantics & Stratified Sampling
-# MAGIC
-# MAGIC **Module:** Module 01: Core PySpark Foundations & DataFrame API
-# MAGIC **Difficulty:** `Beginner`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC A financial auditing team must sample transaction logs for regulatory compliance. The sample must be stratified across risk tiers (Low, Medium, High) to reflect true operational risk distribution without skewing toward high-volume low-risk transactions.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Implement ordering with explicit null placement (`asc_nulls_first`, `desc_nulls_last`). Compare `sample()` vs `sampleBy()` for stratified sampling across categorical groups, and evaluate execution performance.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC `orderBy()` and `sort()` trigger a global RangePartitioner shuffle across all executor partitions, which can be expensive on multi-terabyte datasets. `sortWithinPartitions()` sorts locally inside each partition without shuffling.
+"""Scenario & Scale: Financial compliance audit ordering & stratified sampling (500M txns/day).
 
-# COMMAND ----------
+Business Context:
+Produce deterministic top-N compliance queues with explicit null placement and draw
+statistically representative stratified samples across imbalanced risk tiers.
+"""
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+import random
+from typing import Dict
 
-# COMMAND ----------
+from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import functions as F
+from pyspark.sql import types as T
 
-import os
-import sys
-import shutil
-from pathlib import Path
 
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_008_Sorting_Ordering_Semantics_and_Stratified_Sampling")
-        .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
+def build_spark(app_name: str = "008_Sorting_Stratified_Sampling") -> SparkSession:
+    """Create or reuse a portable SparkSession with ANSI mode enabled."""
+    return (
+        SparkSession.builder.appName(app_name)
+        .config("spark.sql.ansi.enabled", "true")
         .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
         .getOrCreate()
     )
 
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+# ---------------------------------------------------------------------------
+# 1. Anti-Pattern
+# ---------------------------------------------------------------------------
+# ❌ Bad Practice:
+# - Calling `df.orderBy("risk_tier", F.desc("amount"))` globally on intermediate
+#   steps or sampling imbalanced classes with uniform `df.sample(0.1)`.
+# Otherwise:
+# - Global `orderBy` triggers a `RangePartitioner` shuffle + sampling job across the
+#   entire cluster, which subsequent transformations immediately invalidate.
+# - Uniform `sample(0.1)` drops 90% of rare `CRITICAL` fraud cases, starving audits.
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 1: Creating Auditing Dataset
-# MAGIC Generate audit logs with risk tiers and financial values.
-
-# COMMAND ----------
-
-import random
-
-# Seed for reproducible mock data
-random.seed(42)
-risk_tiers = ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
-
-records = [
-    (
-        f"AUD-{i:04d}",
-        random.choice(risk_tiers),
-        round(random.uniform(10.0, 50000.0), 2) if i % 10 != 0 else None,
-        f"ORG-{random.randint(1, 5)}"
-    )
-    for i in range(1, 101)
-]
-
-df_audit_logs = spark.createDataFrame(records, ["audit_id", "risk_tier", "amount", "org_id"])
-df_audit_logs.show(5)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 2: Multi-Column Sorting with Explicit Null Placement
-# MAGIC Sort by risk tier and amount, ensuring null amounts are placed at the end.
-
-# COMMAND ----------
-
-df_sorted = df_audit_logs.orderBy(
-    F.col("risk_tier").asc(),
-    F.col("amount").desc_nulls_last()
+# ---------------------------------------------------------------------------
+# 2. ANSI-Safe PySpark 4.0+ Fix
+# ---------------------------------------------------------------------------
+# ✅ Good Practice: Explicit `desc_nulls_last()` only at final sink, `sortWithinPartitions()`,
+# and deterministic `sampleBy()` stratified by risk tier.
+AUDIT_SCHEMA = T.StructType(
+    [
+        T.StructField("audit_id", T.StringType(), nullable=False),
+        T.StructField("risk_tier", T.StringType(), nullable=False),
+        T.StructField("amount", T.DoubleType(), nullable=True),
+        T.StructField("org_id", T.StringType(), nullable=False),
+    ]
 )
 
-print("Top 10 Sorted Records:")
-df_sorted.show(10)
 
-# COMMAND ----------
+def sort_audit_queue(df: DataFrame) -> DataFrame:
+    """Sort globally for final reporting with explicit NULL placement at the tail."""
+    return df.orderBy(F.col("risk_tier").asc(), F.col("amount").desc_nulls_last())
 
-# MAGIC %md
-# MAGIC ### Step 3: Stratified Sampling via sampleBy
-# MAGIC Extract representative samples per risk tier using exact fractions.
 
-# COMMAND ----------
+def stratified_sample(df: DataFrame, fractions: Dict[str, float], seed: int = 42) -> DataFrame:
+    """Draw a reproducible stratified sample per risk tier in a single pass."""
+    return df.sampleBy("risk_tier", fractions=fractions, seed=seed)
 
-# Define stratification fractions: sample 10% of LOW, 30% of MEDIUM, 80% of HIGH, 100% of CRITICAL
-fractions = {
-    "LOW": 0.10,
-    "MEDIUM": 0.30,
-    "HIGH": 0.80,
-    "CRITICAL": 1.00
-}
 
-df_stratified = df_audit_logs.sampleBy("risk_tier", fractions=fractions, seed=42)
+def main() -> None:
+    spark = build_spark()
 
-print("Stratified Sample Distribution:")
-df_stratified.groupBy("risk_tier").count().show()
+    rng = random.Random(42)
+    risk_tiers = ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+    records = [
+        (
+            f"AUD-{i:04d}",
+            rng.choice(risk_tiers),
+            round(rng.uniform(10.0, 50000.0), 2) if i % 10 != 0 else None,
+            f"ORG-{rng.randint(1, 5)}",
+        )
+        for i in range(1, 101)
+    ]
+    df_audit_logs = spark.createDataFrame(records, schema=AUDIT_SCHEMA)
 
-# COMMAND ----------
+    df_sorted = sort_audit_queue(df_audit_logs)
+    fractions = {"LOW": 0.10, "MEDIUM": 0.30, "HIGH": 0.80, "CRITICAL": 1.00}
+    df_stratified = stratified_sample(df_audit_logs, fractions=fractions, seed=42)
 
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **`orderBy` performs a global sort via RangePartitioner shuffle, while `sortWithinPartitions` performs local memory sorts without shuffle.**
-# MAGIC - **`sampleBy()` performs stratified sampling without requiring manual filtering and union steps.**
-# MAGIC - **Always specify `seed` in sampling calls when building deterministic test suites or reproducible ML splits.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. What is the difference between `sort()` and `sortWithinPartitions()` in PySpark?
-# MAGIC 2. How does Spark's RangePartitioner sample keys to determine partition boundaries during a global sort?
-# MAGIC 3. Why can `df.sample(withReplacement=False, fraction=0.1)` produce slightly more or less than 10% of total rows?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+    critical_total = df_audit_logs.filter(F.col("risk_tier") == "CRITICAL").count()
+    critical_sampled = df_stratified.filter(F.col("risk_tier") == "CRITICAL").count()
+    assert critical_sampled == critical_total
+    assert df_sorted.count() == 100
+
+
+# ---------------------------------------------------------------------------
+# 3. explain("formatted") / Spark UI Diagnostic Notes
+# ---------------------------------------------------------------------------
+# - `df_sorted.explain("formatted")` shows `Exchange rangepartitioning(...)` + `Sort`.
+# - For Parquet/Delta clustering inside partitions without a global shuffle, prefer
+#   `df.repartition("risk_tier").sortWithinPartitions("amount")` (no `RangePartitioner`).
+
+# ---------------------------------------------------------------------------
+# 4. Production & Interview Gotchas
+# ---------------------------------------------------------------------------
+# 1. `sort()` and `orderBy()` are aliases; both trigger a global `RangePartitioner`
+#    shuffle, whereas `sortWithinPartitions()` sorts strictly inside existing partitions.
+# 2. `sampleBy()` performs independent Bernoulli coin flips per stratum—actual row counts
+#    approximate the fraction; for exact counts per group, use `Window` + `row_number()`.
+# 3. In SQL/PySpark ascending sorts default to `NULLS FIRST`, while descending sorts
+#    default to `NULLS LAST`; always be explicit with `asc_nulls_last()`/`desc_nulls_last()`.
+
+if __name__ == "__main__":
+    main()

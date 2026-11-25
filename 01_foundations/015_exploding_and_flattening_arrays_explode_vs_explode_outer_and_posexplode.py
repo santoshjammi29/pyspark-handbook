@@ -1,132 +1,120 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 015: Exploding and Flattening Arrays: explode vs explode_outer and posexplode
-# MAGIC
-# MAGIC **Module:** Module 02: Complex Data Types & Nested Structures Handling
-# MAGIC **Difficulty:** `Intermediate`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC A flight booking aggregator normalizes JSON payloads of airline bookings. Bookings contain lists of passengers and stops. Some bookings have empty passenger lists (infant reservation hold) that must not be accidentally dropped during normalization.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Compare `explode()` vs `explode_outer()` to prevent data loss on empty/null arrays. Use `posexplode()` to capture element sequence positions (e.g. flight leg order 0, 1, 2). Flatten multi-dimensional nested arrays (`flatten()`).
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC Standard `explode()` drops rows where the array is empty or NULL, leading to silent data loss. `explode_outer()` emits a row with NULL for the exploded element, preserving the parent record. `posexplode()` generates both position (zero-based index) and element.
+"""Scenario & Scale: Airline booking normalization pipeline (40M PNRs/day, 10m SLA).
 
-# COMMAND ----------
+Business Context:
+Normalize nested passenger arrays and multi-leg flight itineraries into relational
+Silver rows without silently dropping infant-hold bookings that have empty or NULL
+passenger lists.
+"""
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import functions as F
+from pyspark.sql import types as T
 
-# COMMAND ----------
 
-import os
-import sys
-import shutil
-from pathlib import Path
-
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_015_Exploding_and_Flattening_Arrays_explode_vs_explode_outer_and_posexplode")
-        .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
+def build_spark(app_name: str = "015_Explode_Outer_PosExplode_Flatten") -> SparkSession:
+    """Create or reuse a portable SparkSession with ANSI mode enabled."""
+    return (
+        SparkSession.builder.appName(app_name)
+        .config("spark.sql.ansi.enabled", "true")
         .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
         .getOrCreate()
     )
 
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+# ---------------------------------------------------------------------------
+# 1. Anti-Pattern
+# ---------------------------------------------------------------------------
+# ❌ Bad Practice:
+#   df_bookings.select("booking_id", F.explode("passengers").alias("passenger"))
+# Otherwise:
+# - Standard `F.explode()` silently drops every parent row where `passengers` is `[]`
+#   or `NULL`, causing unflagged financial/passenger reconciliation data loss.
+# - Calling `explode()` twice in the same `select()` raises `AnalysisException` or
+#   creates Cartesian row multiplication if chained carelessly.
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 1: Mocking Multi-Leg Booking Records
-# MAGIC Create bookings with multiple flight legs and edge cases (empty passengers).
-
-# COMMAND ----------
-
-bookings = [
-    ("BKG-001", "Delta", ["ATL", "JFK", "LHR"], ["Alice", "Bob"]),
-    ("BKG-002", "United", ["ORD", "FRA"], ["Charlie"]),
-    ("BKG-003", "Lufthansa", ["MUC"], []),          # Empty passenger array
-    ("BKG-004", "British Airways", ["LHR", "SIN"], None) # Null passenger array
-]
-
-schema = "booking_id STRING, airline STRING, flight_legs ARRAY<STRING>, passengers ARRAY<STRING>"
-df_bookings = spark.createDataFrame(bookings, schema)
-df_bookings.show(truncate=False)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 2: Standard explode() vs explode_outer() Data Loss Comparison
-# MAGIC Demonstrate how standard explode drops records BKG-003 and BKG-004.
-
-# COMMAND ----------
-
-# Standard explode: drops rows with empty or null arrays
-df_standard = df_bookings.select("booking_id", "airline", F.explode("passengers").alias("passenger"))
-print(f"Standard explode row count: {df_standard.count()} (BKG-003 and BKG-004 dropped!)")
-df_standard.show()
-
-# explode_outer: retains parent row with null
-df_outer = df_bookings.select("booking_id", "airline", F.explode_outer("passengers").alias("passenger"))
-print(f"explode_outer row count: {df_outer.count()} (Preserves all bookings!)")
-df_outer.show()
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 3: posexplode() for Leg Sequencing & Array Flattening
-# MAGIC Extract zero-based stop sequences for flight itineraries.
-
-# COMMAND ----------
-
-# posexplode generates leg_sequence and airport
-df_legs = df_bookings.select(
-    "booking_id",
-    "airline",
-    F.posexplode("flight_legs").alias("leg_seq", "airport")
+# ---------------------------------------------------------------------------
+# 2. ANSI-Safe PySpark 4.0+ Fix
+# ---------------------------------------------------------------------------
+# ✅ Good Practice: Use `explode_outer()` to retain parent rows, `posexplode_outer()`
+# for ordinal leg sequencing, and `flatten()` for 2D nested arrays.
+BOOKING_SCHEMA = T.StructType(
+    [
+        T.StructField("booking_id", T.StringType(), nullable=False),
+        T.StructField("airline", T.StringType(), nullable=False),
+        T.StructField("flight_legs", T.ArrayType(T.StringType()), nullable=True),
+        T.StructField("passengers", T.ArrayType(T.StringType()), nullable=True),
+    ]
 )
-df_legs.show()
 
-# Flatten 2D nested arrays: [[A, B], [C, D]] -> [A, B, C, D]
-df_nested_arr = spark.createDataFrame([("TEST", [["A", "B"], ["C", "D", "E"]])], ["id", "matrix"])
-df_flat = df_nested_arr.withColumn("flat_matrix", F.flatten("matrix"))
-df_flat.show(truncate=False)
 
-# COMMAND ----------
+def explode_passengers_preserving_bookings(df: DataFrame) -> DataFrame:
+    """Normalize passenger arrays without dropping empty or NULL passenger bookings."""
+    return df.select(
+        "booking_id",
+        "airline",
+        F.explode_outer("passengers").alias("passenger"),
+    )
 
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **Always use `explode_outer()` if the array column can contain nulls or empty lists to avoid losing parent rows.**
-# MAGIC - **`posexplode()` provides the original ordinal index of each element within its array.**
-# MAGIC - **`flatten()` combines an `ARRAY<ARRAY<T>>` into a single `ARRAY<T>` without expanding rows.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. Under what condition does `explode()` drop rows from a DataFrame?
-# MAGIC 2. What is the difference between `posexplode` and `posexplode_outer`?
-# MAGIC 3. How does exploding large arrays impact partition skew and shuffle memory?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+
+def extract_ordered_flight_legs(df: DataFrame) -> DataFrame:
+    """Assign 0-based leg sequence ordinals while preserving bookings without legs."""
+    return df.select(
+        "booking_id",
+        "airline",
+        F.posexplode_outer("flight_legs").alias("leg_seq", "airport"),
+    )
+
+
+def main() -> None:
+    spark = build_spark()
+
+    bookings = [
+        ("BKG-001", "Delta", ["ATL", "JFK", "LHR"], ["Alice", "Bob"]),
+        ("BKG-002", "United", ["ORD", "FRA"], ["Charlie"]),
+        ("BKG-003", "Lufthansa", ["MUC"], []),
+        ("BKG-004", "British Airways", ["LHR", "SIN"], None),
+    ]
+    df_bookings = spark.createDataFrame(bookings, schema=BOOKING_SCHEMA)
+
+    df_passengers = explode_passengers_preserving_bookings(df_bookings)
+    df_legs = extract_ordered_flight_legs(df_bookings)
+
+    matrix_schema = T.StructType(
+        [
+            T.StructField("id", T.StringType(), nullable=False),
+            T.StructField("matrix", T.ArrayType(T.ArrayType(T.StringType())), nullable=False),
+        ]
+    )
+    df_nested = spark.createDataFrame(
+        [("TEST", [["A", "B"], ["C", "D", "E"]])],
+        schema=matrix_schema,
+    )
+    df_flat = df_nested.withColumn("flat_matrix", F.flatten("matrix"))
+
+    assert df_passengers.select("booking_id").distinct().count() == 4
+    assert df_passengers.count() == 5
+    assert df_legs.filter(F.col("booking_id") == "BKG-001").count() == 3
+    assert df_flat.first()["flat_matrix"] == ["A", "B", "C", "D", "E"]
+
+
+# ---------------------------------------------------------------------------
+# 3. explain("formatted") / Spark UI Diagnostic Notes
+# ---------------------------------------------------------------------------
+# - `df_passengers.explain("formatted")` emits a `Generate explode(passengers), true`
+#   operator (`true` indicates outer semantics).
+# - Watch Spark UI Stage Task `Records Written / Shuffle Write`: exploding giant arrays
+#   (100K+ elements per row) can trigger skew and Executor OOM on a single task.
+
+# ---------------------------------------------------------------------------
+# 4. Production & Interview Gotchas
+# ---------------------------------------------------------------------------
+# 1. Never chain two `explode` calls on independent array columns in one DataFrame
+#    without realizing it produces a cross product ($M \times N$ rows per parent record).
+# 2. If you only need to filter, transform, or sum elements inside an array, use
+#    Higher-Order Functions (`F.transform`, `F.filter`) instead of `explode`.
+# 3. `F.flatten` collapses only one nesting level (`ARRAY<ARRAY<T>>` -> `ARRAY<T>`);
+#    apply it repeatedly if deeper array nesting exists.
+
+if __name__ == "__main__":
+    main()

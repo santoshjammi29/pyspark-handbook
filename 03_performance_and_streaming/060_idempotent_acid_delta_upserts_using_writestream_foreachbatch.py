@@ -1,162 +1,146 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 060: Idempotent ACID Delta Upserts using writeStream.foreachBatch
-# MAGIC
-# MAGIC **Module:** Module 06: Streaming & Near Real-Time Processing
-# MAGIC **Difficulty:** `Advanced`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC A payments streaming pipeline consumes live financial transactions that include both new purchases and refund updates to existing transactions. Standard streaming `append` creates duplicate rows; the stream must perform idempotent ACID `MERGE INTO` operations into target Delta tables.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Master `writeStream.foreachBatch()`: design a micro-batch function that executes an atomic `DeltaTable.merge()` operation, ensures idempotency across micro-batch retries, and avoids race conditions in distributed streaming sinks.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC `foreachBatch` gives access to the output DataFrame of each micro-batch as a standard static DataFrame. This allows executing non-streaming operations—such as Delta Lake `MERGE INTO`, writing to multiple destinations, or executing custom API calls—inside a streaming query.
+"""Scenario & Scale: Payments streaming ledger processing purchases and refunds.
 
-# COMMAND ----------
+Executes idempotent ACID MERGE INTO upserts across 10k+ updates/sec via
+writeStream.foreachBatch, surviving micro-batch retries without duplicates.
+"""
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+from pyspark.sql import DataFrame, SparkSession, Window, functions as F
+from pyspark.sql.streaming import StreamingQuery
 
-# COMMAND ----------
 
-import os
-import sys
-import shutil
-from pathlib import Path
+# -----------------------------------------------------------------------------
+# 2. Anti-Pattern
+# -----------------------------------------------------------------------------
+# ❌ Bad Practice: Merging a raw micro-batch directly into the target table
+# without deduplicating duplicate keys inside the batch, or writing append-only
+# logs for mutable transaction statuses.
+# Otherwise: Duplicate primary keys within a single micro-batch throw a fatal
+# MERGE cardinality violation (`Multiple source rows matched`), crashing the
+# stream; non-idempotent side effects corrupt ledger balances on retry.
+def bad_non_deduped_merge(micro_batch_df: DataFrame, target_table: str) -> None:
+    micro_batch_df.createOrReplaceTempView("raw_updates")
+    micro_batch_df.sparkSession.sql(
+        f"""
+        MERGE INTO {target_table} AS t
+        USING raw_updates AS s
+        ON t.txn_id = s.txn_id
+        WHEN MATCHED THEN UPDATE SET *
+        WHEN NOT MATCHED THEN INSERT *
+        """
+    )
 
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
+
+# -----------------------------------------------------------------------------
+# 3. ANSI-safe PySpark 4.0+ Fix
+# -----------------------------------------------------------------------------
+# ✅ Good Practice: Deduplicate each micro-batch deterministically on primary
+# key ordered by latest event timestamp, then execute an idempotent SQL MERGE
+# INTO (compatible with Delta Lake and Apache Iceberg v2/v3 catalogs).
+def deduplicate_micro_batch(micro_batch_df: DataFrame) -> DataFrame:
+    """Keep the latest state per txn_id within a micro-batch."""
+    window_spec = Window.partitionBy("txn_id").orderBy(
+        F.col("updated_at").desc()
+    )
+    return (
+        micro_batch_df.withColumn("_rn", F.row_number().over(window_spec))
+        .filter(F.col("_rn") == 1)
+        .drop("_rn")
+    )
+
+
+def upsert_micro_batch_sql(
+    micro_batch_df: DataFrame,
+    batch_id: int,
+    target_table: str,
+) -> None:
+    """Idempotent foreachBatch handler executing deduplicated ACID MERGE."""
+    if micro_batch_df.isEmpty():
+        return
+
+    deduped = deduplicate_micro_batch(micro_batch_df)
+    view_name = f"_stg_ledger_batch_{batch_id}"
+    deduped.createOrReplaceTempView(view_name)
+    try:
+        micro_batch_df.sparkSession.sql(
+            f"""
+            MERGE INTO {target_table} AS target
+            USING {view_name} AS source
+            ON target.txn_id = source.txn_id
+            WHEN MATCHED AND source.updated_at >= target.updated_at THEN
+                UPDATE SET
+                    target.amount = source.amount,
+                    target.status = source.status,
+                    target.updated_at = source.updated_at
+            WHEN NOT MATCHED THEN
+                INSERT (txn_id, customer_id, amount, status, updated_at)
+                VALUES (
+                    source.txn_id,
+                    source.customer_id,
+                    source.amount,
+                    source.status,
+                    source.updated_at
+                )
+            """
+        )
+    finally:
+        micro_batch_df.sparkSession.catalog.dropTempView(view_name)
+
+
+def start_idempotent_upsert_stream(
+    df_stream: DataFrame,
+    target_table: str,
+    checkpoint_uri: str,
+) -> StreamingQuery:
+    """Start streaming query writing idempotent ACID upserts via foreachBatch."""
+    return (
+        df_stream.writeStream.outputMode("update")
+        .option("checkpointLocation", checkpoint_uri)
+        .foreachBatch(
+            lambda batch_df, batch_id: upsert_micro_batch_sql(
+                batch_df, batch_id, target_table
+            )
+        )
+        .start()
+    )
+
+
+# -----------------------------------------------------------------------------
+# 4. explain("formatted") / Spark UI Diagnostic Notes
+# -----------------------------------------------------------------------------
+# Inside foreachBatch, deduped.explain("formatted") shows:
+#   Exchange hashpartitioning(txn_id) -> Sort [txn_id, updated_at DESC]
+#   -> Window [row_number()] -> Filter (_rn = 1)
+# Spark UI -> SQL tab:
+#   - Each micro-batch appears as its own SQL execution ID running MERGE INTO.
+#   - Check `numTargetRowsUpdated` / `numTargetFilesRemoved` to spot write
+#     amplification; partition/cluster target_table by join key or date.
+
+
+# -----------------------------------------------------------------------------
+# 5. Production / Interview Gotchas
+# -----------------------------------------------------------------------------
+# 1. foreachBatch guarantees at-least-once delivery on retries: re-running the
+#    same batch_id must yield the identical target state (hence the monotonic
+#    `source.updated_at >= target.updated_at` guard).
+# 2. Never reuse a hardcoded global temp view name if concurrent streams write
+#    in the same SparkSession; scope view names by batch_id or table name.
+# 3. Calling micro_batch_df.count() before write triggers double evaluation of
+#    upstream transforms unless cached or avoided via isEmpty() / SQL metrics.
+
+
+if __name__ == "__main__":
     spark = (
-        SparkSession.builder
-        .appName("UseCase_060_Idempotent_ACID_Delta_Upserts_using_writeStreamforeachBatch")
-        .master("local[*]")
+        SparkSession.builder.appName("060_ForeachBatchACIDUpserts")
         .config("spark.sql.shuffle.partitions", "4")
-        .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
         .getOrCreate()
     )
-
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
-
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 1: Initializing Target Delta Silver Ledger Table
-# MAGIC Create target Delta table for transactions.
-
-# COMMAND ----------
-
-from delta.tables import DeltaTable
-
-silver_ledger_path = "/tmp/delta_silver_ledger_060"
-if Path(silver_ledger_path).exists():
-    shutil.rmtree(silver_ledger_path)
-
-initial_txns = [
-    ("TXN-101", "CUST-1", 100.0, "PENDING", "2023-11-20 10:00:00"),
-    ("TXN-102", "CUST-2", 250.0, "SETTLED", "2023-11-20 10:05:00")
-]
-
-schema = "txn_id STRING, customer_id STRING, amount DOUBLE, status STRING, updated_at STRING"
-spark.createDataFrame(initial_txns, schema).write.format("delta").mode("overwrite").save(silver_ledger_path)
-
-target_delta = DeltaTable.forPath(spark, silver_ledger_path)
-print("Initial Silver Ledger Delta Table:")
-target_delta.toDF().show()
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 2: Defining the Idempotent foreachBatch Upsert Function
-# MAGIC Implement micro-batch merge function with deduplication and ACID upsert.
-
-# COMMAND ----------
-
-def upsert_to_delta(micro_batch_df, batch_id):
-    """
-    Invoked for each micro-batch. Performs idempotent MERGE into target Delta table.
-    """
-    print(f"--> Processing Micro-Batch ID: {batch_id} (Rows: {micro_batch_df.count()})")
-
-    # 1. Deduplicate micro-batch by taking the latest update per txn_id
-    window_spec = Window.partitionBy("txn_id").orderBy(F.col("updated_at").desc())
-    deduped_batch = micro_batch_df.withColumn("rn", F.row_number().over(window_spec))                                 .filter(F.col("rn") == 1)                                 .drop("rn")
-
-    # 2. Atomic MERGE into target Delta table
-    target_table = DeltaTable.forPath(spark, silver_ledger_path)
-    (
-        target_table.alias("target")
-        .merge(
-            source=deduped_batch.alias("source"),
-            condition="target.txn_id = source.txn_id"
-        )
-        .whenMatchedUpdate(
-            set={
-                "amount": F.col("source.amount"),
-                "status": F.col("source.status"),
-                "updated_at": F.col("source.updated_at")
-            }
-        )
-        .whenNotMatchedInsertAll()
-        .execute()
+    df_sample = spark.createDataFrame(
+        [
+            ("TXN-101", "CUST-1", 100.0, "PENDING", "2025-01-15 10:00:00"),
+            ("TXN-101", "CUST-1", 100.0, "SETTLED", "2025-01-15 10:15:00"),
+            ("TXN-103", "CUST-3", 75.0, "SETTLED", "2025-01-15 10:20:00"),
+        ],
+        "txn_id STRING, customer_id STRING, amount DOUBLE, "
+        "status STRING, updated_at STRING",
     )
-    print(f"--> Micro-Batch {batch_id} merged successfully into Delta table.")
-
-print("foreachBatch upsert function defined.")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 3: Testing foreachBatch Execution with Incoming Stream Batch
-# MAGIC Simulate streaming micro-batch executing the upsert logic.
-
-# COMMAND ----------
-
-# Incoming micro-batch: TXN-101 is updated from PENDING to SETTLED; TXN-103 is a new transaction
-micro_batch_1 = [
-    ("TXN-101", "CUST-1", 100.0, "SETTLED", "2023-11-20 10:15:00"), # Update
-    ("TXN-103", "CUST-3", 75.0,  "SETTLED", "2023-11-20 10:20:00")  # Insert
-]
-
-df_mb1 = spark.createDataFrame(micro_batch_1, schema)
-
-# Execute the upsert function directly (simulating writeStream.foreachBatch)
-upsert_to_delta(df_mb1, batch_id=1)
-
-print("Final Target Delta Table (Notice TXN-101 updated, TXN-103 inserted):")
-target_delta.toDF().orderBy("txn_id").show()
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **`foreachBatch()` bridges streaming DataFrames with batch APIs like Delta Lake `MERGE INTO`.**
-# MAGIC - **Always deduplicate the micro-batch DataFrame before calling `merge()` to avoid `DeltaAnalysisException` on duplicate source keys.**
-# MAGIC - **Ensure operations inside `foreachBatch` are idempotent so pipeline retries upon failure do not duplicate data.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. Why can't you use standard `.writeStream.format('delta')` with `.mode('update')` directly in PySpark?
-# MAGIC 2. How does `foreachBatch` handle failure recovery and ensure exactly-once semantics?
-# MAGIC 3. What performance issues can arise if the micro-batch in `foreachBatch` is not pre-deduplicated?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+    deduplicate_micro_batch(df_sample).show(truncate=False)

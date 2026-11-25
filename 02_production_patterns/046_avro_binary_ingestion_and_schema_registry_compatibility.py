@@ -1,69 +1,15 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 046: Avro Binary Ingestion and Schema Registry Compatibility
-# MAGIC
-# MAGIC **Module:** Module 05: Data Ingestion Patterns, Auto Loader & File Formats
-# MAGIC **Difficulty:** `Intermediate`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC An enterprise Apache Kafka event bus publishes high-throughput customer account updates serialized in Apache Avro format. Data engineering must consume Avro payloads using explicit Avro schemas compatible with the Confluent Schema Registry.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Ingest and serialize Apache Avro binary records in PySpark: use `from_avro()` and `to_avro()`, define JSON Avro schema specifications, handle schema evolution between writer and reader schemas, and package binary payloads.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC Apache Avro is a row-oriented binary serialization format widely used for streaming pipelines due to its compact size and schema evolution rules. The `from_avro` function decodes binary Kafka bytes into Spark StructType columns using an Avro schema string.
+"""Avro Binary Ingestion & Schema Registry Compatibility (PySpark 4.0+).
 
-# COMMAND ----------
+Scenario & Scale:
+    An enterprise Kafka event bus streams 100k+ customer account updates/sec
+    encoded in Apache Avro with Confluent Schema Registry 5-byte wire framing.
+    Pipelines must decode binary payloads cleanly while surviving schema evolution.
+"""
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+from pyspark.sql import DataFrame, SparkSession, functions as F, types as T
 
-# COMMAND ----------
 
-import os
-import sys
-import shutil
-from pathlib import Path
-
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_046_Avro_Binary_Ingestion_and_Schema_Registry_Compatibility")
-        .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
-        .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-        .getOrCreate()
-    )
-
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
-
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 1: Defining Avro Schema JSON Specification
-# MAGIC Define standard Avro JSON schema.
-
-# COMMAND ----------
-
-avro_schema_json = """{
+AVRO_SCHEMA_JSON = """{
   "type": "record",
   "name": "CustomerEvent",
   "namespace": "com.enterprise.events",
@@ -75,59 +21,101 @@ avro_schema_json = """{
   ]
 }"""
 
-print("Avro Schema JSON defined successfully.")
 
-# COMMAND ----------
+# ---------------------------------------------------------------------------
+# Anti-Pattern
+# ---------------------------------------------------------------------------
+# ❌ Bad Practice: Decoding Avro bytes with a row-by-row Python UDF (fastavro)
+# or assuming raw Kafka `value` bytes lack the 5-byte Schema Registry header.
+# Otherwise: Massive Py4J serialization overhead and immediate binary decode
+# failures on magic-byte + schema-ID headers.
+@F.udf(returnType=T.StringType())
+def decode_avro_python_bad(payload: bytes) -> str:
+    return payload.decode("utf-8", errors="ignore")  # Corrupts binary Avro payload
 
-# MAGIC %md
-# MAGIC ### Step 2: Simulating Avro Ingestion and Struct Conversion
-# MAGIC Create events and demonstrate Avro integration patterns.
 
-# COMMAND ----------
+# ---------------------------------------------------------------------------
+# ANSI-Safe PySpark 4.0+ Fix
+# ---------------------------------------------------------------------------
+# ✅ Good Practice: Strip the 5-byte Confluent wire header (1 magic + 4 schema ID)
+# and decode via native JVM `from_avro(..., mode="PERMISSIVE")` + ANSI casting.
+def transform_decode_avro_confluent(
+    df: DataFrame,
+    avro_schema_json: str = AVRO_SCHEMA_JSON,
+) -> DataFrame:
+    """Decode Confluent-framed Avro bytes using Spark native Avro functions."""
+    from pyspark.sql.avro.functions import from_avro
 
-# Create representative structured records
-events = [
-    ("CUST-101", "LOGIN", 1450.50, 1700560800),
-    ("CUST-102", "PURCHASE", 320.00, 1700560950),
-    ("CUST-103", "LOGOUT", 8900.00, 1700561100)
-]
+    df_stripped = df.withColumn(
+        "schema_id",
+        F.conv(F.hex(F.expr("substring(value, 2, 4)")), 16, 10).cast(T.LongType()),
+    ).withColumn(
+        "avro_payload",
+        F.expr("substring(value, 6, length(value) - 5)"),
+    )
 
-cols = ["customer_id", "event_type", "account_balance", "event_timestamp"]
-df_events = spark.createDataFrame(events, cols)
-df_events.printSchema()
-df_events.show()
+    return (
+        df_stripped.withColumn(
+            "decoded",
+            from_avro(
+                F.col("avro_payload"),
+                avro_schema_json,
+                {"mode": "PERMISSIVE"},
+            ),
+        )
+        .select(
+            "schema_id",
+            "decoded.*",
+            F.col("decoded").isNull().alias("is_corrupt_avro"),
+        )
+        .withColumn(
+            "event_ts",
+            F.try_cast(F.col("event_timestamp"), T.TimestampType()),
+        )
+    )
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 3: Packaging Structs for Streaming Message Buses
-# MAGIC Bundle fields into structs for downstream message publishing.
+def transform_package_avro_envelope(df: DataFrame) -> DataFrame:
+    """Prepare structured events into key/value struct ready for `to_avro`."""
+    return df.select(
+        F.col("customer_id").alias("key"),
+        F.struct(
+            "customer_id",
+            "event_type",
+            "account_balance",
+            "event_timestamp",
+        ).alias("value"),
+    )
 
-# COMMAND ----------
 
-# Convert to unified message payload struct matching Avro schema
-df_payload = df_events.select(
-    F.col("customer_id").alias("key"),
-    F.struct("customer_id", "event_type", "account_balance", "event_timestamp").alias("value")
-)
+# ---------------------------------------------------------------------------
+# explain("formatted") / Spark UI Diagnostic Notes
+# ---------------------------------------------------------------------------
+# - `explain("formatted")` shows native Catalyst `AvroDataToCatalyst` /
+#   `CatalystDataToAvro` expressions with zero Python worker subprocesses.
+# - Watch for null `decoded` structs (`is_corrupt_avro == true`) in metrics when
+#   an upstream producer emits a backwards-incompatible schema ID.
 
-df_payload.printSchema()
-df_payload.show(truncate=False)
 
-# COMMAND ----------
+# ---------------------------------------------------------------------------
+# Production & Interview Gotchas
+# ---------------------------------------------------------------------------
+# 1. Requires `org.apache.spark:spark-avro_2.13:<spark_version>` on classpath.
+# 2. If a single Kafka topic carries multiple Avro schema IDs, group/filter by
+#    `schema_id` (bytes 2..5) or integrate ABRiS / Schema Registry REST resolution.
+# 3. Backward-compatible Avro evolution requires new reader fields to specify a
+#    `"default"` value in JSON (`{"name": "tier", "type": ["null", "string"], "default": null}`).
 
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **Avro is the industry standard format for streaming message buses (Kafka, Event Hubs) due to compact binary encoding.**
-# MAGIC - **`from_avro(col, schema)` parses binary payloads using the exact Avro schema definition.**
-# MAGIC - **Schema evolution in Avro allows adding optional fields with default values without breaking downstream consumers.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. Why is Avro preferred for message bus streaming while Parquet is preferred for analytical storage?
-# MAGIC 2. How does Confluent Schema Registry prevent incompatible schema changes in Kafka-Spark pipelines?
-# MAGIC 3. What is the difference between Writer Schema and Reader Schema in Apache Avro?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+
+if __name__ == "__main__":
+    spark = (
+        SparkSession.builder.appName("046_avro_schema_registry")
+        .master("local[*]")
+        .config("spark.sql.ansi.enabled", "true")
+        .getOrCreate()
+    )
+    df_events = spark.createDataFrame(
+        [("CUST-101", "PURCHASE", 320.50, 1735689600)],
+        "customer_id STRING, event_type STRING, account_balance DOUBLE, event_timestamp LONG",
+    )
+    transform_package_avro_envelope(df_events).show(truncate=False)

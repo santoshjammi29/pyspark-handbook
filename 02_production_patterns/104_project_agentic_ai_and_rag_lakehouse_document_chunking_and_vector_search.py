@@ -1,146 +1,135 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 104: Project Agentic AI & RAG: Lakehouse Document Chunking and Vector Search
-# MAGIC
-# MAGIC **Module:** Module 10: End-to-End Enterprise Projects & Production Workflows
-# MAGIC **Difficulty:** `Advanced`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC An enterprise customer service platform deploys an Agentic AI chatbot powered by Databricks Genie and LLMs. The chatbot needs to answer questions about company product manuals, warranty terms, and legal policies stored across unstructured PDF and text documents in the Lakehouse.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Build an enterprise RAG (Retrieval-Augmented Generation) data preparation pipeline: (1) Ingest raw documentation from Unity Catalog Volumes, (2) Split long text into overlapping chunks using sliding windows, (3) Generate dense vector embeddings simulation, and (4) Prepare Gold vector index tables for Vector Search.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC RAG architectures require chunking large documents into semantically coherent segments (e.g. 500 characters with 100 character overlap) and embedding them into high-dimensional vectors. Databricks Vector Search indexes Delta tables natively, enabling hybrid semantic and keyword search.
+"""Project Agentic AI & RAG: Lakehouse Document Chunking & Vector Index Prep.
 
-# COMMAND ----------
+Scenario & Scale:
+    An enterprise RAG assistant indexes 5M+ product manuals and policy docs.
+    Pipelines must split text into overlapping token/word windows deterministically
+    at high throughput and prepare Delta Gold tables for Vector Search sync.
+"""
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+from __future__ import annotations
 
-# COMMAND ----------
+from pyspark.sql import DataFrame, SparkSession, functions as F
 
-import os
-import sys
-import shutil
-from pathlib import Path
 
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
+# ---------------------------------------------------------------------------
+# Anti-Pattern
+# ---------------------------------------------------------------------------
+# ❌ Bad Practice: Chunking documents with a row-by-row Python `@F.udf` and
+# generating non-deterministic chunk IDs with `F.monotonically_increasing_id()`.
+# Otherwise: Row-wise Py4J serialization throttles ingestion of millions of docs,
+# and `monotonically_increasing_id()` churns primary keys on every Delta sync,
+# forcing full Vector Search re-embedding instead of incremental CDC upserts.
+@F.udf("array<string>")
+def chunk_text_row_udf_bad(text: str) -> list[str]:
+    words = (text or "").split(" ")
+    return [" ".join(words[i : i + 20]) for i in range(0, len(words), 15)]
+
+
+# ---------------------------------------------------------------------------
+# ANSI-Safe PySpark 4.0+ Fix
+# ---------------------------------------------------------------------------
+# ✅ Good Practice: Vectorize sliding-window chunking in native Catalyst higher-order
+# functions (`split` + `sequence` + `transform` + `slice`) and assign deterministic
+# SHA-256 `chunk_id` + `content_hash` for incremental Delta CDF Vector Search sync.
+def transform_chunk_documents_native(
+    df_docs: DataFrame,
+    chunk_words: int = 20,
+    overlap_words: int = 5,
+) -> DataFrame:
+    """Split document text into overlapping windows purely in Catalyst SQL."""
+    step = max(1, chunk_words - overlap_words)
+
+    df_arrays = (
+        df_docs.filter(F.col("body_text").isNotNull() & (F.trim(F.col("body_text")) != ""))
+        .withColumn("words", F.split(F.trim(F.col("body_text")), r"\s+"))
+        .withColumn("word_count", F.size("words"))
+        .withColumn(
+            "start_positions",
+            F.sequence(F.lit(1), F.greatest(F.col("word_count"), F.lit(1)), F.lit(step)),
+        )
+        .withColumn(
+            "chunk_structs",
+            F.transform(
+                F.col("start_positions"),
+                lambda pos, idx: F.struct(
+                    idx.alias("chunk_index"),
+                    F.array_join(F.slice(F.col("words"), pos, F.lit(chunk_words)), " ").alias(
+                        "chunk_text"
+                    ),
+                ),
+            ),
+        )
+    )
+
+    return (
+        df_arrays.select("doc_id", "title", F.explode("chunk_structs").alias("chk"))
+        .select(
+            F.sha2(F.concat_ws("||", F.col("doc_id"), F.col("chk.chunk_index").cast("string")), 256).alias(
+                "chunk_id"
+            ),
+            F.col("doc_id"),
+            F.col("title"),
+            F.col("chk.chunk_index").alias("chunk_index"),
+            F.col("chk.chunk_text").alias("chunk_text"),
+            F.sha2(F.col("chk.chunk_text"), 256).alias("chunk_content_hash"),
+            F.current_timestamp().alias("_chunked_at"),
+        )
+    )
+
+
+def transform_attach_vector_index_metadata(
+    df_chunked: DataFrame, embedding_dim: int = 8
+) -> DataFrame:
+    """Attach placeholder embedding vector schema ready for endpoint batch inference."""
+    return df_chunked.withColumn(
+        "embedding_vector",
+        F.array([F.round(F.rand(seed=42 + i) * 2 - 1, 4) for i in range(embedding_dim)]),
+    )
+
+
+# ---------------------------------------------------------------------------
+# explain("formatted") / Spark UI Diagnostic Notes
+# ---------------------------------------------------------------------------
+# - `explain("formatted")` shows native Catalyst `StringSplit`, `Sequence`,
+#   `ArrayTransform`, and `Explode` (`Generate`) inside `WholeStageCodegen`—zero
+#   Python worker serialization (`BatchEvalPython`) or shuffle overhead.
+# - Remember `F.slice(arr, start, length)` in Spark SQL is **1-based indexed**!
+
+
+# ---------------------------------------------------------------------------
+# Production & Interview Gotchas
+# ---------------------------------------------------------------------------
+# 1. Deterministic `chunk_id` + `chunk_content_hash` lets Delta Change Data Feed
+#    (CDF) skip re-embedding unchanged chunks when only 5% of docs are edited.
+# 2. Keep chunk sizes tuned to your embedding model's sweet spot (typically
+#    256-512 tokens with 10-20% overlap) so sentences don't lose semantic context.
+# 3. For production embedding inference at scale, replace the mock vector array
+#    with `ai_query()` / Model Serving REST batching via `mapInPandas` (`053`).
+
+
+if __name__ == "__main__":
     spark = (
-        SparkSession.builder
-        .appName("UseCase_104_Project_Agentic_AI_and_RAG_Lakehouse_Document_Chunking_and_Vector_Search")
+        SparkSession.builder.appName("104_rag_chunking_vector_prep")
         .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
-        .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .config("spark.sql.ansi.enabled", "true")
         .getOrCreate()
     )
-
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
-
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 1: Ingesting Unstructured Product Documentation
-# MAGIC Create sample product warranty and documentation text.
-
-# COMMAND ----------
-
-docs = [
-    ("DOC-101", "Smart TV Manual", "The Smart TV comes with a 2-year manufacturer warranty covering panel defects and audio failure. To request service, submit your receipt online within 30 days of the incident. Accidental drops and water damage are not covered under the warranty terms."),
-    ("DOC-102", "Return Policy", "Customers may return unopened items within 14 days of purchase for a full refund to the original payment method. Opened items are subject to a 15% restocking fee unless defective. Software downloads are strictly non-refundable.")
-]
-
-schema = "doc_id STRING, title STRING, body_text STRING"
-df_docs = spark.createDataFrame(docs, schema)
-df_docs.show(truncate=False)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 2: Text Chunking via Sliding Windows in PySpark
-# MAGIC Split text into overlapping chunks using higher-order functions or UDFs.
-
-# COMMAND ----------
-
-def chunk_text(text, chunk_size=120, overlap=30):
-    words = text.split(" ")
-    chunks = []
-    i = 0
-    step = max(1, (chunk_size - overlap) // 6)
-    window_words = chunk_size // 6
-    while i < len(words):
-        chunk = " ".join(words[i : i + window_words])
-        if chunk.strip():
-            chunks.append(chunk)
-        i += step
-    return chunks
-
-chunk_udf = F.udf(chunk_text, T.ArrayType(T.StringType()))
-
-df_chunked = (
-    df_docs
-    .withColumn("chunks", chunk_udf("body_text"))
-    .select("doc_id", "title", F.explode("chunks").alias("chunk_text"))
-    .withColumn("chunk_id", F.concat(F.col("doc_id"), F.lit("_CHK_"), F.monotonically_increasing_id()))
-)
-
-print("Document Chunks Prepared for Embedding Generation:")
-df_chunked.select("chunk_id", "title", "chunk_text").show(truncate=False)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 3: Vector Embedding Representation & Gold Vector Index Schema
-# MAGIC Represent dense embedding vectors and prepare schema for Databricks Vector Search.
-
-# COMMAND ----------
-
-# Simulate 8-dimensional dense vector embeddings for demonstration
-df_vector_ready = (
-    df_chunked
-    .withColumn(
-        "embedding_vector",
-        F.array([F.round(F.rand(seed=42 + i) * 2 - 1, 4) for i in range(8)])
-    )
-    .withColumn("_embedded_at", F.current_timestamp())
-)
-
-print("Vector Search Index Table Schema:")
-df_vector_ready.printSchema()
-df_vector_ready.select("chunk_id", "title", "embedding_vector").show(truncate=False)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **RAG pipelines bridge unstructured enterprise documents with LLM reasoning via Vector Search.**
-# MAGIC - **Chunking with overlap preserves context across sentence boundaries.**
-# MAGIC - **Delta Lake serves as the unified storage layer for both raw text documents and high-dimensional vector embeddings.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. What is Chunk Overlap in RAG pipelines and why is it important for semantic retrieval?
-# MAGIC 2. How does Databricks Vector Search synchronize automatically with underlying Delta tables?
-# MAGIC 3. What are the trade-offs between dense semantic vector search and sparse keyword search (BM25)?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+    docs = [
+        (
+            "DOC-101",
+            "Smart TV Manual",
+            "The Smart TV comes with a 2-year manufacturer warranty covering panel defects and audio failure. "
+            "Submit your receipt online within 30 days. Accidental drops and water damage are excluded.",
+        ),
+        (
+            "DOC-102",
+            "Return Policy",
+            "Customers may return unopened items within 14 days of purchase for a full refund to the original "
+            "payment method. Opened items incur a restocking fee unless defective.",
+        ),
+    ]
+    df_docs = spark.createDataFrame(docs, "doc_id STRING, title STRING, body_text STRING")
+    df_chunks = transform_chunk_documents_native(df_docs, chunk_words=12, overlap_words=3)
+    transform_attach_vector_index_metadata(df_chunks).select(
+        "chunk_id", "doc_id", "chunk_index", "chunk_text"
+    ).show(truncate=False)

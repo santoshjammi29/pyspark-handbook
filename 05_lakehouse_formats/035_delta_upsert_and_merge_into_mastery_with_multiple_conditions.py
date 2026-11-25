@@ -1,159 +1,184 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 035: Delta Upsert and MERGE INTO Mastery with Multiple Conditions
-# MAGIC
-# MAGIC **Module:** Module 04: Delta Lake Architecture, ACID Operations & Time Travel
-# MAGIC **Difficulty:** `Intermediate`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC A retail inventory management system synchronizes daily inventory updates from 500 physical warehouses. If an item exists in the central inventory table, update stock quantity and last_restocked date; if missing, insert the new SKU; if stock drops to -999 (discontinued), delete the item.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Master the `MERGE INTO` API in Delta Lake: implement complex upserts with `whenMatchedUpdate`, `whenMatchedDelete`, `whenNotMatchedInsert`, and conditional update clauses to handle real-world CDC synchronization in a single atomic transaction.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC Delta MERGE is an atomic operation that performs a full outer join between source updates and target Delta files to identify matching keys. It rewrites only the specific files containing matching rows, avoiding full table rewrites.
+"""
+Module 05 / 035: Delta Upsert & MERGE INTO Mastery with Multiple Conditions
 
-# COMMAND ----------
+Scenario & Scale:
+    A retail inventory platform reconciles daily CDC batches (15M SKU updates)
+    from 500 warehouses against a 2B-row partitioned/clustered inventory Delta
+    table: updating quantities, deleting discontinued SKUs (-999), and inserting
+    new SKUs atomically.
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+Goal:
+    Implement deduplicated, partition-pruned `MERGE INTO` with `whenMatchedDelete`,
+    `whenMatchedUpdate`, and `whenNotMatchedInsert` clauses that avoid shuffle
+    explosions and `DELTA_MULTIPLE_SOURCE_ROW_MATCHING_TARGET_ROW` failures.
+"""
 
-# COMMAND ----------
+from __future__ import annotations
 
-import os
-import sys
-import shutil
 from pathlib import Path
+import tempfile
 
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_035_Delta_Upsert_and_MERGE_INTO_Mastery_with_Multiple_Conditions")
+from delta.tables import DeltaTable
+from pyspark.sql import DataFrame, SparkSession, Window
+from pyspark.sql import functions as F
+
+
+def build_spark() -> SparkSession:
+    """Create an ANSI-enabled Spark 4.0+ session with Delta Lake."""
+    return (
+        SparkSession.builder.appName("035_Delta_MERGE_INTO_Mastery")
         .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
-        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.ansi.enabled", "true")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .config(
+            "spark.sql.catalog.spark_catalog",
+            "org.apache.spark.sql.delta.catalog.DeltaCatalog",
+        )
         .getOrCreate()
     )
 
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 1: Initializing Current Warehouse Inventory (Target Delta Table)
-# MAGIC Create target inventory table.
-
-# COMMAND ----------
-
-from delta.tables import DeltaTable
-
-delta_inv_path = "/tmp/delta_inventory_035"
-if Path(delta_inv_path).exists():
-    shutil.rmtree(delta_inv_path)
-
-current_inventory = [
-    ("SKU-101", "Wireless Mouse", 50, 24.99, "2023-11-01"),
-    ("SKU-102", "Mechanical Keyboard", 20, 89.99, "2023-11-01"),
-    ("SKU-103", "USB-C Hub", 15, 35.00, "2023-11-01"),
-    ("SKU-104", "Obsolete Cable", 5, 4.99, "2023-10-01")
-]
-
-schema = "sku STRING, product_name STRING, quantity INT, unit_price DOUBLE, last_updated STRING"
-spark.createDataFrame(current_inventory, schema).write.format("delta").mode("overwrite").save(delta_inv_path)
-
-target_table = DeltaTable.forPath(spark, delta_inv_path)
-print("Initial Target Inventory:")
-target_table.toDF().show()
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 2: Preparing Inbound Daily Warehouse Updates (Source Batch)
-# MAGIC Create batch with updates, new SKUs, and a discontinued item (quantity = -999).
-
-# COMMAND ----------
-
-incoming_updates = [
-    ("SKU-101", "Wireless Mouse", 80, 24.99, "2023-11-20"),      # Update quantity to 80
-    ("SKU-104", "Obsolete Cable", -999, 0.00, "2023-11-20"),      # Discontinued -> Delete
-    ("SKU-105", "Noise Cancelling Headset", 40, 199.99, "2023-11-20") # New SKU -> Insert
-]
-
-df_updates = spark.createDataFrame(incoming_updates, schema)
-print("Incoming Daily Updates Batch:")
-df_updates.show()
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 3: Executing Multi-Condition MERGE INTO
-# MAGIC Execute conditional update, conditional delete, and insert in a single atomic pass.
-
-# COMMAND ----------
-
-(
-    target_table.alias("target")
-    .merge(
-        source=df_updates.alias("source"),
-        condition="target.sku = source.sku"
+# ---------------------------------------------------------------------------
+# (2) Anti-Pattern: Merging raw non-deduplicated CDC without partition pruning
+# ---------------------------------------------------------------------------
+def anti_pattern_unpruned_duplicate_merge(
+    target: DeltaTable, raw_updates: DataFrame
+) -> None:
+    # ❌ Bad Practice: Feeding raw CDC feeds containing duplicate SKU keys directly into
+    # `MERGE` without deduplicating or adding partition/clustering predicates.
+    # Otherwise: Multiple source rows matching the same target row abort the job with
+    # `DeltaUnsupportedOperationException`, and omitting partition predicates triggers a
+    # full-table outer join scan across terabytes of cold historical partitions.
+    (
+        target.alias("t")
+        .merge(raw_updates.alias("s"), "t.sku = s.sku")
+        .whenMatchedUpdateAll()
+        .whenNotMatchedInsertAll()
+        .execute()
     )
-    .whenMatchedDelete(
-        condition="source.quantity = -999"
-    )
-    .whenMatchedUpdate(
-        set={
-            "quantity": F.col("source.quantity"),
-            "unit_price": F.col("source.unit_price"),
-            "last_updated": F.col("source.last_updated")
-        }
-    )
-    .whenNotMatchedInsert(
-        values={
-            "sku": F.col("source.sku"),
-            "product_name": F.col("source.product_name"),
-            "quantity": F.col("source.quantity"),
-            "unit_price": F.col("source.unit_price"),
-            "last_updated": F.col("source.last_updated")
-        }
-    )
-    .execute()
-)
 
-print("Target Table after MERGE INTO:")
-target_table.toDF().orderBy("sku").show()
 
-# COMMAND ----------
+# ---------------------------------------------------------------------------
+# (3) ANSI-safe PySpark 4.0+ Fix: Deduplicated + Pruned Multi-Clause MERGE
+# ---------------------------------------------------------------------------
+def good_practice_pruned_merge(spark: SparkSession, delta_dir: Path) -> None:
+    # ✅ Good Practice: Deduplicate source CDC by primary key + latest event timestamp,
+    # narrow the join predicate with target partition bounds when partitioned, and order
+    # `whenMatchedDelete` before `whenMatchedUpdate` cleanly.
+    target_uri = str(delta_dir)
+    schema = "sku STRING, region STRING, product_name STRING, quantity INT, unit_price DECIMAL(10,2), updated_at TIMESTAMP"
 
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **`MERGE INTO` executes inserts, updates, and deletes in a single unified atomic transaction.**
-# MAGIC - **Always ensure the source dataset is deduplicated on the merge condition key; duplicate source keys will throw a `DeltaAnalysisException`.**
-# MAGIC - **Specify partition pruning filters in the merge condition whenever merging into partitioned Delta tables to skip untouched partitions.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. What happens when the source table in a Delta `MERGE` statement contains duplicate keys?
-# MAGIC 2. How does Delta Lake's merge operation identify which Parquet files need to be rewritten?
-# MAGIC 3. How can you optimize a MERGE operation on a multi-terabyte partitioned Delta table?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+    initial = [
+        ("SKU-101", "US", "Wireless Mouse", 50, "24.99", "2026-01-01 00:00:00"),
+        ("SKU-102", "US", "Mechanical Keyboard", 20, "89.99", "2026-01-01 00:00:00"),
+        ("SKU-104", "EU", "Obsolete Cable", 5, "4.99", "2026-01-01 00:00:00"),
+    ]
+    init_df = spark.createDataFrame(
+        initial,
+        "sku STRING, region STRING, product_name STRING, quantity INT, unit_price STRING, updated_at STRING",
+    ).select(
+        "sku",
+        "region",
+        "product_name",
+        "quantity",
+        F.try_cast(F.col("unit_price"), "DECIMAL(10,2)").alias("unit_price"),
+        F.try_cast(F.col("updated_at"), "TIMESTAMP").alias("updated_at"),
+    )
+    init_df.write.format("delta").partitionBy("region").mode("overwrite").save(target_uri)
+
+    # Raw batch contains a duplicate update for SKU-101; keep latest only.
+    incoming = [
+        ("SKU-101", "US", "Wireless Mouse", 60, "24.99", "2026-01-20 08:00:00"),
+        ("SKU-101", "US", "Wireless Mouse", 80, "24.99", "2026-01-20 09:00:00"),
+        ("SKU-104", "EU", "Obsolete Cable", -999, "0.00", "2026-01-20 09:00:00"),
+        ("SKU-105", "US", "Noise Cancelling Headset", 40, "199.99", "2026-01-20 09:00:00"),
+    ]
+    raw_updates = spark.createDataFrame(
+        incoming,
+        "sku STRING, region STRING, product_name STRING, quantity INT, unit_price STRING, updated_at STRING",
+    ).select(
+        "sku",
+        "region",
+        "product_name",
+        "quantity",
+        F.try_cast(F.col("unit_price"), "DECIMAL(10,2)").alias("unit_price"),
+        F.try_cast(F.col("updated_at"), "TIMESTAMP").alias("updated_at"),
+    )
+
+    dedup_win = Window.partitionBy("sku").orderBy(F.col("updated_at").desc())
+    dedup_updates = (
+        raw_updates.withColumn("_rn", F.row_number().over(dedup_win))
+        .filter(F.col("_rn") == 1)
+        .drop("_rn")
+    )
+    assert dedup_updates.schema == spark.createDataFrame([], schema).schema
+
+    active_regions = [r.region for r in dedup_updates.select("region").distinct().collect()]
+    region_literals = ", ".join(f"'{r}'" for r in active_regions)
+
+    target_table = DeltaTable.forPath(spark, target_uri)
+    (
+        target_table.alias("target")
+        .merge(
+            source=dedup_updates.alias("source"),
+            condition=f"target.sku = source.sku AND target.region IN ({region_literals})",
+        )
+        .whenMatchedDelete(condition="source.quantity = -999")
+        .whenMatchedUpdate(
+            condition="source.updated_at >= target.updated_at",
+            set={
+                "quantity": F.col("source.quantity"),
+                "unit_price": F.col("source.unit_price"),
+                "updated_at": F.col("source.updated_at"),
+            },
+        )
+        .whenNotMatchedInsert(
+            values={
+                "sku": F.col("source.sku"),
+                "region": F.col("source.region"),
+                "product_name": F.col("source.product_name"),
+                "quantity": F.col("source.quantity"),
+                "unit_price": F.col("source.unit_price"),
+                "updated_at": F.col("source.updated_at"),
+            }
+        )
+        .execute()
+    )
+
+    target_table.toDF().orderBy("sku").show(truncate=False)
+
+
+# ---------------------------------------------------------------------------
+# (4) explain("formatted") & Spark UI Diagnostic Notes (Comments Only)
+# ---------------------------------------------------------------------------
+# - Delta `MERGE` executes in two phases under the hood: (1) an inner/left-anti/outer
+#   scan identifying touched Parquet files (applying `target.region IN (...)` partition
+#   pruning + min/max data skipping), and (2) an outer join rewriting only matched files
+#   (or writing Deletion Vectors when DVs are enabled).
+# - Inspect `DESCRIBE HISTORY` `operationMetrics`: watch `numTargetFilesRemoved` vs
+#   `numTargetFilesAdded` and `scanTimeMs` vs `rewriteTimeMs` to tune partition pruning
+#   and Low-Shuffle Merge.
+
+
+# ---------------------------------------------------------------------------
+# (5) Production & Interview Gotchas
+# ---------------------------------------------------------------------------
+# 1. Clause Evaluation Order Matters: Delta evaluates `whenMatched*` clauses in written
+#    order and executes only the FIRST matching clause per row—always put
+#    `whenMatchedDelete` before catch-all `whenMatchedUpdate`.
+# 2. Idempotency Guard (`source.updated_at >= target.updated_at`): Prevents replayed
+#    late CDC batches from overwriting newer warehouse state on rerun.
+# 3. `whenNotMatchedBySourceDelete`: Essential for full-snapshot syncs where missing
+#    source keys must be tombstoned in the target table.
+# 4. Dynamic Partition Pruning in Condition: Literal partition bounds (`target.region IN
+#    (...)`) prune untouched partitions during Phase 1 file matching; dynamic joins on
+#    partition columns without explicit bounds often fail to skip cold files.
+
+
+if __name__ == "__main__":
+    spark = build_spark()
+    try:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            good_practice_pruned_merge(spark, Path(tmp_dir) / "delta_inventory")
+    finally:
+        spark.stop()

@@ -1,144 +1,106 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 066: Medallion Architecture: Gold Business Aggregations and Dimensional Serving
-# MAGIC
-# MAGIC **Module:** Module 07: Lakehouse Data Modeling, CDC & SCD Implementation
-# MAGIC **Difficulty:** `Intermediate`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC Executive leadership and Power BI dashboards require pre-aggregated quarterly vendor performance scorecards: total invoiced volume, approval rate percentages, average turnaround time, and vendor tier classifications.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Build the Gold layer of the Medallion Architecture: read from conformed Silver Delta tables, compute executive business metrics, apply business KPIs and risk score calculations, and write high-performance Gold aggregate tables optimized for BI consumption.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC The Gold layer consists of project-specific, business-level aggregated tables, star schema dimension and fact tables, or feature store tables. Gold tables are typically optimized with Z-Ordering or Liquid Clustering to ensure sub-second dashboard query response times.
+"""Medallion Architecture: Gold Business Aggregations & Dimensional Serving.
 
-# COMMAND ----------
+Scenario & Scale:
+    Executive dashboards and BI tools query quarterly vendor scorecards across
+    100M+ Silver invoices. Direct BI queries against Silver cause 40s+ scans;
+    pre-aggregated Gold tables deliver sub-second SLAs with single-source KPIs.
+"""
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+from __future__ import annotations
 
-# COMMAND ----------
+from pyspark.sql import DataFrame, SparkSession, functions as F, types as T
 
-import os
-import sys
-import shutil
-from pathlib import Path
 
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
+# ---------------------------------------------------------------------------
+# Anti-Pattern
+# ---------------------------------------------------------------------------
+# ❌ Bad Practice: Dividing directly (`approved / total`) without zero-division
+# protection and serving unclustered Gold tables using floating-point doubles.
+# Otherwise: Under PySpark 4.0 ANSI mode, a 0-row/0-count denominator raises
+# `SparkArithmeticException: DIVIDE_BY_ZERO`, and BI tools suffer full scans.
+def transform_gold_scorecard_bad(df_silver: DataFrame) -> DataFrame:
+    return df_silver.groupBy("vendor_id").agg(
+        (F.count(F.when(F.col("status") == "APPROVED", 1)) / F.count("invoice_no")).alias("approval_rate")
+    )
+
+
+# ---------------------------------------------------------------------------
+# ANSI-Safe PySpark 4.0+ Fix
+# ---------------------------------------------------------------------------
+# ✅ Good Practice: Compute exact Decimal KPIs, guard division with
+# `F.try_divide`, and land Gold tables clustered on BI filter columns.
+def transform_build_vendor_scorecard(df_silver: DataFrame) -> DataFrame:
+    """Aggregate Silver invoices into a conformed Gold vendor KPI scorecard."""
+    df_agg = df_silver.groupBy("vendor_id").agg(
+        F.count("invoice_no").alias("total_invoices_submitted"),
+        F.round(F.sum(F.try_cast(F.col("amount"), T.DecimalType(18, 2))), 2).alias("total_invoiced_spend"),
+        F.round(F.avg(F.try_cast(F.col("amount"), T.DecimalType(18, 2))), 2).alias("avg_invoice_value"),
+        F.sum(F.when(F.col("status") == "APPROVED", F.lit(1)).otherwise(F.lit(0))).alias("approved_invoices_count"),
+        F.sum(F.when(F.col("status") == "REJECTED", F.lit(1)).otherwise(F.lit(0))).alias("rejected_invoices_count"),
+    )
+
+    return (
+        df_agg.withColumn(
+            "approval_rate_pct",
+            F.round(
+                F.coalesce(
+                    F.try_divide(F.col("approved_invoices_count"), F.col("total_invoices_submitted")),
+                    F.lit(0.0),
+                )
+                * F.lit(100.0),
+                1,
+            ),
+        )
+        .withColumn(
+            "vendor_volume_tier",
+            F.when(F.col("total_invoiced_spend") >= F.lit(10000), F.lit("STRATEGIC_TIER_1"))
+            .when(F.col("total_invoiced_spend") >= F.lit(2000), F.lit("PREFERRED_TIER_2"))
+            .otherwise(F.lit("STANDARD_TIER_3")),
+        )
+    )
+
+
+def write_gold_clustered(df_gold: DataFrame, gold_table: str) -> None:
+    """Persist Gold table with Delta Liquid Clustering (`clusterBy`) for BI."""
+    df_gold.write.format("delta").clusterBy("vendor_volume_tier", "vendor_id").mode("overwrite").saveAsTable(
+        gold_table
+    )
+
+
+# ---------------------------------------------------------------------------
+# explain("formatted") / Spark UI Diagnostic Notes
+# ---------------------------------------------------------------------------
+# - `explain("formatted")` shows two-stage `HashAggregate` (partial map-side
+#   aggregation before `Exchange hashpartitioning(vendor_id)` and final merge).
+# - In Spark UI SQL tab, verify `HashAggregate` spills = 0 B; high skew on one
+#   `vendor_id` benefits from AQE skew-split or two-phase salting.
+
+
+# ---------------------------------------------------------------------------
+# Production & Interview Gotchas
+# ---------------------------------------------------------------------------
+# 1. `F.try_divide` is mandatory under Spark 4.0 ANSI mode whenever denominators
+#    can evaluate to 0; regular `/` fails the entire query immediately.
+# 2. Liquid Clustering (`clusterBy`) replaces rigid `partitionBy` + `ZORDER BY`
+#    on Gold Delta tables, adapting incrementally as BI filter patterns evolve.
+# 3. Never embed business KPI definitions in BI workbooks alone—codify them once
+#    in Gold so Finance, Ops, and Executive dashboards show identical metrics.
+
+
+if __name__ == "__main__":
     spark = (
-        SparkSession.builder
-        .appName("UseCase_066_Medallion_Architecture_Gold_Business_Aggregations_and_Dimensional_Serving")
+        SparkSession.builder.appName("066_medallion_gold")
         .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
-        .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .config("spark.sql.ansi.enabled", "true")
         .getOrCreate()
     )
-
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
-
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 1: Reading from Silver Layer Invoices
-# MAGIC Create realistic Silver invoice dataset.
-
-# COMMAND ----------
-
-silver_data = [
-    ("INV-1", "V-01", 1500.0, "APPROVED", "2023-10-01"),
-    ("INV-2", "V-01", 3200.0, "APPROVED", "2023-10-15"),
-    ("INV-3", "V-01", 800.0,  "REJECTED", "2023-10-20"),
-    ("INV-4", "V-02", 450.0,  "APPROVED", "2023-10-05"),
-    ("INV-5", "V-02", 900.0,  "PENDING",  "2023-10-25"),
-    ("INV-6", "V-03", 12500.0,"APPROVED", "2023-10-12")
-]
-
-schema = "invoice_no STRING, vendor_id STRING, amount DOUBLE, status STRING, invoice_date STRING"
-df_silver_in = spark.createDataFrame(silver_data, schema)
-df_silver_in.show()
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 2: Computing Gold KPI Aggregations and Business Tiers
-# MAGIC Calculate approval rate, total volume, and classify vendor risk tiers.
-
-# COMMAND ----------
-
-df_gold_kpis = (
-    df_silver_in
-    .groupBy("vendor_id")
-    .agg(
-        F.count("invoice_no").alias("total_invoices_submitted"),
-        F.round(F.sum("amount"), 2).alias("total_invoiced_spend"),
-        F.round(F.avg("amount"), 2).alias("avg_invoice_value"),
-        F.sum(F.when(F.col("status") == "APPROVED", 1).otherwise(0)).alias("approved_invoices_count"),
-        F.sum(F.when(F.col("status") == "REJECTED", 1).otherwise(0)).alias("rejected_invoices_count")
+    silver_rows = [
+        ("INV-1", "V-01", 1500.0, "APPROVED", "2025-01-01"),
+        ("INV-2", "V-01", 3200.0, "APPROVED", "2025-01-15"),
+        ("INV-3", "V-01", 800.0, "REJECTED", "2025-01-20"),
+        ("INV-4", "V-03", 12500.0, "APPROVED", "2025-01-12"),
+    ]
+    df_silver_in = spark.createDataFrame(
+        silver_rows, "invoice_no STRING, vendor_id STRING, amount DOUBLE, status STRING, invoice_date STRING"
     )
-    .withColumn(
-        "approval_rate_pct",
-        F.round((F.col("approved_invoices_count") / F.col("total_invoices_submitted")) * 100, 1)
-    )
-    .withColumn(
-        "vendor_volume_tier",
-        F.when(F.col("total_invoiced_spend") >= 10000, "STRATEGIC_TIER_1")
-         .when(F.col("total_invoiced_spend") >= 2000, "PREFERRED_TIER_2")
-         .otherwise("STANDARD_TIER_3")
-    )
-)
-
-print("Gold Vendor Performance Scorecard:")
-df_gold_kpis.show(truncate=False)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 3: Writing to Gold Delta Lake Table with Liquid Clustering
-# MAGIC Save to Gold destination ready for BI and semantic metrics.
-
-# COMMAND ----------
-
-gold_path = "/tmp/lakehouse_gold_066"
-if Path(gold_path).exists():
-    shutil.rmtree(gold_path)
-
-df_gold_kpis.write.format("delta").mode("overwrite").save(gold_path)
-
-print("Gold Table successfully landed. Ready for Power BI / Tableau consumption!")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **Gold tables represent domain-specific business aggregates and dimensional models designed for end-user analytics.**
-# MAGIC - **Pre-aggregating KPIs in Gold reduces compute consumption on BI tools and guarantees single-version-of-truth metrics.**
-# MAGIC - **Apply clustering (`CLUSTER BY`) on Gold tables based on typical dashboard filter columns.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. Why should BI tools query Gold tables rather than directly querying Silver tables?
-# MAGIC 2. How does the Medallion Architecture ensure compliance with GDPR 'Right to be Forgotten' across Bronze, Silver, and Gold?
-# MAGIC 3. What is the difference between a Gold table and a materialized view in Databricks?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+    transform_build_vendor_scorecard(df_silver_in).show(truncate=False)

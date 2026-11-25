@@ -1,135 +1,129 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 042: Delta Table Constraints: CHECK and NOT NULL Data Quality Rules
-# MAGIC
-# MAGIC **Module:** Module 04: Delta Lake Architecture, ACID Operations & Time Travel
-# MAGIC **Difficulty:** `Intermediate`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC A banking compliance application requires strict data quality invariants on account records: account balances must never drop below -$500 USD, customer email addresses must contain '@', and account IDs must never be null.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Apply data quality constraints to Delta tables: configure `NOT NULL` constraints, add boolean `CHECK` constraints using `ALTER TABLE ADD CONSTRAINT`, verify constraint enforcement on writes, and handle constraint violation exceptions.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC Delta constraints are stored directly in table metadata properties (`_delta_log`). Any write operation that violates a constraint is rejected atomically before writing to disk, ensuring zero bad data lands in Gold or Silver tables.
+"""
+Module 05 / 042: Delta Table Constraints: CHECK & NOT NULL Data Quality Rules
 
-# COMMAND ----------
+Scenario & Scale:
+    A core banking platform enforces strict compliance invariants on 500M
+    account balance rows: `acc_id` must never be NULL, `email` must contain `@`,
+    and `balance` must never breach -$500.00 overdraft limits. Post-write batch
+    checks leave corrupt records exposed to downstream settlement consumers.
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+Goal:
+    Enforce storage-engine `NOT NULL` and `CHECK` constraints via `ALTER TABLE`
+    DDL so violating writes abort atomically before committing to `_delta_log`,
+    while quarantine pipelines isolate bad upstream rows safely.
+"""
 
-# COMMAND ----------
+from __future__ import annotations
 
-import os
-import sys
-import shutil
 from pathlib import Path
+import tempfile
 
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_042_Delta_Table_Constraints_CHECK_and_NOT_NULL_Data_Quality_Rules")
+from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import functions as F
+
+
+def build_spark() -> SparkSession:
+    """Create an ANSI-enabled Spark 4.0+ session with Delta Lake."""
+    return (
+        SparkSession.builder.appName("042_Delta_Table_Constraints")
         .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
-        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.ansi.enabled", "true")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .config(
+            "spark.sql.catalog.spark_catalog",
+            "org.apache.spark.sql.delta.catalog.DeltaCatalog",
+        )
         .getOrCreate()
     )
 
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+# ---------------------------------------------------------------------------
+# (2) Anti-Pattern: Post-write validation leaving toxic rows temporarily live
+# ---------------------------------------------------------------------------
+def anti_pattern_post_write_dq(df: DataFrame, delta_uri: str) -> None:
+    # ❌ Bad Practice: Appending unvalidated data directly into a Gold table and
+    # running an audit `SELECT COUNT(*) WHERE balance < -500` afterwards to delete them.
+    # Otherwise: Between the append commit and cleanup delete, downstream BI reports
+    # and payment APIs read illegal overdraft records, and a failed cleanup script leaves
+    # toxic rows permanently persisted in production.
+    df.write.format("delta").mode("append").save(delta_uri)
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 1: Creating Delta Table with Constraints
-# MAGIC Create table and apply NOT NULL and CHECK constraints.
+# ---------------------------------------------------------------------------
+# (3) ANSI-safe PySpark 4.0+ Fix: Write-Time Delta NOT NULL & CHECK Constraints
+# ---------------------------------------------------------------------------
+def good_practice_delta_constraints(spark: SparkSession, delta_dir: Path) -> None:
+    # ✅ Good Practice: Define `NOT NULL` and `CHECK` constraints in Delta table
+    # metadata so Spark evaluates invariants during write execution and rolls back
+    # the entire transaction if even a single row fails.
+    target_uri = str(delta_dir)
+    table_name = "delta_accounts_042"
 
-# COMMAND ----------
+    init_df = spark.createDataFrame(
+        [("ACC-1", "user1@bank.com", "250.00")], "acc_id STRING, email STRING, balance STRING"
+    ).withColumn("balance", F.try_cast(F.col("balance"), "DECIMAL(12,2)"))
+    init_df.write.format("delta").mode("overwrite").save(target_uri)
 
-delta_cons_path = "/tmp/delta_constraints_042"
-if Path(delta_cons_path).exists():
-    shutil.rmtree(delta_cons_path)
+    spark.sql(f"DROP TABLE IF EXISTS {table_name}")
+    spark.sql(f"CREATE TABLE {table_name} USING DELTA LOCATION '{target_uri}'")
+    try:
+        spark.sql(f"ALTER TABLE {table_name} ALTER COLUMN acc_id SET NOT NULL")
+        spark.sql(
+            f"ALTER TABLE {table_name} ADD CONSTRAINT valid_email CHECK (email LIKE '%@%')"
+        )
+        spark.sql(
+            f"ALTER TABLE {table_name} ADD CONSTRAINT min_overdraft CHECK (balance >= -500.00)"
+        )
 
-init_accounts = [("ACC-1", "user1@bank.com", 250.0)]
-spark.createDataFrame(init_accounts, ["acc_id", "email", "balance"])    .write.format("delta").mode("overwrite").save(delta_cons_path)
+        # Violating batch is rejected atomically before commit.
+        bad_df = spark.createDataFrame(
+            [("ACC-2", "user2@bank.com", "-1000.00")],
+            "acc_id STRING, email STRING, balance STRING",
+        ).withColumn("balance", F.try_cast(F.col("balance"), "DECIMAL(12,2)"))
+        try:
+            bad_df.write.format("delta").mode("append").save(target_uri)
+        except Exception as exc:
+            print(f"Constraint blocked invalid batch: {str(exc).splitlines()[0]}")
 
-# Register as temp view to run ALTER TABLE DDL
-spark.sql(f"CREATE TABLE delta_accounts_042 USING DELTA LOCATION '{delta_cons_path}'")
+        valid_df = spark.createDataFrame(
+            [("ACC-2", "user2@bank.com", "500.00"), ("ACC-3", "user3@bank.com", "-150.00")],
+            "acc_id STRING, email STRING, balance STRING",
+        ).withColumn("balance", F.try_cast(F.col("balance"), "DECIMAL(12,2)"))
+        valid_df.write.format("delta").mode("append").save(target_uri)
 
-# Add NOT NULL and CHECK constraints
-spark.sql("ALTER TABLE delta_accounts_042 ALTER COLUMN acc_id SET NOT NULL")
-spark.sql("ALTER TABLE delta_accounts_042 ADD CONSTRAINT valid_email CHECK (email LIKE '%@%')")
-spark.sql("ALTER TABLE delta_accounts_042 ADD CONSTRAINT min_overdraft CHECK (balance >= -500.0)")
+        spark.read.format("delta").load(target_uri).orderBy("acc_id").show(truncate=False)
+    finally:
+        spark.sql(f"DROP TABLE IF EXISTS {table_name}")
 
-print("Constraints successfully applied to Delta table.")
 
-# COMMAND ----------
+# ---------------------------------------------------------------------------
+# (4) explain("formatted") & Spark UI Diagnostic Notes (Comments Only)
+# ---------------------------------------------------------------------------
+# - When writing to a Delta table with `CHECK` constraints, Spark injects an inline
+#   `DeltaInvariantCheckerExec` node directly above the Parquet writer in the physical
+#   plan (`explain("formatted")`).
+# - In the Spark UI SQL/Stages tab, invariant checks run in-memory inside the same
+#   write tasks with zero extra shuffles; if any task fails an invariant, the stage
+#   aborts with `DeltaInvariantViolationException` before any `_delta_log` commit occurs.
 
-# MAGIC %md
-# MAGIC ### Step 2: Testing Constraint Violations & Atomic Rejection
-# MAGIC Attempt to insert a record violating the minimum overdraft check.
 
-# COMMAND ----------
+# ---------------------------------------------------------------------------
+# (5) Production & Interview Gotchas
+# ---------------------------------------------------------------------------
+# 1. Existing Data Validation on `ADD CONSTRAINT`: Adding a `CHECK` constraint scans
+#    existing table rows first—if any historical row violates the rule, `ALTER TABLE`
+#    fails immediately until existing data is cleaned.
+# 2. Deterministic SQL Expressions Only: `CHECK` constraints cannot reference subqueries,
+#    non-deterministic functions (`current_timestamp()`, `rand()`), or Python UDFs.
+# 3. `CHECK` Constraints vs DLT Expectations: Delta `CHECK` constraints only support
+#    fail-fast transaction abort (hard stop), whereas DLT / quarantine pipelines allow
+#    routing bad rows (`WARN` / `DROP` / DLQ) without halting healthy rows in the batch.
 
-# Attempting to insert an account with balance -1000 (Violates min_overdraft >= -500.0)
-bad_account = [("ACC-2", "user2@bank.com", -1000.0)]
-df_bad = spark.createDataFrame(bad_account, ["acc_id", "email", "balance"])
 
-try:
-    df_bad.write.format("delta").mode("append").save(delta_cons_path)
-    print("Write succeeded unexpectedly!")
-except Exception as e:
-    print("Constraint Enforcement Blocked Bad Data! Error captured:")
-    print(str(e).splitlines()[0])
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 3: Validating Safe Writes
-# MAGIC Insert valid accounts and verify table state.
-
-# COMMAND ----------
-
-valid_accounts = [
-    ("ACC-2", "user2@bank.com", 500.0),
-    ("ACC-3", "user3@bank.com", -150.0) # Allowed overdraft
-]
-spark.createDataFrame(valid_accounts, ["acc_id", "email", "balance"])    .write.format("delta").mode("append").save(delta_cons_path)
-
-print("Current Clean Account Table:")
-spark.read.format("delta").load(delta_cons_path).show()
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **Delta CHECK constraints enforce data quality at write time directly inside the storage engine.**
-# MAGIC - **If a single row in an incoming write batch violates a constraint, the entire transaction is rolled back.**
-# MAGIC - **Inspect active constraints using `DESCRIBE DETAIL table_name` or `SHOW TBLPROPERTIES`.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. How do Delta Lake `CHECK` constraints compare to Delta Live Tables (DLT) expectations?
-# MAGIC 2. What happens if you add a CHECK constraint to a table that already contains existing violating rows?
-# MAGIC 3. Can CHECK constraints call external Python UDFs or subqueries?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+if __name__ == "__main__":
+    spark = build_spark()
+    try:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            good_practice_delta_constraints(spark, Path(tmp_dir) / "delta_constraints")
+    finally:
+        spark.stop()

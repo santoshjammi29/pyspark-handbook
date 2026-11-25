@@ -1,139 +1,120 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 047: JDBC Parallel Ingestion: Partitioning by Column, fetchsize and Connection Sizing
-# MAGIC
-# MAGIC **Module:** Module 05: Data Ingestion Patterns, Auto Loader & File Formats
-# MAGIC **Difficulty:** `Intermediate`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC A night batch pipeline extracts 50 million sales transaction records from an operational PostgreSQL production database into the Lakehouse. A single-threaded JDBC query takes 6 hours and causes database connection timeouts.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Optimize Spark JDBC ingestion: configure parallel partition extraction using `partitionColumn`, `lowerBound`, `upperBound`, and `numPartitions`. Tune `fetchsize` to balance executor memory vs network round-trips, and avoid database connection exhaustion.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC By default, `spark.read.jdbc()` executes a single query on a single executor task (`SELECT * FROM table`), creating a severe driver bottleneck. By specifying partition parameters, Spark splits the query into $N$ parallel slice queries (`WHERE col >= lower AND col < upper`) distributed across executor workers.
+"""JDBC Parallel Ingestion: Partitioning, fetchsize & Connection Sizing.
 
-# COMMAND ----------
+Scenario & Scale:
+    A nightly batch job extracts 50M sales orders from an operational PostgreSQL
+    cluster into the Lakehouse under a 30-minute SLA without saturating OLTP
+    database CPU or exhausting connection pools.
+"""
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+from typing import Dict
 
-# COMMAND ----------
+from pyspark.sql import DataFrame, SparkSession, functions as F, types as T
 
-import os
-import sys
-import shutil
-from pathlib import Path
 
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_047_JDBC_Parallel_Ingestion_Partitioning_by_Column_fetchsize_and_Connection_Sizing")
-        .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
-        .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-        .getOrCreate()
+# ---------------------------------------------------------------------------
+# Anti-Pattern
+# ---------------------------------------------------------------------------
+# ❌ Bad Practice: Reading JDBC without `partitionColumn`, bounds, or `fetchsize`.
+# Otherwise: Spark issues a single unpartitioned `SELECT * FROM table` on one
+# executor task, taking 6+ hours while risking driver/executor socket timeouts.
+def read_jdbc_single_thread_bad(
+    spark: SparkSession, jdbc_url: str, table: str
+) -> DataFrame:
+    return (
+        spark.read.format("jdbc")
+        .option("url", jdbc_url)
+        .option("dbtable", table)
+        .load()
     )
 
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+# ---------------------------------------------------------------------------
+# ANSI-Safe PySpark 4.0+ Fix
+# ---------------------------------------------------------------------------
+# ✅ Good Practice: Slice the read via indexed numeric `partitionColumn`, tuned
+# `fetchsize`, bounded `numPartitions`, and ANSI-safe downstream conformance.
+def build_jdbc_options(
+    jdbc_url: str,
+    dbtable: str,
+    partition_column: str,
+    lower_bound: int,
+    upper_bound: int,
+    num_partitions: int = 16,
+    fetch_size: int = 10000,
+    user: str = "",
+    password: str = "",
+) -> Dict[str, str]:
+    """Construct bounded parallel JDBC read options protecting OLTP capacity."""
+    return {
+        "url": jdbc_url,
+        "dbtable": dbtable,
+        "user": user,
+        "password": password,
+        "driver": "org.postgresql.Driver",
+        "partitionColumn": partition_column,
+        "lowerBound": str(lower_bound),
+        "upperBound": str(upper_bound),
+        "numPartitions": str(num_partitions),
+        "fetchsize": str(fetch_size),
+        "queryTimeout": "300",
+    }
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 1: Reviewing Default vs Partitioned JDBC Architecture
-# MAGIC Illustrate how Spark generates parallel SQL queries across partitions.
+def read_jdbc_parallel(spark: SparkSession, options: Dict[str, str]) -> DataFrame:
+    """Execute partitioned JDBC extraction across executor tasks."""
+    return spark.read.format("jdbc").options(**options).load()
 
-# COMMAND ----------
 
-# Architectural Blueprint:
-# Spark creates N independent tasks, each executing a sliced query:
-# Task 1: SELECT * FROM sales WHERE id >= 1 AND id < 2500000
-# Task 2: SELECT * FROM sales WHERE id >= 2500000 AND id < 5000000
-# Task 3: SELECT * FROM sales WHERE id >= 5000000 AND id < 7500000
-# Task 4: SELECT * FROM sales WHERE id >= 7500000 AND id <= 10000000
+def transform_audit_jdbc_orders(df: DataFrame) -> DataFrame:
+    """Validate ingested JDBC numeric fields and attach partition skew metrics."""
+    return (
+        df.withColumn("order_amount", F.try_cast(F.col("order_amount"), T.DecimalType(14, 2)))
+        .withColumn("_spark_partition_id", F.spark_partition_id())
+        .withColumn("_ingested_at", F.current_timestamp())
+    )
 
-print("Parallel JDBC partitioning architecture mapped.")
 
-# COMMAND ----------
+# ---------------------------------------------------------------------------
+# explain("formatted") / Spark UI Diagnostic Notes
+# ---------------------------------------------------------------------------
+# - `explain("formatted")` displays `Scan JDBCRelation(public.orders) [numPartitions=16]`
+#   with `PushedFilters` pushed down into each partition's SQL `WHERE` clause.
+# - In Spark UI Stages tab, compare `Duration` and `Input Size / Records` across
+#   the 16 tasks; uneven row counts indicate skew in `partitionColumn` values.
 
-# MAGIC %md
-# MAGIC ### Step 2: Constructing Resilient JDBC Ingestion Configuration
-# MAGIC Build production-grade JDBC parameter dictionary.
 
-# COMMAND ----------
+# ---------------------------------------------------------------------------
+# Production & Interview Gotchas
+# ---------------------------------------------------------------------------
+# 1. `lowerBound` and `upperBound` ONLY compute partition stride boundaries—they
+#    do NOT filter rows! Rows `< lowerBound` go to partition 0; `>= upperBound`
+#    go to partition `N-1`, so stale bounds create massive straggler tasks.
+# 2. `numPartitions` directly equals concurrent OLTP connections; never exceed
+#    what the source DB replica connection pool safely allows (typically 8-32).
+# 3. For skewed or UUID primary keys, use a deterministic `predicates=[...]` list
+#    (e.g., date/hash buckets) instead of numeric `lowerBound`/`upperBound`.
 
-jdbc_options = {
-    "url": "jdbc:postgresql://db-host.internal:5432/retail_db",
-    "dbtable": "public.orders",
-    "user": "etl_reader",
-    "password": "redacted_secret",
-    "driver": "org.postgresql.Driver",
-    # Crucial parallel parameters:
-    "partitionColumn": "order_id",
-    "lowerBound": "1",
-    "upperBound": "10000000",
-    "numPartitions": "16",       # 16 parallel tasks reading simultaneously
-    "fetchsize": "10000"         # Read 10,000 rows per network roundtrip (prevents OOM)
-}
 
-print("Production JDBC configuration dictionary:")
-for k, v in jdbc_options.items():
-    if k != "password":
-        print(f"  {k}: {v}")
+if __name__ == "__main__":
+    spark = (
+        SparkSession.builder.appName("047_jdbc_parallel_ingestion")
+        .master("local[*]")
+        .config("spark.sql.ansi.enabled", "true")
+        .getOrCreate()
+    )
+    opts = build_jdbc_options(
+        jdbc_url="jdbc:postgresql://replica.internal:5432/retail",
+        dbtable="public.orders",
+        partition_column="order_id",
+        lower_bound=1,
+        upper_bound=10_000_000,
+        num_partitions=16,
+        fetch_size=10_000,
+    )
+    print({k: v for k, v in opts.items() if k != "password"})
 
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 3: Simulating Parallel Ingestion via Sliced Partitions Locally
-# MAGIC Demonstrate the mathematical partition slice generator in PySpark.
-
-# COMMAND ----------
-
-# Simulate 4 parallel partitions over order_id range 1 to 100
-df_simulated_db = spark.range(1, 101, 1, 4).withColumnRenamed("id", "order_id").withColumn(
-    "order_amount", F.round(F.rand(seed=42) * 500 + 10, 2)
-)
-
-print(f"Number of partitions: {df_simulated_db.rdd.getNumPartitions()}")
-print("Row distribution per partition:")
-df_simulated_db.withColumn("partition_id", F.spark_partition_id()).groupBy("partition_id").agg(
-    F.min("order_id").alias("min_id"),
-    F.max("order_id").alias("max_id"),
-    F.count("order_id").alias("rows")
-).orderBy("partition_id").show()
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **Always supply `partitionColumn`, `lowerBound`, `upperBound`, and `numPartitions` when reading large JDBC tables.**
-# MAGIC - **The `partitionColumn` MUST be numeric, indexed, and evenly distributed (e.g. auto-incrementing primary key).**
-# MAGIC - **Tune `fetchsize` (e.g. 5,000 to 50,000) to avoid default single-row roundtrips or massive memory spikes.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. What happens if you run `spark.read.jdbc()` without specifying `partitionColumn`?
-# MAGIC 2. What happens if the `partitionColumn` in a JDBC read has severe data skew (e.g. 90% of rows have id=1)?
-# MAGIC 3. How does `fetchsize` impact both the source database memory and the Spark executor memory?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+    df_sim = spark.range(1, 101, 1, 4).select(
+        F.col("id").alias("order_id"),
+        F.round(F.rand(seed=42) * 500 + 10, 2).alias("order_amount"),
+    )
+    transform_audit_jdbc_orders(df_sim).groupBy("_spark_partition_id").count().show()

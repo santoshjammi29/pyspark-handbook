@@ -1,144 +1,116 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 021: XML Data Ingestion, Hierarchical Parsing and Tag Structuring
-# MAGIC
-# MAGIC **Module:** Module 02: Complex Data Types & Nested Structures Handling
-# MAGIC **Difficulty:** `Intermediate`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC A legacy healthcare exchange transmits insurance claims in XML format. Claims contain nested patient information, diagnosis codes, and billing line items that must be parsed into structured Spark tables.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Ingest hierarchical XML records in PySpark: parse nested XML tags into StructType and ArrayType hierarchies, configure row tags, and handle optional missing tags without schema mismatches.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC Native XML parsing in Spark utilizes the `spark-xml` library (or Databricks built-in XML reader in DBR 14+). In standard PySpark, XML can be processed via the XML data source format or parsed using Python/XPath helper functions for lightweight payloads.
+"""Scenario & Scale: Healthcare XML insurance claim parsing (10M claims/day, 15m SLA).
 
-# COMMAND ----------
+Business Context:
+Extract hierarchical claim IDs, patient attributes, and line-item billing amounts from
+XML documents using Spark SQL XPath expressions and Spark 4.0 native XML capabilities.
+"""
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import functions as F
+from pyspark.sql import types as T
 
-# COMMAND ----------
 
-import os
-import sys
-import shutil
-from pathlib import Path
-
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_021_XML_Data_Ingestion_Hierarchical_Parsing_and_Tag_Structuring")
-        .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
+def build_spark(app_name: str = "021_XML_Ingestion_XPath_Parsing") -> SparkSession:
+    """Create or reuse a portable SparkSession with ANSI mode enabled."""
+    return (
+        SparkSession.builder.appName(app_name)
+        .config("spark.sql.ansi.enabled", "true")
         .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
         .getOrCreate()
     )
 
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+# ---------------------------------------------------------------------------
+# 1. Anti-Pattern
+# ---------------------------------------------------------------------------
+# ❌ Bad Practice:
+# - Parsing XML payloads via `xml.etree.ElementTree` inside a Python `@F.udf`, or
+#   reading multi-GB XML files with `inferSchema=True` on `format("xml")`.
+# Otherwise:
+# - Python ElementTree UDFs trigger full Py4J/pickle row serialization and risk XML
+#   entity expansion vulnerabilities (XXE) if untrusted payloads are parsed naively.
+# - `inferSchema=True` scans the entire XML corpus twice and misinfers sparse tags.
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 1: Generating Sample Healthcare XML Claims
-# MAGIC Create multi-level XML claim documents.
-
-# COMMAND ----------
-
-xml_payloads = [
-    ("""<claim id="CLM-001">
-        <patient id="P-10">
-            <name>John Doe</name>
-            <dob>1980-05-12</dob>
-        </patient>
-        <items>
-            <item code="99213" amount="150.00"/>
-            <item code="80053" amount="75.50"/>
-        </items>
-    </claim>""",),
-    ("""<claim id="CLM-002">
-        <patient id="P-20">
-            <name>Jane Smith</name>
-            <dob>1992-11-23</dob>
-        </patient>
-        <items>
-            <item code="99214" amount="220.00"/>
-        </items>
-    </claim>""",)
-]
-
-df_raw_xml = spark.createDataFrame(xml_payloads, ["raw_xml"])
-df_raw_xml.show(truncate=False)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 2: Parsing XML Payloads via Built-in Regex & XPath Expressions
-# MAGIC Extract attributes and tags using xpath_string and xpath_double expressions.
-
-# COMMAND ----------
-
-df_parsed_claims = df_raw_xml.withColumn(
-    "claim_id", F.expr("xpath_string(raw_xml, 'claim/@id')")
-).withColumn(
-    "patient_id", F.expr("xpath_string(raw_xml, 'claim/patient/@id')")
-).withColumn(
-    "patient_name", F.expr("xpath_string(raw_xml, 'claim/patient/name')")
-).withColumn(
-    "patient_dob", F.expr("xpath_string(raw_xml, 'claim/patient/dob')")
-).withColumn(
-    "primary_item_code", F.expr("xpath_string(raw_xml, 'claim/items/item[1]/@code')")
-).withColumn(
-    "primary_item_amount", F.expr("xpath_double(raw_xml, 'claim/items/item[1]/@amount')")
+# ---------------------------------------------------------------------------
+# 2. ANSI-Safe PySpark 4.0+ Fix
+# ---------------------------------------------------------------------------
+# ✅ Good Practice: Built-in JVM XPath expressions (`xpath_string`, `xpath_double`) +
+# `F.try_cast` (or Spark 4.0 native `spark.read.format("xml").schema(...)` for files).
+RAW_XML_SCHEMA = T.StructType(
+    [T.StructField("raw_xml", T.StringType(), nullable=False)]
 )
 
-df_parsed_claims.select("claim_id", "patient_id", "patient_name", "primary_item_code", "primary_item_amount").show(truncate=False)
 
-# COMMAND ----------
+def parse_xml_claims(df_raw: DataFrame) -> DataFrame:
+    """Extract claim header and primary line-item fields via JVM XPath expressions."""
+    raw_amount = F.nullif(
+        F.xpath_string(F.col("raw_xml"), F.lit("claim/items/item[1]/@amount")),
+        F.lit(""),
+    )
+    return df_raw.withColumns(
+        {
+            "claim_id": F.nullif(F.xpath_string(F.col("raw_xml"), F.lit("claim/@id")), F.lit("")),
+            "patient_id": F.nullif(
+                F.xpath_string(F.col("raw_xml"), F.lit("claim/patient/@id")),
+                F.lit(""),
+            ),
+            "patient_name": F.xpath_string(F.col("raw_xml"), F.lit("claim/patient/name")),
+            "patient_dob": F.try_to_date(
+                F.xpath_string(F.col("raw_xml"), F.lit("claim/patient/dob")),
+                F.lit("yyyy-MM-dd"),
+            ),
+            "primary_item_code": F.xpath_string(
+                F.col("raw_xml"), F.lit("claim/items/item[1]/@code")
+            ),
+            "primary_item_amount": F.try_cast(raw_amount, T.DoubleType()),
+        }
+    )
 
-# MAGIC %md
-# MAGIC ### Step 3: Validation & Structural Integrity Check
-# MAGIC Verify that all claims were parsed with valid IDs and positive amounts.
 
-# COMMAND ----------
+def main() -> None:
+    spark = build_spark()
 
-assert df_parsed_claims.filter(F.col("claim_id").isNull()).count() == 0, "Missing claim IDs"
-assert df_parsed_claims.filter(F.col("primary_item_amount") <= 0).count() == 0, "Invalid item amounts"
+    xml_payloads = [
+        (
+            '<claim id="CLM-001">'
+            '<patient id="P-10"><name>John Doe</name><dob>1980-05-12</dob></patient>'
+            '<items><item code="99213" amount="150.00"/><item code="80053" amount="75.50"/></items>'
+            "</claim>",
+        ),
+        (
+            '<claim id="CLM-002">'
+            '<patient id="P-20"><name>Jane Smith</name><dob>1992-11-23</dob></patient>'
+            '<items><item code="99214" amount="220.00"/></items>'
+            "</claim>",
+        ),
+    ]
+    df_raw_xml = spark.createDataFrame(xml_payloads, schema=RAW_XML_SCHEMA)
+    df_parsed = parse_xml_claims(df_raw_xml)
 
-print("XML extraction and schema validation completed successfully!")
+    assert df_parsed.filter(F.col("claim_id").isNull()).count() == 0
+    assert df_parsed.filter(F.col("primary_item_amount") <= 0).count() == 0
+    clm1 = df_parsed.filter(F.col("claim_id") == "CLM-001").first()
+    assert clm1["patient_name"] == "John Doe" and clm1["primary_item_amount"] == 150.0
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **Spark SQL provides built-in XPath expressions (`xpath_string`, `xpath_double`, `xpath_int`) for lightweight XML parsing without external dependencies.**
-# MAGIC - **For heavy multi-gigabyte XML datasets, use `spark.read.format('xml').option('rowTag', 'tag_name')`.**
-# MAGIC - **Always validate attribute extraction to ensure mandatory business keys are populated.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. What is the difference between parsing XML via XPath expressions versus using the `spark-xml` library?
-# MAGIC 2. How does the `rowTag` option dictate partition splitting in large XML files?
-# MAGIC 3. Why is XML typically less efficient than Parquet or Avro in distributed big data pipelines?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+# ---------------------------------------------------------------------------
+# 3. explain("formatted") / Spark UI Diagnostic Notes
+# ---------------------------------------------------------------------------
+# - `df_parsed.explain("formatted")` executes JVM `XPathString` and `TryCast` inside a
+#   single `Project` stage with zero Python worker process launch.
+# - For multi-GB XML files on object storage, Spark 4.0 includes built-in `xml` source:
+#   `spark.read.format("xml").option("rowTag", "claim").schema(claim_schema).load(uri)`.
+
+# ---------------------------------------------------------------------------
+# 4. Production & Interview Gotchas
+# ---------------------------------------------------------------------------
+# 1. `xpath_string` returns `""` (empty string) when a tag/attribute is missing; wrap
+#    with `F.nullif(..., F.lit(""))` before `F.try_cast` or `isNotNull()` checks.
+# 2. For multi-item arrays inside an XML claim, prefer Spark 4.0 `F.from_xml(col, schema)`
+#    or `format("xml")` with `rowTag="claim"` rather than indexing `item[1]`, `item[2]`.
+# 3. Multi-GB single XML documents cannot split cleanly unless `rowTag` boundaries are
+#    indexed by the Hadoop `XmlInputFormat` splitter—avoid gzip-compressed monolith XMLs.
+
+if __name__ == "__main__":
+    main()

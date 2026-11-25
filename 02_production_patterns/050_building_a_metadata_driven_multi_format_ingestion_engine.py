@@ -1,177 +1,124 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 050: Building a Metadata-Driven Multi-Format Ingestion Engine
-# MAGIC
-# MAGIC **Module:** Module 05: Data Ingestion Patterns, Auto Loader & File Formats
-# MAGIC **Difficulty:** `Advanced`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC A centralized lakehouse ingestion platform must onboard 200+ distinct source datasets daily spanning CSV, Parquet, JSON, and ORC. Writing bespoke ingestion notebooks for each dataset is unmaintainable and error-prone.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Design an extensible, configuration-driven multi-format ingestion class `UnifiedIngestionEngine` in PySpark that takes a JSON/dictionary configuration spec, validates format options, applies standard audit metadata columns (`_ingested_at`, `_source_file`), and writes standardized Delta tables.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC A metadata-driven framework separates orchestration logic from data transformation code. Pipeline configuration (source paths, file formats, options, partition keys, schema definitions) can be stored in Delta configuration tables or YAML files and executed dynamically.
+"""Metadata-Driven Multi-Format Ingestion Engine (PySpark 4.0+).
 
-# COMMAND ----------
+Scenario & Scale:
+    A centralized lakehouse platform onboards 200+ heterogeneous datasets daily
+    (CSV, JSON, Parquet, ORC) into Bronze Delta tables under strict auditability
+    and 30-minute SLA windows without maintaining 200 bespoke ingestion scripts.
+"""
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+from __future__ import annotations
 
-# COMMAND ----------
-
-import os
-import sys
-import shutil
+import tempfile
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Dict, List
 
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_050_Building_a_Metadata_Driven_Multi_Format_Ingestion_Engine")
-        .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
-        .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-        .getOrCreate()
+from pyspark.sql import DataFrame, SparkSession, functions as F
+
+
+@dataclass(frozen=True)
+class IngestionSpec:
+    """Declarative metadata contract for a single dataset ingestion."""
+
+    table_name: str
+    fmt: str
+    raw_uri: str
+    target_uri: str
+    schema_ddl: str
+    partition_cols: List[str] = field(default_factory=list)
+    options: Dict[str, str] = field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# Anti-Pattern
+# ---------------------------------------------------------------------------
+# ❌ Bad Practice: Hardcoding per-table readers with implicit schema inference
+# and skipping audit lineage columns.
+# Otherwise: Any upstream type drift triggers silent schema mismatches, 2x read
+# scans double I/O cost, and lineage failures prevent Bronze replayability.
+def ingest_table_bad(spark: SparkSession, fmt: str, raw_uri: str, target_uri: str) -> None:
+    spark.read.format(fmt).load(raw_uri).write.format("delta").mode("append").save(target_uri)
+
+
+# ---------------------------------------------------------------------------
+# ANSI-Safe PySpark 4.0+ Fix
+# ---------------------------------------------------------------------------
+# ✅ Good Practice: Configuration-driven engine enforcing explicit schemas,
+# unified audit metadata (`_metadata.file_path`), and idempotent Delta writes.
+def transform_attach_audit_metadata(df: DataFrame, batch_id: str) -> DataFrame:
+    """Attach standard Bronze lineage columns compatible with Spark Connect."""
+    return (
+        df.withColumn("_ingested_at", F.current_timestamp())
+        .withColumn("_source_file", F.col("_metadata.file_path"))
+        .withColumn("_batch_id", F.lit(batch_id))
     )
 
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
-
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 1: Designing Metadata Ingestion Specification Dictionary
-# MAGIC Define configuration objects for heterogeneous data sources.
-
-# COMMAND ----------
-
-pipeline_specs = [
-    {
-        "table_name": "src_orders",
-        "format": "json",
-        "raw_path": "/tmp/src_orders_050.json",
-        "target_path": "/tmp/delta_orders_050",
-        "partition_cols": ["order_status"],
-        "options": {"multiline": "false"}
-    },
-    {
-        "table_name": "src_products",
-        "format": "csv",
-        "raw_path": "/tmp/src_products_050.csv",
-        "target_path": "/tmp/delta_products_050",
-        "partition_cols": [],
-        "options": {"header": "true", "inferSchema": "true"}
-    }
-]
-
-print(f"Loaded {len(pipeline_specs)} pipeline specifications.")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 2: Implementing the UnifiedIngestionEngine Framework
-# MAGIC Create framework class that reads sources, enriches with audit columns, and writes Delta tables.
-
-# COMMAND ----------
-
-from datetime import datetime
 
 class UnifiedIngestionEngine:
-    def __init__(self, spark_session):
-        self.spark = spark_session
+    """Metadata-driven multi-format ingestion runner."""
 
-    def ingest(self, spec: dict):
-        table_name = spec["table_name"]
-        fmt = spec["format"]
-        raw_path = spec["raw_path"]
-        target_path = spec["target_path"]
-        partition_cols = spec.get("partition_cols", [])
-        options = spec.get("options", {})
+    def __init__(self, spark: SparkSession) -> None:
+        self.spark = spark
 
-        print(f"--> Ingesting {table_name} [Format: {fmt}] from {raw_path}")
+    def read_source(self, spec: IngestionSpec) -> DataFrame:
+        reader = self.spark.read.format(spec.fmt).schema(spec.schema_ddl)
+        for key, value in spec.options.items():
+            reader = reader.option(key, value)
+        return reader.load(spec.raw_uri)
 
-        # 1. Read dynamically using format and options
-        reader = self.spark.read.format(fmt)
-        for k, v in options.items():
-            reader = reader.option(k, v)
-        df_raw = reader.load(raw_path)
+    def ingest(self, spec: IngestionSpec, batch_id: str | None = None) -> DataFrame:
+        run_id = batch_id or datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+        df_raw = self.read_source(spec)
+        df_enriched = transform_attach_audit_metadata(df_raw, run_id)
 
-        # 2. Add standard audit columns
-        df_enriched = (
-            df_raw
-            .withColumn("_ingested_at", F.current_timestamp())
-            .withColumn("_source_file", F.input_file_name())
-            .withColumn("_batch_id", F.lit(datetime.utcnow().strftime("%Y%m%d%H%M%S")))
-        )
-
-        # 3. Write standardized Delta table
         writer = df_enriched.write.format("delta").mode("append")
-        if partition_cols:
-            writer = writer.partitionBy(*partition_cols)
-        writer.save(target_path)
-
-        count = df_enriched.count()
-        print(f"--> Successfully landed {count} records into {target_path}")
+        if spec.partition_cols:
+            writer = writer.partitionBy(*spec.partition_cols)
+        writer.save(spec.target_uri)
         return df_enriched
 
-print("UnifiedIngestionEngine class ready.")
 
-# COMMAND ----------
+# ---------------------------------------------------------------------------
+# explain("formatted") / Spark UI Diagnostic Notes
+# ---------------------------------------------------------------------------
+# - `explain("formatted")` shows `_metadata.file_path` resolved natively inside
+#   `FileScan` (replacing legacy `input_file_name()` which breaks in some plans).
+# - Explicit `.schema(spec.schema_ddl)` eliminates the extra schema-discovery
+#   Spark job visible in Spark UI for JSON/CSV sources.
 
-# MAGIC %md
-# MAGIC ### Step 3: Testing Framework with Synthetic Source Files
-# MAGIC Create synthetic files and execute the dynamic pipeline.
 
-# COMMAND ----------
+# ---------------------------------------------------------------------------
+# Production & Interview Gotchas
+# ---------------------------------------------------------------------------
+# 1. Prefer `_metadata.file_path` over `F.input_file_name()` in Spark 3.3+/4.0+;
+#    `_metadata` works reliably across joins, unions, and Spark Connect.
+# 2. Store `IngestionSpec` rows in a governed Delta control table (or YAML in
+#    Git) rather than Python dicts so onboarding a table requires zero code PRs.
+# 3. Never enable implicit schema inference in metadata configs; enforce explicit
+#    DDL/StructType plus `mode="PERMISSIVE"` with a corrupt-record quarantine path.
 
-# Prepare sample files
-with open("/tmp/src_orders_050.json", "w") as f:
-    f.write('{"order_id": "O1", "amount": 120.0, "order_status": "COMPLETED"}\n')
-    f.write('{"order_id": "O2", "amount": 85.0, "order_status": "PENDING"}\n')
 
-with open("/tmp/src_products_050.csv", "w") as f:
-    f.write("prod_id,prod_name,cost\nP1,Widget,10.50\nP2,Gizmo,25.00\n")
-
-engine = UnifiedIngestionEngine(spark)
-for spec in pipeline_specs:
-    engine.ingest(spec)
-
-# Verify written Delta table
-print("Verified Delta Table Output (src_orders):")
-spark.read.format("delta").load("/tmp/delta_orders_050").show(truncate=False)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **Metadata-driven engines decouple data engineering transformation rules from execution infrastructure.**
-# MAGIC - **Always enrich ingested Bronze data with audit columns: `_ingested_at`, `_source_file`, and `_batch_id`.**
-# MAGIC - **Using a unified engine ensures consistent security, error handling, and telemetry across hundreds of pipelines.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. How do you design a metadata-driven ingestion pipeline that dynamically scales to 500+ tables?
-# MAGIC 2. What is `_input_file_name()` in PySpark and why is it invaluable for audit tracing in Bronze tables?
-# MAGIC 3. How do you store and version ingestion pipeline metadata (JSON, YAML, or Delta tables)?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+if __name__ == "__main__":
+    spark = (
+        SparkSession.builder.appName("050_metadata_ingestion_engine")
+        .master("local[*]")
+        .config("spark.sql.ansi.enabled", "true")
+        .getOrCreate()
+    )
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        raw_json = Path(tmp_dir) / "orders.json"
+        raw_json.write_text(
+            '{"order_id": "O1", "amount": 120.0, "order_status": "COMPLETED"}\n',
+            encoding="utf-8",
+        )
+        spec = IngestionSpec(
+            table_name="src_orders",
+            fmt="json",
+            raw_uri=str(raw_json),
+            target_uri="abfss://lakehouse@storage.dfs.core.windows.net/bronze/orders",
+            schema_ddl="order_id STRING, amount DOUBLE, order_status STRING",
+            partition_cols=["order_status"],
+        )
+        engine = UnifiedIngestionEngine(spark)
+        transform_attach_audit_metadata(engine.read_source(spec), "BATCH-001").show(truncate=False)

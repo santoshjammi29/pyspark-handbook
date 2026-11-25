@@ -1,127 +1,133 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 041: Delta Schema Evolution (mergeSchema) and Schema Enforcement
-# MAGIC
-# MAGIC **Module:** Module 04: Delta Lake Architecture, ACID Operations & Time Travel
-# MAGIC **Difficulty:** `Intermediate`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC A product catalog service frequently releases new product attributes (e.g. `warranty_months`, `energy_rating`). When downstream batch writers encounter unexpected new columns, default Spark writes abort with schema mismatch errors.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Demonstrate Delta Lake schema enforcement: observe default write failures when extra columns are introduced, and safely evolve the table schema using the `.option('mergeSchema', 'true')` write flag and automatic schema evolution.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC Delta Lake enforces schema on write to prevent bad data from silently corrupting tables. When `mergeSchema` is enabled, Delta updates the table metadata in `_delta_log` to include new columns as nullable, filling existing historical rows with NULLs upon reading.
+"""
+Module 05 / 041: Delta Schema Evolution (mergeSchema), Enforcement & Column Mapping
 
-# COMMAND ----------
+Scenario & Scale:
+    An e-commerce product catalog ingests 20M SKU feeds/day where upstream
+    microservices periodically introduce new attributes (`warranty_months`,
+    `energy_rating`) or rename legacy fields. Uncontrolled writes either crash
+    nightly pipelines or silently corrupt downstream ML feature schemas.
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+Goal:
+    Leverage Delta Schema Enforcement by default, selectively evolve additive
+    nullable columns with `mergeSchema=true`, and enable Delta Column Mapping
+    (`name` mode) for zero-rewrite column renames and drops.
+"""
 
-# COMMAND ----------
+from __future__ import annotations
 
-import os
-import sys
-import shutil
 from pathlib import Path
+import tempfile
 
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_041_Delta_Schema_Evolution_mergeSchema_and_Schema_Enforcement")
+from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import functions as F
+
+
+def build_spark() -> SparkSession:
+    """Create an ANSI-enabled Spark 4.0+ session with Delta Lake."""
+    return (
+        SparkSession.builder.appName("041_Delta_Schema_Evolution")
         .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
-        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.ansi.enabled", "true")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .config(
+            "spark.sql.catalog.spark_catalog",
+            "org.apache.spark.sql.delta.catalog.DeltaCatalog",
+        )
         .getOrCreate()
     )
 
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+# ---------------------------------------------------------------------------
+# (2) Anti-Pattern: Blind `overwriteSchema=true` or global autoMerge in prod
+# ---------------------------------------------------------------------------
+def anti_pattern_blind_overwrite_schema(df_drifted: DataFrame, delta_uri: str) -> None:
+    # ❌ Bad Practice: Setting `.option("overwriteSchema", "true")` with `mode("overwrite")`
+    # or enabling `spark.databricks.delta.schema.autoMerge.enabled=true` cluster-wide.
+    # Otherwise: Upstream typos (`prcie` instead of `price`) or breaking type widens
+    # silently mutate production Gold table schemas, poisoning downstream BI views and
+    # ML inference pipelines without raising an alert.
+    (
+        df_drifted.write.format("delta")
+        .option("overwriteSchema", "true")
+        .mode("overwrite")
+        .save(delta_uri)
+    )
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 1: Creating Initial Baseline Delta Table
-# MAGIC Create base product schema with 3 columns.
+# ---------------------------------------------------------------------------
+# (3) ANSI-safe PySpark 4.0+ Fix: Enforcement Guard + Scoped `mergeSchema`
+# ---------------------------------------------------------------------------
+def good_practice_schema_evolution(spark: SparkSession, delta_dir: Path) -> None:
+    # ✅ Good Practice: Keep strict Schema Enforcement enabled at write time, catch
+    # unexpected drift explicitly, and allow additive evolution (`mergeSchema=true`)
+    # only on vetted Bronze/Silver ingestion steps—plus Column Mapping for renames.
+    target_uri = str(delta_dir)
 
-# COMMAND ----------
+    baseline = [("P-100", "Laptop", "899.99")]
+    base_df = spark.createDataFrame(baseline, "product_id STRING, name STRING, price STRING").withColumn(
+        "price", F.try_cast(F.col("price"), "DECIMAL(10,2)")
+    )
+    (
+        base_df.write.format("delta")
+        .option("delta.columnMapping.mode", "name")
+        .mode("overwrite")
+        .save(target_uri)
+    )
 
-delta_evolve_path = "/tmp/delta_schema_041"
-if Path(delta_evolve_path).exists():
-    shutil.rmtree(delta_evolve_path)
+    incoming = [("P-200", "Smart TV", "450.00", 24, "A++")]
+    extra_df = spark.createDataFrame(
+        incoming,
+        "product_id STRING, name STRING, price STRING, warranty_months INT, energy_rating STRING",
+    ).withColumn("price", F.try_cast(F.col("price"), "DECIMAL(10,2)"))
 
-initial_products = [("P-100", "Laptop", 899.99)]
-spark.createDataFrame(initial_products, ["product_id", "name", "price"])    .write.format("delta").mode("overwrite").save(delta_evolve_path)
+    # Step A: Default write enforces schema and rejects unapproved columns atomically.
+    try:
+        extra_df.write.format("delta").mode("append").save(target_uri)
+    except Exception as exc:
+        print(f"Schema enforcement blocked unexpected drift: {str(exc).splitlines()[0]}")
 
-print("Initial Table Schema:")
-spark.read.format("delta").load(delta_evolve_path).printSchema()
+    # Step B: Explicit, scoped `mergeSchema=true` for approved additive columns.
+    (
+        extra_df.write.format("delta")
+        .option("mergeSchema", "true")
+        .mode("append")
+        .save(target_uri)
+    )
 
-# COMMAND ----------
+    evolved_df = spark.read.format("delta").load(target_uri)
+    evolved_df.printSchema()
+    evolved_df.orderBy("product_id").show(truncate=False)
 
-# MAGIC %md
-# MAGIC ### Step 2: Demonstrating Schema Enforcement Protection
-# MAGIC Observe that appending data with extra columns throws a DeltaAnalysisException.
 
-# COMMAND ----------
+# ---------------------------------------------------------------------------
+# (4) explain("formatted") & Spark UI Diagnostic Notes (Comments Only)
+# ---------------------------------------------------------------------------
+# - After additive `mergeSchema=true`, `evolved_df.explain("formatted")` shows a
+#   `FileScan parquet` across all historical and new files; Delta resolves missing
+#   columns in older Parquet files as `NULL` at scan time without rewriting old data.
+# - When `delta.columnMapping.mode='name'` is active, physical Parquet columns use
+#   stable internal UUIDs (`delta.columnMapping.physicalName`), visible in `FileScan`
+#   metadata while logical column renames/drops execute as O(1) `_delta_log` updates.
 
-new_batch_with_extra_cols = [("P-200", "Smart TV", 450.00, 24, "A++")]
-df_extra = spark.createDataFrame(new_batch_with_extra_cols, ["product_id", "name", "price", "warranty_months", "energy_rating"])
 
-try:
-    # Attempting to write without mergeSchema fails safely
-    df_extra.write.format("delta").mode("append").save(delta_evolve_path)
-    print("Write succeeded unexpectedly!")
-except Exception as e:
-    print("Schema Enforcement Protected Table! Error caught:")
-    print(str(e).splitlines()[0])
+# ---------------------------------------------------------------------------
+# (5) Production & Interview Gotchas
+# ---------------------------------------------------------------------------
+# 1. `mergeSchema` Cannot Narrow or Incompatible-Cast Types: Adding new nullable columns
+#    or safe widening (`INT -> BIGINT`) succeeds, whereas `STRING -> INT` fails schema
+#    enforcement—cast/clean explicitly before writing under ANSI mode.
+# 2. Column Mapping Tradeoff: Enabling `delta.columnMapping.mode='name'` unlocks
+#    `ALTER TABLE ... RENAME COLUMN` and `DROP COLUMN` without rewriting terabytes, but
+#    upgrades table reader/writer protocol versions (`minReaderVersion >= 2`).
+# 3. `overwriteSchema` Danger: `overwriteSchema=true` only works with `mode("overwrite")`
+#    (or `replaceWhere`) and drops missing columns from the table schema—never use it
+#    on incremental append pipelines.
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 3: Safe Schema Evolution via mergeSchema
-# MAGIC Enable mergeSchema to automatically adopt new columns.
-
-# COMMAND ----------
-
-# Append with mergeSchema enabled
-df_extra.write.format("delta")    .option("mergeSchema", "true")    .mode("append")    .save(delta_evolve_path)
-
-print("Table Schema Successfully Evolved:")
-df_evolved = spark.read.format("delta").load(delta_evolve_path)
-df_evolved.printSchema()
-df_evolved.show()
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **Delta Lake enforces strict schema on write by default, preventing accidental schema corruption.**
-# MAGIC - **Set `.option('mergeSchema', 'true')` to allow automatic schema evolution when new columns appear.**
-# MAGIC - **Evolving schema updates table metadata atomically in `_delta_log`; existing Parquet data files do not need to be rewritten.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. What is the difference between Schema Enforcement and Schema Evolution in Delta Lake?
-# MAGIC 2. Can `mergeSchema` change the data type of an existing column (e.g. from String to Integer)?
-# MAGIC 3. How does Delta Lake handle NULL values for newly added columns when querying historical data?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+if __name__ == "__main__":
+    spark = build_spark()
+    try:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            good_practice_schema_evolution(spark, Path(tmp_dir) / "delta_schema")
+    finally:
+        spark.stop()

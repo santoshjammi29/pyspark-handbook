@@ -1,132 +1,93 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 045: Parquet and ORC Columnar Ingestion: Predicate Pushdown and Dictionary Encoding
-# MAGIC
-# MAGIC **Module:** Module 05: Data Ingestion Patterns, Auto Loader & File Formats
-# MAGIC **Difficulty:** `Intermediate`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC A petabyte-scale telemetry lakehouse queries 500 million vehicle diagnostic events daily. Analyst queries typically filter on single vehicle IDs and read only 3 of the 80 columns. Inefficient readers trigger multi-terabyte disk reads and network bottlenecks.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Demonstrate the power of columnar formats: compare Parquet and ORC file formats, observe Column Projection (reading only requested columns), and inspect Catalyst physical plans to verify Predicate Pushdown (file and row-group skipping via min/max statistics).
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC Columnar storage arranges data by column rather than row. Row groups contain metadata statistics (min, max, null count). Spark's Parquet reader evaluates query predicates against row-group metadata before reading page data from disk, skipping entire blocks that cannot contain matching rows.
+"""Parquet & ORC Columnar Ingestion: Predicate Pushdown & Column Pruning.
 
-# COMMAND ----------
+Scenario & Scale:
+    A petabyte-scale connected-vehicle lakehouse processes 500M daily telemetry
+    events across 80-column wide tables. Analysts filter by `vehicle_id` and
+    project 2-3 columns; inefficient readers trigger full-terabyte I/O scans.
+"""
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+import tempfile
 
-# COMMAND ----------
+from pyspark.sql import DataFrame, SparkSession, functions as F
 
-import os
-import sys
-import shutil
-from pathlib import Path
 
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_045_Parquet_and_ORC_Columnar_Ingestion_Predicate_Pushdown_and_Dictionary_Encoding")
-        .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
-        .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-        .getOrCreate()
+# ---------------------------------------------------------------------------
+# Anti-Pattern
+# ---------------------------------------------------------------------------
+# ❌ Bad Practice: Wrapping filter columns in functions or reading unpruned columns.
+# Otherwise: Disables Parquet/ORC row-group min/max predicate pushdown and forces
+# full columnar page decompression across every row group in storage.
+def transform_vehicle_telemetry_bad(df: DataFrame, target_vehicle_id: str) -> DataFrame:
+    return df.filter(F.upper(F.col("vehicle_id")) == target_vehicle_id.upper())
+
+
+# ---------------------------------------------------------------------------
+# ANSI-Safe PySpark 4.0+ Fix
+# ---------------------------------------------------------------------------
+# ✅ Good Practice: Keep predicates sargable (bare column comparisons), project
+# required columns immediately, and write Parquet with ZSTD/Snappy + sorting.
+def transform_filter_vehicle_telemetry(
+    df: DataFrame, target_vehicle_id: str
+) -> DataFrame:
+    """Filter with pushdown-compatible predicate and prune unused columns."""
+    return df.filter(F.col("vehicle_id") == F.lit(target_vehicle_id)).select(
+        "reading_id",
+        "vehicle_id",
+        "speed_kmh",
+        "event_ts",
     )
 
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+def write_columnar_telemetry(df: DataFrame, target_uri: str) -> None:
+    """Write partitioned Parquet sorted within partitions for row-group stats."""
+    (
+        df.repartition("vehicle_id")
+        .sortWithinPartitions("vehicle_id", "event_ts")
+        .write.format("parquet")
+        .option("compression", "zstd")
+        .mode("overwrite")
+        .save(target_uri)
+    )
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 1: Generating Wide Diagnostic Telemetry Dataset
-# MAGIC Create dataset with multiple columns and save as Parquet.
+# ---------------------------------------------------------------------------
+# explain("formatted") / Spark UI Diagnostic Notes
+# ---------------------------------------------------------------------------
+# - `df_out.explain("formatted")` on Parquet read displays:
+#     `ReadSchema: struct<reading_id:bigint,vehicle_id:string,speed_kmh:double,event_ts:timestamp>`
+#     `PushedFilters: [IsNotNull(vehicle_id), EqualTo(vehicle_id,V-042)]`
+# - In Spark UI SQL tab, verify `number of output rows` << total row-group rows
+#   and `scan time` drops proportionally via footer min/max & dictionary skipping.
 
-# COMMAND ----------
 
-parquet_path = "/tmp/parquet_telemetry_045"
-if Path(parquet_path).exists():
-    shutil.rmtree(parquet_path)
+# ---------------------------------------------------------------------------
+# Production & Interview Gotchas
+# ---------------------------------------------------------------------------
+# 1. Nested structs/maps disabled Parquet predicate pushdown in older engines;
+#    enable `spark.sql.parquet.filterPushdown=true` and `recordLevelFilter.enabled=true`.
+# 2. Dictionary encoding compresses repetitive strings (e.g., `firmware`, `status`)
+#    to tiny integer IDs, but high-cardinality UUIDs fall back to plain encoding.
+# 3. Sorting within partitions (`sortWithinPartitions`) narrows Parquet row-group
+#    min/max ranges, dramatically increasing row-group skip rates on read.
 
-import random
-random.seed(42)
 
-# Generate 50,000 telemetry readings with 6 columns
-rows = [
-    (i, f"V-{random.randint(1, 100):03d}", round(random.uniform(50.0, 120.0), 2), round(random.uniform(20.0, 45.0), 2), f"FW-v{random.randint(1, 4)}.0", "OK")
-    for i in range(1, 50001)
-]
-
-schema = "reading_id INT, vehicle_id STRING, speed DOUBLE, temp DOUBLE, firmware STRING, status STRING"
-df_source = spark.createDataFrame(rows, schema)
-
-# Write as Parquet with Snappy compression
-df_source.write.format("parquet").mode("overwrite").save(parquet_path)
-print(f"Parquet dataset written with 50,000 rows.")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 2: Demonstrating Column Projection (Zero-Cost Column Pruning)
-# MAGIC Select only 2 columns and observe Catalyst projected schema.
-
-# COMMAND ----------
-
-# Read only reading_id and speed
-df_pruned = spark.read.parquet(parquet_path).select("reading_id", "speed")
-
-print("=== PHYSICAL PLAN FOR COLUMN PROJECTION ===")
-# Notice: 'ReadSchema: struct<reading_id:int,speed:double>' -> Spark skips reading all other 4 columns from disk!
-df_pruned.explain(mode="formatted")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 3: Demonstrating Predicate Pushdown (Row-Group Skipping)
-# MAGIC Filter on vehicle_id and verify PushedFilters in physical plan.
-
-# COMMAND ----------
-
-df_filtered = spark.read.parquet(parquet_path).filter(F.col("vehicle_id") == "V-042").select("vehicle_id", "speed")
-
-print("=== PHYSICAL PLAN FOR PREDICATE PUSHDOWN ===")
-# Notice: 'PushedFilters: [IsNotNull(vehicle_id), EqualTo(vehicle_id,V-042)]'
-df_filtered.explain(mode="formatted")
-df_filtered.show(5)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **Column Projection reads only required columns from disk, dramatically reducing I/O and network transfer.**
-# MAGIC - **Predicate Pushdown pushes WHERE filters directly to the Parquet/ORC file reader to skip row groups using min/max stats.**
-# MAGIC - **Dictionary encoding replaces repetitive string values with small integer keys, compressing high-repetition columns efficiently.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. What is the internal structure of a Parquet file (Header, Row Groups, Column Chunks, Pages, Footer)?
-# MAGIC 2. Why does wrapping a column in a function (e.g. `WHERE upper(col) == 'VAL'`) disable Parquet predicate pushdown?
-# MAGIC 3. How does ORC's Lightweight Index compare to Parquet's Row Group Statistics?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+if __name__ == "__main__":
+    spark = (
+        SparkSession.builder.appName("045_columnar_pushdown")
+        .master("local[*]")
+        .config("spark.sql.ansi.enabled", "true")
+        .getOrCreate()
+    )
+    base_uri = "abfss://lakehouse@storage.dfs.core.windows.net/telemetry/parquet/"
+    df_src = spark.range(1, 1001).select(
+        F.col("id").alias("reading_id"),
+        F.concat(F.lit("V-"), F.lpad((F.col("id") % 50).cast("string"), 3, "0")).alias("vehicle_id"),
+        F.round(F.rand(seed=42) * 120.0, 2).alias("speed_kmh"),
+        F.current_timestamp().alias("event_ts"),
+        F.lit("OK").alias("status"),
+    )
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        write_columnar_telemetry(df_src, tmp_dir)
+        df_out = transform_filter_vehicle_telemetry(spark.read.parquet(tmp_dir), "V-042")
+        df_out.explain("formatted")
+        df_out.show(5, truncate=False)

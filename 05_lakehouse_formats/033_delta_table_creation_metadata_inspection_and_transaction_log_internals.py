@@ -1,137 +1,133 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 033: Delta Table Creation, Metadata Inspection and Transaction Log Internals
-# MAGIC
-# MAGIC **Module:** Module 04: Delta Lake Architecture, ACID Operations & Time Travel
-# MAGIC **Difficulty:** `Intermediate`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC A lakehouse platform architect requires an immutable, audit-compliant storage layer for financial ledger records. Standard Parquet files lack ACID atomicity and suffer from partial write failures during cluster spot instance terminations.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Create a Delta Lake table with explicit schema, inspect its physical storage directory structure, read the JSON commit log files inside `_delta_log/`, parse checkpoint parity files, and query table details via `DESCRIBE DETAIL` and `DESCRIBE HISTORY`.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC Delta Lake brings ACID transactions to Apache Spark using a write-ahead log stored in `_delta_log/`. Every transaction creates an atomic JSON commit (e.g. `000000.json`). Every 10 commits, Delta writes a consolidated Parquet checkpoint file to bound state reconstruction time.
+"""
+Module 05 / 033: Delta Table Creation, Metadata Inspection & Transaction Log Internals
 
-# COMMAND ----------
+Scenario & Scale:
+    A financial ledger platform processes 200M immutable accounting postings/day
+    on object storage. Standard Parquet writes leave orphaned partial files when
+    spot executors terminate mid-task, breaking downstream regulatory audits.
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+Goal:
+    Create a Delta Lake table with an explicit schema, inspect `_delta_log/`
+    JSON commit entries and Parquet checkpoints, and query `DESCRIBE DETAIL` /
+    `DESCRIBE HISTORY` without relying on legacy JVM context APIs or hardcoded paths.
+"""
 
-# COMMAND ----------
+from __future__ import annotations
 
-import os
-import sys
-import shutil
 from pathlib import Path
+import tempfile
 
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_033_Delta_Table_Creation_Metadata_Inspection_and_Transaction_Log_Internals")
+from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import functions as F
+from pyspark.sql import types as T
+
+
+def build_spark() -> SparkSession:
+    """Create a Spark 4.0+ session configured with Delta Lake extensions."""
+    return (
+        SparkSession.builder.appName("033_Delta_Transaction_Log_Internals")
         .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
-        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.ansi.enabled", "true")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .config(
+            "spark.sql.catalog.spark_catalog",
+            "org.apache.spark.sql.delta.catalog.DeltaCatalog",
+        )
         .getOrCreate()
     )
 
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+# ---------------------------------------------------------------------------
+# (2) Anti-Pattern: Writing raw Parquet without an ACID transaction log
+# ---------------------------------------------------------------------------
+def anti_pattern_raw_parquet_overwrite(df: DataFrame, target_dir: str) -> None:
+    # ❌ Bad Practice: Overwriting raw Parquet directories directly on S3/ADLS without
+    # an ACID transaction log or explicit schema validation.
+    # Otherwise: A mid-job driver/spot failure leaves half-deleted or half-written
+    # Parquet part files (`_temporary` artifacts), causing concurrent BI readers to
+    # observe torn snapshots or FileNotFoundException errors with zero rollback audit.
+    df.write.format("parquet").mode("overwrite").save(target_dir)
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 1: Creating a Managed Delta Table on Local Storage
-# MAGIC Write initial transactions to a local Delta table path.
+# ---------------------------------------------------------------------------
+# (3) ANSI-safe PySpark 4.0+ Fix: Explicit-Schema Delta + Log/Metadata Audit
+# ---------------------------------------------------------------------------
+def good_practice_delta_log_inspection(spark: SparkSession, delta_dir: Path) -> None:
+    # ✅ Good Practice: Persist with explicit StructType/DECIMAL types to Delta Lake so
+    # every commit is serialized atomically into `_delta_log/00000000000000000000.json`.
+    schema = T.StructType(
+        [
+            T.StructField("txn_id", T.StringType(), nullable=False),
+            T.StructField("account_id", T.StringType(), nullable=False),
+            T.StructField("amount", T.DecimalType(14, 2), nullable=False),
+            T.StructField("txn_type", T.StringType(), nullable=False),
+            T.StructField("created_at", T.TimestampType(), nullable=False),
+        ]
+    )
+    rows = [
+        ("TX-001", "ACC-101", "1500.00", "DEPOSIT", "2026-01-10 10:00:00"),
+        ("TX-002", "ACC-102", "450.00", "WITHDRAWAL", "2026-01-10 10:05:00"),
+        ("TX-003", "ACC-101", "200.00", "TRANSFER", "2026-01-10 10:15:00"),
+    ]
+    raw_df = spark.createDataFrame(
+        rows, "txn_id STRING, account_id STRING, amount STRING, txn_type STRING, created_at STRING"
+    )
+    ledger_df = raw_df.select(
+        F.col("txn_id"),
+        F.col("account_id"),
+        F.try_cast(F.col("amount"), T.DecimalType(14, 2)).alias("amount"),
+        F.col("txn_type"),
+        F.try_cast(F.col("created_at"), T.TimestampType()).alias("created_at"),
+    )
+    assert ledger_df.schema == schema
 
-# COMMAND ----------
+    target_uri = str(delta_dir)
+    ledger_df.write.format("delta").mode("overwrite").save(target_uri)
 
-import shutil
-from pathlib import Path
+    log_dir = delta_dir / "_delta_log"
+    commit_files = sorted(log_dir.glob("*.json"))
+    for commit in commit_files:
+        preview_lines = commit.read_text(encoding="utf-8").splitlines()[:2]
+        print(f"Commit {commit.name}: {preview_lines}")
 
-delta_path = "/tmp/delta_ledger_033"
-if Path(delta_path).exists():
-    shutil.rmtree(delta_path)
+    spark.sql(f"DESCRIBE DETAIL delta.`{target_uri}`").select(
+        "format", "id", "numFiles", "sizeInBytes"
+    ).show(truncate=False)
+    spark.sql(f"DESCRIBE HISTORY delta.`{target_uri}`").select(
+        "version", "timestamp", "operation", "operationParameters"
+    ).show(truncate=False)
 
-ledger_data = [
-    ("TX-001", "ACC-101", 1500.0, "DEPOSIT", "2023-11-20 10:00:00"),
-    ("TX-002", "ACC-102", 450.0, "WITHDRAWAL", "2023-11-20 10:05:00"),
-    ("TX-003", "ACC-101", 200.0, "TRANSFER", "2023-11-20 10:15:00")
-]
 
-schema = "txn_id STRING, account_id STRING, amount DOUBLE, txn_type STRING, created_at STRING"
-df_ledger = spark.createDataFrame(ledger_data, schema)
+# ---------------------------------------------------------------------------
+# (4) explain("formatted") & Spark UI Diagnostic Notes (Comments Only)
+# ---------------------------------------------------------------------------
+# - Running `spark.read.format("delta").load(target_uri).explain("formatted")` shows
+#   `FileScan parquet` over only the active files resolved from `_delta_log`, plus
+#   `PushedFilters` backed by per-file min/max JSON stats stored inside `add` actions.
+# - In the Spark UI SQL tab, check `number of files read` vs `number of files pruned`
+#   and `metadata time` to spot log replay bottlenecks when tables lack checkpoints.
 
-# Write as Delta format
-df_ledger.write.format("delta").mode("overwrite").save(delta_path)
-print(f"Delta table created at: {delta_path}")
 
-# COMMAND ----------
+# ---------------------------------------------------------------------------
+# (5) Production & Interview Gotchas
+# ---------------------------------------------------------------------------
+# 1. Mutual Exclusion on Object Storage: Delta guarantees serializable ACID commits on
+#    S3/ADLS/GCS via conditional put-if-absent primitives or coordinated lock services
+#    (e.g., DynamoDB / Unity Catalog commit coordinator) so two writers never overwrite
+#    `00000...01.json`.
+# 2. Checkpoints Bound State Reconstruction: Every N commits (default 10 in Delta 2.x/3.x,
+#    configurable via `delta.checkpointInterval`), Delta writes a Parquet checkpoint
+#    (`.checkpoint.parquet` or V2 sidecar checkpoints) so readers skip replaying old JSONs.
+# 3. Never Bypass `_delta_log`: Writing raw Parquet directly into a Delta table directory
+#    leaves those files invisible to Delta readers until `FSCK` or table rewrite.
+# 4. Log Retention vs File Retention: `delta.logRetentionDuration` (default 30 days)
+#    is independent from `delta.deletedFileRetentionDuration` (default 7 days).
 
-# MAGIC %md
-# MAGIC ### Step 2: Inspecting Physical Delta Directory & _delta_log JSON Commits
-# MAGIC Examine the commit log files generated by the transaction.
 
-# COMMAND ----------
-
-delta_dir = Path(delta_path)
-log_dir = delta_dir / "_delta_log"
-
-print(f"Log directory exists: {log_dir.exists()}")
-log_files = sorted(list(log_dir.glob("*.json")))
-for lf in log_files:
-    print(f"Commit file found: {lf.name}")
-    with open(lf, "r") as f:
-        # Show first 3 action lines in the JSON log
-        lines = [f.readline().strip() for _ in range(3)]
-        print(f"  Actions snippet: {lines[:2]}")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 3: Querying Table Details & History Metadata
-# MAGIC Use SQL metadata commands to inspect table format, partition columns, and version.
-
-# COMMAND ----------
-
-# Query metadata via SQL
-df_detail = spark.sql(f"DESCRIBE DETAIL delta.`{delta_path}`")
-df_detail.select("format", "id", "name", "numFiles", "sizeInBytes").show(truncate=False)
-
-df_history = spark.sql(f"DESCRIBE HISTORY delta.`{delta_path}`")
-df_history.select("version", "timestamp", "userId", "operation", "operationParameters").show(truncate=False)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **Delta Lake stores data as standard Parquet files paired with an ACID transaction log in `_delta_log/`.**
-# MAGIC - **Atomicity is guaranteed via mutual exclusion protocols (e.g. Put-If-Absent) in cloud object stores.**
-# MAGIC - **`DESCRIBE DETAIL` and `DESCRIBE HISTORY` provide instant visibility into table health, file count, and commit activity.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. How does Delta Lake guarantee ACID transactions over eventually consistent object storage like S3 or ADLS?
-# MAGIC 2. What is the purpose of Delta checkpoint Parquet files created every 10 commits?
-# MAGIC 3. What information is stored inside each `_delta_log/00000X.json` commit file?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+if __name__ == "__main__":
+    spark = build_spark()
+    try:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            good_practice_delta_log_inspection(spark, Path(tmp_dir) / "delta_ledger")
+    finally:
+        spark.stop()

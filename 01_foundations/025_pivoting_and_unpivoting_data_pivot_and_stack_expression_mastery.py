@@ -1,130 +1,114 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 025: Pivoting and Unpivoting Data: pivot and stack Expression Mastery
-# MAGIC
-# MAGIC **Module:** Module 03: Advanced SQL, Aggregations & Analytical Window Functions
-# MAGIC **Difficulty:** `Intermediate`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC A business intelligence dashboard requires monthly revenue pivoted into wide columns (Jan, Feb, Mar...) for tabular display. Conversely, a data science model requires wide survey responses unpivoted (melted) back into long tidy format.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Master tabular reshaping: (1) Pivot narrow transactional rows into wide summary columns using `groupBy().pivot()`, optimizing performance by passing explicit pivot values. (2) Unpivot wide multi-column tables back into narrow key-value rows using Spark's `stack()` expression.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC Calling `.pivot('col')` without specifying distinct values forces an extra, expensive distributed pass over the data to discover all unique column values. Always pass the pre-defined list of distinct values: `.pivot('col', ['Val1', 'Val2'])` to eliminate this extra scan.
+"""Scenario & Scale: BI monthly revenue crosstab & ML feature melting (60M rows/day).
 
-# COMMAND ----------
+Business Context:
+Pivot narrow monthly sales into wide BI columns without triggering an extra discovery
+scan, and unpivot wide tables back into tidy long format via Spark 4.0+ `unpivot()`.
+"""
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+from typing import Sequence
 
-# COMMAND ----------
+from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import functions as F
+from pyspark.sql import types as T
 
-import os
-import sys
-import shutil
-from pathlib import Path
 
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_025_Pivoting_and_Unpivoting_Data_pivot_and_stack_Expression_Mastery")
-        .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
+def build_spark(app_name: str = "025_Pivot_Unpivot_Stack") -> SparkSession:
+    """Create or reuse a portable SparkSession with ANSI mode enabled."""
+    return (
+        SparkSession.builder.appName(app_name)
+        .config("spark.sql.ansi.enabled", "true")
         .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
         .getOrCreate()
     )
 
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+# ---------------------------------------------------------------------------
+# 1. Anti-Pattern
+# ---------------------------------------------------------------------------
+# ❌ Bad Practice:
+#   df_narrow.groupBy("dept").pivot("month").agg(F.sum("sales"))
+# Otherwise:
+# - Calling `.pivot("month")` WITHOUT an explicit value list forces Spark to run an
+#   extra eager distributed job to collect distinct values of `month` before planning.
+# - On high-cardinality pivot columns (10,000+ values), Spark crashes with
+#   `pivot column ... has more than spark.sql.pivotMaxValues (10000)`!
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 1: Generating Monthly Department Sales (Narrow Format)
-# MAGIC Create transactional sales records across months.
-
-# COMMAND ----------
-
-monthly_sales = [
-    ("Electronics", "Jan", 12000.0),
-    ("Electronics", "Feb", 14500.0),
-    ("Electronics", "Mar", 16000.0),
-    ("Groceries", "Jan", 8500.0),
-    ("Groceries", "Feb", 9200.0),
-    ("Groceries", "Mar", 8900.0),
-    ("Apparel", "Jan", 4500.0),
-    ("Apparel", "Feb", 5100.0),
-    ("Apparel", "Mar", 6300.0)
-]
-
-df_narrow = spark.createDataFrame(monthly_sales, ["dept", "month", "sales"])
-df_narrow.show()
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 2: Optimized Pivoting with Explicit Pivot Values
-# MAGIC Reshape months into columns, passing explicit month list to skip extra scan.
-
-# COMMAND ----------
-
-months_list = ["Jan", "Feb", "Mar"]
-
-# Highly optimized pivot with explicit values passed
-df_pivoted = df_narrow.groupBy("dept").pivot("month", months_list).agg(
-    F.coalesce(F.sum("sales"), F.lit(0.0))
+# ---------------------------------------------------------------------------
+# 2. ANSI-Safe PySpark 4.0+ Fix
+# ---------------------------------------------------------------------------
+# ✅ Good Practice: Pass explicit `values` list to `pivot()` and use native `unpivot()`.
+SALES_SCHEMA = T.StructType(
+    [
+        T.StructField("dept", T.StringType(), nullable=False),
+        T.StructField("month", T.StringType(), nullable=False),
+        T.StructField("sales", T.DoubleType(), nullable=False),
+    ]
 )
 
-print("Pivoted Wide Table:")
-df_pivoted.show()
 
-# COMMAND ----------
+def pivot_monthly_sales(df: DataFrame, months: Sequence[str]) -> DataFrame:
+    """Pivot narrow sales into wide monthly columns with zero distinct-discovery scan."""
+    return (
+        df.groupBy("dept")
+        .pivot("month", list(months))
+        .agg(F.coalesce(F.sum("sales"), F.lit(0.0)))
+    )
 
-# MAGIC %md
-# MAGIC ### Step 3: Unpivoting (Melting) Wide Table back to Narrow with stack()
-# MAGIC Use the SQL stack expression to transform wide columns back into rows.
 
-# COMMAND ----------
+def unpivot_monthly_sales(df_wide: DataFrame, months: Sequence[str]) -> DataFrame:
+    """Melt wide monthly columns back into tidy long rows via native DataFrame.unpivot."""
+    return df_wide.unpivot(
+        ids=["dept"],
+        values=list(months),
+        variableColumnName="month",
+        valueColumnName="sales",
+    )
 
-# stack(n, 'col1_name', col1, 'col2_name', col2, ...)
-unpivot_expr = "stack(3, 'Jan', Jan, 'Feb', Feb, 'Mar', Mar) as (month, sales)"
 
-df_unpivoted = df_pivoted.select("dept", F.expr(unpivot_expr))
-print("Unpivoted Back to Tidy Narrow Format:")
-df_unpivoted.show()
+def main() -> None:
+    spark = build_spark()
 
-# COMMAND ----------
+    monthly_sales = [
+        ("Electronics", "Jan", 12000.0),
+        ("Electronics", "Feb", 14500.0),
+        ("Electronics", "Mar", 16000.0),
+        ("Groceries", "Jan", 8500.0),
+        ("Groceries", "Feb", 9200.0),
+        ("Groceries", "Mar", 8900.0),
+        ("Apparel", "Jan", 4500.0),
+        ("Apparel", "Feb", 5100.0),
+        ("Apparel", "Mar", 6300.0),
+    ]
+    df_narrow = spark.createDataFrame(monthly_sales, schema=SALES_SCHEMA)
 
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **Always provide an explicit list of pivot values to `pivot(col, values)` to eliminate an expensive full-table discovery scan.**
-# MAGIC - **Unpivoting in PySpark is achieved natively using `F.expr('stack(N, ...)')` without requiring external libraries.**
-# MAGIC - **Pivoting creates wide schemas; excessive pivot columns can impact Catalyst compilation and memory.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. What happens internally when you call `df.groupBy().pivot()` without providing the list of distinct values?
-# MAGIC 2. How does the `stack()` expression work in Spark SQL to perform table melting?
-# MAGIC 3. What are the alternatives to `pivot()` if you have 1,000+ distinct dynamic categories?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+    months = ["Jan", "Feb", "Mar"]
+    df_pivoted = pivot_monthly_sales(df_narrow, months)
+    df_unpivoted = unpivot_monthly_sales(df_pivoted, months)
+
+    elec = df_pivoted.filter(F.col("dept") == "Electronics").first()
+    assert elec["Jan"] == 12000.0 and elec["Mar"] == 16000.0
+    assert df_unpivoted.count() == 9
+
+
+# ---------------------------------------------------------------------------
+# 3. explain("formatted") / Spark UI Diagnostic Notes
+# ---------------------------------------------------------------------------
+# - `df_pivoted.explain("formatted")` emits a single `HashAggregate` with `PivotFirst`
+#   and zero preceding `Distinct` job when `months` is explicitly provided.
+# - `df_unpivoted.explain("formatted")` compiles to an `Expand` projection (equivalent
+#   to `stack(3, 'Jan', Jan, 'Feb', Feb, 'Mar', Mar)`) with zero shuffle.
+
+# ---------------------------------------------------------------------------
+# 4. Production & Interview Gotchas
+# ---------------------------------------------------------------------------
+# 1. Always pass `pivot(col, known_values)` in production pipelines; omitting `values`
+#    executes an extra Spark action during DataFrame plan construction.
+# 2. `df.unpivot()` (alias `df.melt()`, Spark 3.4+) is cleaner and less error-prone
+#    than raw `F.expr("stack(...)")`, and requires all melted value columns to share a
+#    common compatible data type.
+# 3. For 1,000+ dynamic categories, avoid `pivot()` entirely—store as `MapType` or keep
+#    the long normalized schema and let the BI/OLAP layer pivot at query time.
+
+if __name__ == "__main__":
+    main()

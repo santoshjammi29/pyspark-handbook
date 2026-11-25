@@ -1,137 +1,110 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 020: Handling Corrupted & Malformed JSON: Permissive vs DropMalformed vs FailFast
-# MAGIC
-# MAGIC **Module:** Module 02: Complex Data Types & Nested Structures Handling
-# MAGIC **Difficulty:** `Intermediate`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC A public data ingestion pipeline scrapes third-party web endpoints. Up to 5% of incoming payloads contain syntax errors (truncated braces, mismatched quotes, non-JSON tokens). The pipeline must never crash and must capture all corrupted lines into an audit column.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Compare Spark's JSON read modes: `PERMISSIVE`, `DROPMALFORMED`, and `FAILFAST`. Configure the `columnNameOfCorruptRecord` option to capture raw malformed strings into a `_corrupt_record` quarantine column for compliance review.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC `PERMISSIVE` is Spark's default mode: corrupted fields evaluate to NULL and the unparseable string is diverted to `_corrupt_record`. `FAILFAST` halts execution immediately upon encountering syntax errors. `DROPMALFORMED` silently drops damaged records.
+"""Scenario & Scale: Third-party webhook JSON quarantine pipeline (50M payloads/day).
 
-# COMMAND ----------
+Business Context:
+External HTTP feeds contain up to 5% malformed JSON (unquoted tokens, truncated text).
+Ingest resiliently in `PERMISSIVE` mode with `_corrupt_record` so valid rows flow to
+Silver while broken payloads route cleanly to a dead-letter audit table.
+"""
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
-
-# COMMAND ----------
-
-import os
-import sys
-import shutil
 from pathlib import Path
+import tempfile
+from typing import Tuple
 
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_020_Handling_Corrupted_and_Malformed_JSON_Permissive_vs_DropMalformed_vs_FailFast")
-        .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
+from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import functions as F
+from pyspark.sql import types as T
+
+
+def build_spark(app_name: str = "020_Corrupt_JSON_Quarantine") -> SparkSession:
+    """Create or reuse a portable SparkSession with ANSI mode enabled."""
+    return (
+        SparkSession.builder.appName(app_name)
+        .config("spark.sql.ansi.enabled", "true")
         .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
         .getOrCreate()
     )
 
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+# ---------------------------------------------------------------------------
+# 1. Anti-Pattern
+# ---------------------------------------------------------------------------
+# ❌ Bad Practice:
+# - Reading unvalidated vendor JSON with `option("mode", "DROPMALFORMED")` or without
+#   `columnNameOfCorruptRecord` (or calling `sparkContext.parallelize` / hardcoded `/tmp/`).
+# Otherwise:
+# - `DROPMALFORMED` silently discards up to 5% of revenue/audit events with zero trace.
+# - `FAILFAST` halts the entire 50M-row pipeline on a single broken JSON line.
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 1: Creating Dataset with Intentionally Malformed JSON Strings
-# MAGIC Simulate mixed clean and corrupted JSON inputs.
-
-# COMMAND ----------
-
-bad_json_lines = [
-    '{"id": "EVT-1", "user": "alice", "score": 95}',
-    '{"id": "EVT-2", "user": "bob", "score": INVALID_NUMBER}', # Malformed token
-    '{"id": "EVT-3", "user": "charlie", "score": 82}',
-    'NOT_EVEN_JSON_PAYLOAD',                                      # Completely unparseable
-    '{"id": "EVT-4", "user": "diana", "score": 100}'
-]
-
-rdd_dirty = spark.sparkContext.parallelize(bad_json_lines)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 2: Resilient Ingestion with PERMISSIVE Mode & _corrupt_record
-# MAGIC Define schema with _corrupt_record to quarantine broken payloads.
-
-# COMMAND ----------
-
-# Define schema including special corrupt record column
-quarantine_schema = T.StructType([
-    T.StructField("id", T.StringType(), True),
-    T.StructField("user", T.StringType(), True),
-    T.StructField("score", T.IntegerType(), True),
-    T.StructField("_corrupt_record", T.StringType(), True)
-])
-
-# Read with PERMISSIVE mode
-df_permissive = (
-    spark.read
-    .option("mode", "PERMISSIVE")
-    .option("columnNameOfCorruptRecord", "_corrupt_record")
-    .schema(quarantine_schema)
-    .json(rdd_dirty)
+# ---------------------------------------------------------------------------
+# 2. ANSI-Safe PySpark 4.0+ Fix
+# ---------------------------------------------------------------------------
+# ✅ Good Practice: Explicit schema + `PERMISSIVE` mode + `_corrupt_record` quarantine split.
+QUARANTINE_SCHEMA = T.StructType(
+    [
+        T.StructField("id", T.StringType(), nullable=True),
+        T.StructField("user", T.StringType(), nullable=True),
+        T.StructField("score", T.IntegerType(), nullable=True),
+        T.StructField("_corrupt_record", T.StringType(), nullable=True),
+    ]
 )
 
-print("Ingested Records with Quarantine Column:")
-df_permissive.show(truncate=False)
 
-# COMMAND ----------
+def ingest_json_with_quarantine(
+    spark: SparkSession,
+    input_uri: str,
+) -> Tuple[DataFrame, DataFrame]:
+    """Ingest JSON files permissively and separate valid records from dead-letter rows."""
+    df_permissive = (
+        spark.read.option("mode", "PERMISSIVE")
+        .option("columnNameOfCorruptRecord", "_corrupt_record")
+        .schema(QUARANTINE_SCHEMA)
+        .json(input_uri)
+    )
+    df_clean = df_permissive.filter(F.col("_corrupt_record").isNull()).drop("_corrupt_record")
+    df_dead_letter = df_permissive.filter(F.col("_corrupt_record").isNotNull()).select(
+        "_corrupt_record"
+    )
+    return df_clean, df_dead_letter
 
-# MAGIC %md
-# MAGIC ### Step 3: Quarantine Routing: Splitting Clean Records from Corrupted Rows
-# MAGIC Filter clean rows for production and route corrupt payloads to a dead-letter sink.
 
-# COMMAND ----------
+def main() -> None:
+    spark = build_spark()
 
-df_clean = df_permissive.filter(F.col("_corrupt_record").isNull()).drop("_corrupt_record")
-df_dead_letter = df_permissive.filter(F.col("_corrupt_record").isNotNull()).select("_corrupt_record")
+    bad_json_lines = [
+        '{"id": "EVT-1", "user": "alice", "score": 95}',
+        '{"id": "EVT-2", "user": "bob", "score": INVALID_NUMBER}',
+        '{"id": "EVT-3", "user": "charlie", "score": 82}',
+        "NOT_EVEN_JSON_PAYLOAD",
+        '{"id": "EVT-4", "user": "diana", "score": 100}',
+    ]
 
-print(f"Clean Records: {df_clean.count()}")
-df_clean.show()
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        json_file = Path(tmp_dir) / "events.jsonl"
+        json_file.write_text("\n".join(bad_json_lines) + "\n", encoding="utf-8")
 
-print(f"Corrupted Dead-Letter Records: {df_dead_letter.count()}")
-df_dead_letter.show(truncate=False)
+        df_clean, df_dead_letter = ingest_json_with_quarantine(spark, str(json_file))
+        assert df_clean.count() == 3
+        assert df_dead_letter.count() == 2
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **`PERMISSIVE` mode ensures zero pipeline downtime by capturing unparseable strings into `_corrupt_record`.**
-# MAGIC - **`FAILFAST` is recommended for high-integrity financial reconciliation where no data corruption can be tolerated.**
-# MAGIC - **`DROPMALFORMED` should be used with extreme caution because it silently discards records without audit trails.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. What are the three JSON read modes supported by Apache Spark?
-# MAGIC 2. How does Databricks Auto Loader's `_rescued_data` column differ from Spark's `_corrupt_record`?
-# MAGIC 3. Why must `_corrupt_record` be explicitly declared in the StructType schema?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+# ---------------------------------------------------------------------------
+# 3. explain("formatted") / Spark UI Diagnostic Notes
+# ---------------------------------------------------------------------------
+# - `df_clean.explain("formatted")` shows `FileScan json` with `ReadSchema` including
+#   `_corrupt_record` and `Filter isnull(_corrupt_record)`.
+# - Note: Spark requires you to materialize/persist `df_permissive` (or write via two
+#   sinks in a single job) if you do not want `FileScan json` executed twice.
+
+# ---------------------------------------------------------------------------
+# 4. Production & Interview Gotchas
+# ---------------------------------------------------------------------------
+# 1. `_corrupt_record` MUST be declared explicitly in `QUARANTINE_SCHEMA` when passing
+#    `.schema(...)`; otherwise Spark drops corrupt records silently even in `PERMISSIVE` mode.
+# 2. Calling `.select("_corrupt_record")` alone without any data column can fail on older
+#    Spark versions unless `df_permissive` is cached or another column is projected.
+# 3. For streaming cloud ingestion, compare `PERMISSIVE` `_corrupt_record` with
+#    vendor rescued-data columns (`_rescued_data`) which also capture type-mismatch fields.
+
+if __name__ == "__main__":
+    main()

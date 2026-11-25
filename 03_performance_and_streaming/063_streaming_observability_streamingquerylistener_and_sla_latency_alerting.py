@@ -1,148 +1,131 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 063: Streaming Observability: StreamingQueryListener and SLA Latency Alerting
-# MAGIC
-# MAGIC **Module:** Module 06: Streaming & Near Real-Time Processing
-# MAGIC **Difficulty:** `Advanced`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC An enterprise fintech streaming pipeline must maintain an SLA of processing events within 60 seconds of origination. If a backlog builds up or micro-batch processing time spikes, on-call engineers must be alerted before SLA violations occur.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Implement streaming observability in PySpark: register a custom `StreamingQueryListener`, capture query startup, termination, and micro-batch progress events (`onQueryProgress`), calculate input rate vs processing rate, and generate automated SLA breach alerts.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC Spark's `StreamingQueryListener` provides an asynchronous callback API. When registered with `spark.streams.addListener()`, it captures event telemetry for all queries running in the SparkSession without introducing runtime overhead into the data processing tasks.
+"""Scenario & Scale: Fintech streaming SLA enforcement (< 60s end-to-end lag).
 
-# COMMAND ----------
+Captures asynchronous micro-batch throughput, watermark lag, and query failures
+via StreamingQueryListener without adding overhead to executor tasks.
+"""
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+from typing import Callable, Optional
 
-# COMMAND ----------
-
-import os
-import sys
-import shutil
-from pathlib import Path
-
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_063_Streaming_Observability_StreamingQueryListener_and_SLA_Latency_Alerting")
-        .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
-        .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-        .getOrCreate()
-    )
-
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
-
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 1: Defining Custom StreamingQueryListener Class
-# MAGIC Implement listener to intercept query progress and measure SLA metrics.
-
-# COMMAND ----------
-
+from pyspark.sql import SparkSession
 from pyspark.sql.streaming import StreamingQueryListener
 
+
+# -----------------------------------------------------------------------------
+# 2. Anti-Pattern
+# -----------------------------------------------------------------------------
+# ❌ Bad Practice: Polling `query.lastProgress` in a tight `while True:` driver
+# loop with `time.sleep(1)` or computing counts inside `foreachBatch` just for
+# monitoring.
+# Otherwise: Polling blocks driver threads, misses transient micro-batch spikes,
+# and extra `.count()` calls inside `foreachBatch` double-execute the DAG.
+def bad_polling_monitor(query) -> None:
+    import time
+
+    while query.isActive:
+        p = query.lastProgress  # Misses intermediate batches under fast triggers
+        if p and p.get("numInputRows", 0) == 0:
+            print("idle")
+        time.sleep(5)
+
+
+# -----------------------------------------------------------------------------
+# 3. ANSI-safe PySpark 4.0+ Fix
+# -----------------------------------------------------------------------------
+# ✅ Good Practice: Subclass StreamingQueryListener and register asynchronously
+# via `spark.streams.addListener()`—zero task overhead, zero JVM driver context
+# coupling, and Spark Connect compatible.
 class PipelineSLAListener(StreamingQueryListener):
-    def onQueryStarted(self, event):
-        print(f"[OBSERVABILITY] Query Started! ID: {event.id} | Name: {event.name}")
+    """Asynchronous observability listener detecting streaming backpressure."""
 
-    def onQueryProgress(self, event):
+    def __init__(
+        self,
+        lag_ratio_threshold: float = 0.8,
+        alert_sink: Optional[Callable[[str], None]] = None,
+    ) -> None:
+        self.lag_ratio_threshold = lag_ratio_threshold
+        self.alert_sink = alert_sink or print
+
+    def onQueryStarted(self, event) -> None:
+        self.alert_sink(
+            f"[SLA_START] id={event.id} name={event.name} runId={event.runId}"
+        )
+
+    def onQueryProgress(self, event) -> None:
         progress = event.progress
+        input_rate = float(progress.inputRowsPerSecond or 0.0)
+        proc_rate = float(progress.processedRowsPerSecond or 0.0)
         batch_id = progress.batchId
-        input_rate = progress.inputRowsPerSecond
-        proc_rate = progress.processedRowsPerSecond
-        num_input = progress.numInputRows
+        num_rows = progress.numInputRows
 
-        # Check if processing rate lags behind input rate (Backlog accumulation!)
         status = "HEALTHY"
-        if input_rate > 0 and proc_rate < (input_rate * 0.8):
-            status = "WARNING: PROCESSING_LAG_DETECTED"
+        if input_rate > 0.0 and proc_rate < (input_rate * self.lag_ratio_threshold):
+            status = "WARNING_PROCESSING_LAG"
 
-        print(f"[METRIC] Batch: {batch_id} | In: {num_input} rows | InRate: {input_rate:.1f}/s | ProcRate: {proc_rate:.1f}/s | {status}")
+        self.alert_sink(
+            f"[SLA_METRIC] batch={batch_id} rows={num_rows} "
+            f"in_rate={input_rate:.1f}/s proc_rate={proc_rate:.1f}/s status={status}"
+        )
 
-    def onQueryTerminated(self, event):
+    def onQueryTerminated(self, event) -> None:
         if event.exception:
-            print(f"[ALERT] Query CRASHED with error: {event.exception}")
+            self.alert_sink(
+                f"[SLA_CRITICAL] id={event.id} crashed: {event.exception}"
+            )
         else:
-            print("[OBSERVABILITY] Query Terminated cleanly.")
+            self.alert_sink(f"[SLA_STOP] id={event.id} terminated cleanly")
 
-print("PipelineSLAListener class defined.")
 
-# COMMAND ----------
+def register_sla_listener(
+    spark: SparkSession,
+    lag_ratio_threshold: float = 0.8,
+) -> PipelineSLAListener:
+    """Attach SLA listener to SparkSession cleanly via spark.streams."""
+    listener = PipelineSLAListener(lag_ratio_threshold=lag_ratio_threshold)
+    spark.streams.addListener(listener)
+    return listener
 
-# MAGIC %md
-# MAGIC ### Step 2: Registering Listener with SparkSession Streams Manager
-# MAGIC Register the listener to begin capturing streaming telemetry.
 
-# COMMAND ----------
+# -----------------------------------------------------------------------------
+# 4. explain("formatted") / Spark UI Diagnostic Notes
+# -----------------------------------------------------------------------------
+# StreamingQueryListener hooks into the driver's event bus asynchronously
+# (identical telemetry source backing the Spark UI -> Structured Streaming tab).
+# Key durationMs fields to track in `event.progress.durationMs`:
+#   - `triggerExecution`: total micro-batch wall time (must stay < trigger interval).
+#   - `getBatch`: source offset fetch time (spikes indicate Kafka/S3 listing lag).
+#   - `addBatch`: actual Spark execution time (inspect Stages tab if elevated).
 
-# Register the listener
-sla_listener = PipelineSLAListener()
-spark.streams.addListener(sla_listener)
-print("StreamingQueryListener registered with SparkSession.")
 
-# COMMAND ----------
+# -----------------------------------------------------------------------------
+# 5. Production / Interview Gotchas
+# -----------------------------------------------------------------------------
+# 1. Listener callbacks execute on the driver's listener bus thread—keep
+#    `onQueryProgress` fast and non-blocking (async HTTP/metrics queue), or it
+#    will drop/delay subsequent listener events.
+# 2. A single listener attached to `spark.streams` receives events from ALL
+#    active streaming queries in that SparkSession; filter by `event.progress.name`.
+# 3. Always detach listeners in tests/notebooks via `spark.streams.removeListener`
+#    to avoid duplicate alerts across repeated runs in a long-lived session.
 
-# MAGIC %md
-# MAGIC ### Step 3: Running Diagnostic Stream to Trigger Listener Callbacks
-# MAGIC Execute a short rate stream to observe listener telemetry in the logs.
 
-# COMMAND ----------
+if __name__ == "__main__":
+    import tempfile
+    import time
 
-import time
-
-df_rate = spark.readStream.format("rate").option("rowsPerSecond", 10).load()
-
-q_monitored = (
-    df_rate.writeStream
-    .format("memory")
-    .queryName("sla_telemetry_demo")
-    .start()
-)
-
-# Let run for 2.5 seconds to trigger progress callbacks
-time.sleep(2.5)
-
-q_monitored.stop()
-print("Monitored query completed.")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **`StreamingQueryListener` provides non-invasive, asynchronous observability into all streaming queries.**
-# MAGIC - **Monitor `inputRowsPerSecond` vs `processedRowsPerSecond`: when processing rate drops below input rate, backpressure develops.**
-# MAGIC - **Send listener alerts to Slack, PagerDuty, or Datadog to detect silent streaming stalls.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. What are the three core callback methods in Spark's `StreamingQueryListener`?
-# MAGIC 2. How do you detect backpressure in a Spark Structured Streaming query programmatically?
-# MAGIC 3. What is the difference between `triggerExecution` duration and `batchDuration` in streaming metrics?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+    spark = (
+        SparkSession.builder.appName("063_StreamingObservabilityListener")
+        .config("spark.sql.shuffle.partitions", "4")
+        .getOrCreate()
+    )
+    listener = register_sla_listener(spark)
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        df_rate = spark.readStream.format("rate").option("rowsPerSecond", 10).load()
+        query = (
+            df_rate.writeStream.format("parquet")
+            .queryName("sla_telemetry_demo")
+            .option("checkpointLocation", f"{tmp_dir}/chk")
+            .start(f"{tmp_dir}/sink")
+        )
+        time.sleep(2)
+        query.stop()
+    spark.streams.removeListener(listener)

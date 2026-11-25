@@ -1,150 +1,121 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 065: Medallion Architecture: Silver Transformation, Cleansing and Conformance
-# MAGIC
-# MAGIC **Module:** Module 07: Lakehouse Data Modeling, CDC & SCD Implementation
-# MAGIC **Difficulty:** `Intermediate`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC Raw invoices from the Bronze layer contain duplicate entries, unstandardized status codes ('appr', 'APPROVED', 'approved'), missing tax codes, and stringified numeric values. The Silver layer must conform and cleanse these into enterprise-ready records.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Build the Silver layer transformation: filter and clean raw data, standardize categorical codes, enforce data quality rules (non-negative amounts), cast data to strict primitive types, and execute deterministic deduplication into a conformed Delta Silver table.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC The Silver layer represents the enterprise-conformed, cleansed version of truth. It standardizes naming conventions, parses strings into structured types, deduplicates records using business keys, and joins disparate Bronze feeds into consolidated entity tables.
+"""Medallion Architecture: Silver Cleansing, Conformance & Deduplication.
 
-# COMMAND ----------
+Scenario & Scale:
+    Bronze invoices (50M rows/day) contain duplicate updates, unstandardized
+    status strings (`appr`, `APPROVED`), comma-formatted amounts (`1,500.00`),
+    and negative invalid rows. Silver must emit clean, typed, deduplicated records.
+"""
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+from __future__ import annotations
 
-# COMMAND ----------
-
-import os
-import sys
-import shutil
-from pathlib import Path
-
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_065_Medallion_Architecture_Silver_Transformation_Cleansing_and_Conformance")
-        .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
-        .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-        .getOrCreate()
-    )
-
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
+from pyspark.sql import DataFrame, SparkSession, functions as F, types as T
 from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
 
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 1: Reading from Upstream Bronze Layer
-# MAGIC Read uncleaned records containing duplicates and messy categories.
-
-# COMMAND ----------
-
-raw_bronze = [
-    ("INV-1001", "V-01", "1,500.00", "appr", "2023-11-20 10:00:00"),
-    ("INV-1001", "V-01", "1,500.00", "APPROVED", "2023-11-20 10:05:00"), # Duplicate update
-    ("INV-1002", "V-02", "420.50", "PENDING", "2023-11-20 10:01:00"),
-    ("INV-1003", "V-03", "-50.00", "REJECTED", "2023-11-20 10:02:00")   # Invalid negative invoice!
-]
-
-schema = "invoice_no STRING, vendor_id STRING, raw_amount STRING, raw_status STRING, updated_at STRING"
-df_bronze_in = spark.createDataFrame(raw_bronze, schema)
-df_bronze_in.show()
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 2: Applying Cleansing, Type Casting and Status Standardization
-# MAGIC Standardize uppercase status, clean currency strings, and enforce positive amounts.
-
-# COMMAND ----------
-
-# Clean amount and standardize status
-df_cleansed = (
-    df_bronze_in
-    .withColumn("clean_amount", F.regexp_replace("raw_amount", r"[^\d.]", "").cast(T.DoubleType()))
-    .withColumn(
-        "standard_status",
-        F.when(F.upper(F.col("raw_status")).isin(["APPR", "APPROVED"]), "APPROVED")
-         .when(F.upper(F.col("raw_status")).isin(["PEND", "PENDING"]), "PENDING")
-         .otherwise(F.upper(F.col("raw_status")))
+# ---------------------------------------------------------------------------
+# Anti-Pattern
+# ---------------------------------------------------------------------------
+# ❌ Bad Practice: Using strict `.cast("double")` / `F.to_timestamp(...)` on
+# dirty Bronze strings and dropping duplicates with non-deterministic `dropDuplicates`.
+# Otherwise: Under PySpark 4.0 ANSI mode, a single malformed string aborts the
+# entire job (`SparkNumberFormatException`), and `dropDuplicates(["invoice_no"])`
+# keeps an arbitrary row version rather than the latest update.
+def transform_silver_bad(df_bronze: DataFrame) -> DataFrame:
+    return (
+        df_bronze.withColumn("amount", F.col("raw_amount").cast("double"))
+        .dropDuplicates(["invoice_no"])
     )
-    # Quality filter: reject invoices with non-positive amounts
-    .filter(F.col("clean_amount") > 0)
-)
 
-df_cleansed.show()
 
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 3: Deterministic Deduplication and Silver Table Landing
-# MAGIC Retain only the latest update per invoice_no using window deduplication.
-
-# COMMAND ----------
-
-silver_path = "/tmp/lakehouse_silver_065"
-if Path(silver_path).exists():
-    shutil.rmtree(silver_path)
-
-win_dedup = Window.partitionBy("invoice_no").orderBy(F.col("updated_at").desc())
-
-df_silver = (
-    df_cleansed
-    .withColumn("rn", F.row_number().over(win_dedup))
-    .filter(F.col("rn") == 1)
-    .select(
-        "invoice_no",
-        "vendor_id",
-        F.col("clean_amount").alias("invoice_amount"),
-        F.col("standard_status").alias("invoice_status"),
-        F.to_timestamp("updated_at").alias("last_updated_at"),
-        F.current_timestamp().alias("_silver_processed_at")
+# ---------------------------------------------------------------------------
+# ANSI-Safe PySpark 4.0+ Fix
+# ---------------------------------------------------------------------------
+# ✅ Good Practice: Cleanse via `try_cast` / `try_to_timestamp`, route failed
+# quality checks to quarantine, and deduplicate deterministically by `updated_at`.
+def transform_cleanse_silver_invoices(df_bronze: DataFrame) -> tuple[DataFrame, DataFrame]:
+    """Return `(valid_silver_df, quarantine_df)` cleanly under ANSI mode."""
+    df_typed = (
+        df_bronze.withColumn(
+            "invoice_amount",
+            F.try_cast(F.regexp_replace(F.col("raw_amount"), r"[^\d.-]", ""), T.DecimalType(14, 2)),
+        )
+        .withColumn(
+            "invoice_status",
+            F.when(F.upper(F.trim(F.col("raw_status"))).isin("APPR", "APPROVED"), F.lit("APPROVED"))
+            .when(F.upper(F.trim(F.col("raw_status"))).isin("PEND", "PENDING"), F.lit("PENDING"))
+            .when(F.upper(F.trim(F.col("raw_status"))).isin("REJ", "REJECTED"), F.lit("REJECTED"))
+            .otherwise(F.upper(F.trim(F.col("raw_status")))),
+        )
+        .withColumn(
+            "last_updated_at",
+            F.try_to_timestamp(F.col("updated_at"), F.lit("yyyy-MM-dd HH:mm:ss")),
+        )
     )
-)
 
-df_silver.write.format("delta").mode("overwrite").save(silver_path)
+    valid_cond = (
+        F.col("invoice_no").isNotNull()
+        & F.col("invoice_amount").isNotNull()
+        & (F.col("invoice_amount") > F.lit(0))
+        & F.col("last_updated_at").isNotNull()
+    )
 
-print("Conformed Silver Delta Table:")
-spark.read.format("delta").load(silver_path).show(truncate=False)
+    df_quarantine = df_typed.filter(~valid_cond).withColumn(
+        "_quarantine_reason", F.lit("FAILED_TYPE_OR_POSITIVE_AMOUNT_CHECK")
+    )
 
-# COMMAND ----------
+    win_dedup = Window.partitionBy("invoice_no").orderBy(F.col("last_updated_at").desc())
+    df_silver = (
+        df_typed.filter(valid_cond)
+        .withColumn("_rn", F.row_number().over(win_dedup))
+        .filter(F.col("_rn") == 1)
+        .select(
+            "invoice_no",
+            "vendor_id",
+            "invoice_amount",
+            "invoice_status",
+            "last_updated_at",
+            F.current_timestamp().alias("_silver_processed_at"),
+        )
+    )
+    return df_silver, df_quarantine
 
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **Silver layer provides conformed, cleansed, deduplicated data for cross-functional consumption.**
-# MAGIC - **Standardize categorical codes and parse strings into strictly typed columns.**
-# MAGIC - **Always filter out records violating fundamental business domain rules before landing in Silver.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. What transformations belong in the Silver layer versus the Gold layer?
-# MAGIC 2. How do you handle records that fail data quality rules during Silver transformation?
-# MAGIC 3. How do you ensure Silver tables maintain low query latency for analytical users?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+
+# ---------------------------------------------------------------------------
+# explain("formatted") / Spark UI Diagnostic Notes
+# ---------------------------------------------------------------------------
+# - `explain("formatted")` shows `Window` (`row_number`) -> `Filter (_rn = 1)`
+#   compiled into Tungsten `WindowExec` after `Exchange hashpartitioning(invoice_no)`.
+# - Note that running both `df_silver` and `df_quarantine` triggers two scans of
+#   `df_typed` unless persisted or written via Delta multi-output / `checkpoint`.
+
+
+# ---------------------------------------------------------------------------
+# Production & Interview Gotchas
+# ---------------------------------------------------------------------------
+# 1. `dropDuplicates(["key"])` retains the first row encountered per partition—its
+#    output changes across runs; always use `Window.partitionBy(...).orderBy(...)`.
+# 2. Use `DecimalType(14, 2)` instead of `DoubleType` for monetary amounts in
+#    Silver to avoid IEEE-754 binary floating-point rounding discrepancies.
+# 3. Never silently drop failed quality rows; route them to a quarantine table
+#    with `_quarantine_reason` and alert if error rate exceeds threshold.
+
+
+if __name__ == "__main__":
+    spark = (
+        SparkSession.builder.appName("065_medallion_silver")
+        .master("local[*]")
+        .config("spark.sql.ansi.enabled", "true")
+        .getOrCreate()
+    )
+    rows = [
+        ("INV-1001", "V-01", "1,500.00", "appr", "2025-01-20 10:00:00"),
+        ("INV-1001", "V-01", "1,500.00", "APPROVED", "2025-01-20 10:05:00"),
+        ("INV-1002", "V-02", "420.50", "PENDING", "2025-01-20 10:01:00"),
+        ("INV-1003", "V-03", "-50.00", "REJECTED", "2025-01-20 10:02:00"),
+    ]
+    df_in = spark.createDataFrame(
+        rows, "invoice_no STRING, vendor_id STRING, raw_amount STRING, raw_status STRING, updated_at STRING"
+    )
+    silver_df, quarantine_df = transform_cleanse_silver_invoices(df_in)
+    silver_df.show(truncate=False)
+    quarantine_df.show(truncate=False)

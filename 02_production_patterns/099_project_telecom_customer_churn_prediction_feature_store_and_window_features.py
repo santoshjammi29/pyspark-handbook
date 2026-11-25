@@ -1,150 +1,113 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 099: Project Telecom: Customer Churn Prediction Feature Store and Window Features
-# MAGIC
-# MAGIC **Module:** Module 10: End-to-End Enterprise Projects & Production Workflows
-# MAGIC **Difficulty:** `Advanced`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC A major mobile carrier experiences 2% monthly customer churn. Data scientists need a centralized Lakehouse Feature Store containing 30-day rolling aggregate features (drop in data usage, spike in customer service calls, late bill payments) to train machine learning churn models.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Build an enterprise Telecom Feature Engineering pipeline in PySpark: (1) Compute rolling 30-day temporal window aggregations per subscriber, (2) Calculate trend ratios (current 7-day usage vs 30-day average), (3) Assemble features into a Databricks Feature Store format, and (4) Validate feature drift.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC Feature stores prevent online/offline training-serving skew. Point-in-time correctness ensures features computed for model training reflect only the data available at the historical prediction timestamp, preventing data leakage.
+"""Project Telecom: Customer Churn Feature Engineering & Rolling Windows.
 
-# COMMAND ----------
+Scenario & Scale:
+    A mobile carrier processes 100M+ daily subscriber usage logs to compute
+    point-in-time rolling 30-day behavioral features (data drop ratio, support
+    call spikes) for churn ML training and Feature Store serving.
+"""
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+from __future__ import annotations
 
-# COMMAND ----------
-
-import os
-import sys
-import shutil
-from pathlib import Path
-
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_099_Project_Telecom_Customer_Churn_Prediction_Feature_Store_and_Window_Features")
-        .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
-        .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-        .getOrCreate()
-    )
-
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
+from pyspark.sql import DataFrame, SparkSession, functions as F, types as T
 from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
 
-# COMMAND ----------
+# ---------------------------------------------------------------------------
+# Anti-Pattern
+# ---------------------------------------------------------------------------
+# ❌ Bad Practice: Using `rowsBetween(-29, 0)` on irregular daily telemetry or
+# computing global aggregates across the full dataset before training split.
+# Otherwise: Missing days shift `rowsBetween` to cover 45-90 calendar days,
+# while global aggregates leak future subscriber behavior into historical labels.
+def transform_churn_features_leaky_bad(df_usage: DataFrame) -> DataFrame:
+    win = Window.partitionBy("subscriber_id").orderBy("usage_date").rowsBetween(-29, 0)
+    return df_usage.withColumn("avg_data_30d", F.avg("data_gb").over(win))  # Wrong on sparse dates
 
-# MAGIC %md
-# MAGIC ### Step 1: Generating Daily Subscriber Usage Telemetry
-# MAGIC Create daily data and voice usage logs per subscriber.
 
-# COMMAND ----------
-
-daily_usage = [
-    ("SUB-1", "2023-11-01", 1.5, 45, 0),
-    ("SUB-1", "2023-11-05", 2.0, 30, 0),
-    ("SUB-1", "2023-11-15", 0.5, 10, 1), # Usage dropping, customer service call!
-    ("SUB-1", "2023-11-20", 0.1, 5,  2), # Severe drop, multiple calls
-    ("SUB-2", "2023-11-01", 3.0, 60, 0),
-    ("SUB-2", "2023-11-20", 3.2, 55, 0)
-]
-
-schema = "subscriber_id STRING, usage_date STRING, data_gb DOUBLE, call_mins INT, support_calls INT"
-df_usage = spark.createDataFrame(daily_usage, schema).withColumn("ts", F.to_date("usage_date"))
-df_usage.show()
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 2: Computing 30-Day Windowed Feature Aggregations
-# MAGIC Calculate rolling 30-day average usage and support call counts using window specifications.
-
-# COMMAND ----------
-
-# Convert date to epoch days for rangeBetween window
-df_with_days = df_usage.withColumn("day_num", F.col("ts").cast("date").cast("long"))
-
-# Rolling 30-day window (29 preceding days + current day)
-win_30d = Window.partitionBy("subscriber_id").orderBy("day_num").rangeBetween(-29, 0)
-
-df_features = (
-    df_with_days
-    .withColumn("avg_data_gb_30d", F.round(F.avg("data_gb").over(win_30d), 2))
-    .withColumn("total_support_calls_30d", F.sum("support_calls").over(win_30d))
-    .withColumn("max_daily_call_mins_30d", F.max("call_mins").over(win_30d))
-)
-
-df_features.select("subscriber_id", "usage_date", "data_gb", "avg_data_gb_30d", "total_support_calls_30d").show()
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 3: Deriving Churn Risk Indicators & Feature Store Packaging
-# MAGIC Calculate feature ratios and assemble final ML training dataset.
-
-# COMMAND ----------
-
-df_final_features = (
-    df_features
-    # Usage ratio: current data vs 30-day average (ratio < 0.5 indicates drop)
-    .withColumn(
-        "data_usage_drop_ratio",
-        F.when(F.col("avg_data_gb_30d") > 0, F.round(F.col("data_gb") / F.col("avg_data_gb_30d"), 2)).otherwise(1.0)
+# ---------------------------------------------------------------------------
+# ANSI-Safe PySpark 4.0+ Fix
+# ---------------------------------------------------------------------------
+# ✅ Good Practice: Convert dates to epoch days (`unix_date` / date cast to INT)
+# and use `rangeBetween(-29, 0)` for exact 30-calendar-day rolling windows,
+# guarding division with `F.try_divide` under ANSI mode.
+def transform_build_churn_features(df_usage: DataFrame) -> DataFrame:
+    """Compute point-in-time 30-day calendar rolling churn features per subscriber."""
+    df_dated = (
+        df_usage.withColumn("usage_dt", F.try_to_date(F.col("usage_date"), "yyyy-MM-dd"))
+        .withColumn("data_gb_num", F.try_cast(F.col("data_gb"), T.DoubleType()))
+        .filter(F.col("usage_dt").isNotNull())
+        .withColumn("day_epoch", F.unix_date(F.col("usage_dt")))
     )
-    .withColumn(
-        "is_high_churn_risk",
-        F.when((F.col("data_usage_drop_ratio") < 0.4) & (F.col("total_support_calls_30d") >= 2), 1).otherwise(0)
+
+    win_30d = Window.partitionBy("subscriber_id").orderBy("day_epoch").rangeBetween(-29, 0)
+
+    return (
+        df_dated.withColumn("avg_data_gb_30d", F.round(F.avg("data_gb_num").over(win_30d), 2))
+        .withColumn("total_support_calls_30d", F.sum("support_calls").over(win_30d))
+        .withColumn("max_daily_call_mins_30d", F.max("call_mins").over(win_30d))
+        .withColumn(
+            "data_usage_drop_ratio",
+            F.round(
+                F.coalesce(F.try_divide(F.col("data_gb_num"), F.col("avg_data_gb_30d")), F.lit(1.0)),
+                2,
+            ),
+        )
+        .withColumn(
+            "is_high_churn_risk",
+            F.when(
+                (F.col("data_usage_drop_ratio") < F.lit(0.4))
+                & (F.col("total_support_calls_30d") >= F.lit(2)),
+                F.lit(1),
+            ).otherwise(F.lit(0)),
+        )
+        .select(
+            "subscriber_id",
+            "usage_dt",
+            "avg_data_gb_30d",
+            "total_support_calls_30d",
+            "max_daily_call_mins_30d",
+            "data_usage_drop_ratio",
+            "is_high_churn_risk",
+        )
     )
-    .select(
-        "subscriber_id",
-        "usage_date",
-        "avg_data_gb_30d",
-        "total_support_calls_30d",
-        "data_usage_drop_ratio",
-        "is_high_churn_risk"
+
+
+# ---------------------------------------------------------------------------
+# explain("formatted") / Spark UI Diagnostic Notes
+# ---------------------------------------------------------------------------
+# - `explain("formatted")` displays `Window` with `RANGE BETWEEN 29 PRECEDING
+#   AND CURRENT ROW` after `Exchange hashpartitioning(subscriber_id)` and `Sort`.
+# - Monitor Spark UI spill metrics on `WindowExec`; partition upstream Delta
+#   usage tables by `usage_dt` so daily incremental runs only read a 30-day tail.
+
+
+# ---------------------------------------------------------------------------
+# Production & Interview Gotchas
+# ---------------------------------------------------------------------------
+# 1. `rangeBetween(-29, 0)` requires an integral/numeric `orderBy` expression:
+#    use `F.unix_date(usage_dt)` (days since 1970-01-01) for calendar days or
+#    `cast("long")` on timestamps for seconds-based windows.
+# 2. Point-in-time joins (`ASOF` / `timestamp <= label_ts`) prevent data leakage
+#    between offline Feature Store training sets and online real-time serving.
+# 3. `F.try_divide` avoids `DIVIDE_BY_ZERO` crashes in ANSI mode when a new
+#    subscriber has `0.0` average data usage over the rolling window.
+
+
+if __name__ == "__main__":
+    spark = (
+        SparkSession.builder.appName("099_telecom_churn_features")
+        .master("local[*]")
+        .config("spark.sql.ansi.enabled", "true")
+        .getOrCreate()
     )
-)
-
-print("Final ML Feature Store Table:")
-df_final_features.show()
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **Feature Stores decouple ML feature engineering from real-time model serving.**
-# MAGIC - **Use `rangeBetween` on timestamp or epoch day columns to compute rolling time-based features.**
-# MAGIC - **Ratios comparing short-term activity to long-term baseline (e.g. 7-day vs 30-day) are powerful predictors.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. What is point-in-time correctness in Feature Store design and how does it prevent data leakage?
-# MAGIC 2. What is the difference between online and offline feature stores?
-# MAGIC 3. How do you implement rolling 30-day window features in PySpark on irregular daily observations?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+    usage_rows = [
+        ("SUB-1", "2025-01-01", 1.5, 45, 0),
+        ("SUB-1", "2025-01-05", 2.0, 30, 0),
+        ("SUB-1", "2025-01-15", 0.5, 10, 1),
+        ("SUB-1", "2025-01-20", 0.1, 5, 2),
+        ("SUB-2", "2025-01-20", 3.2, 55, 0),
+    ]
+    df_in = spark.createDataFrame(
+        usage_rows, "subscriber_id STRING, usage_date STRING, data_gb DOUBLE, call_mins INT, support_calls INT"
+    )
+    transform_build_churn_features(df_in).show(truncate=False)

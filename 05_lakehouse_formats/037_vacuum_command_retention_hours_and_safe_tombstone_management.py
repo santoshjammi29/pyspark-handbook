@@ -1,129 +1,116 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 037: VACUUM Command, Retention Hours and Safe Tombstone Management
-# MAGIC
-# MAGIC **Module:** Module 04: Delta Lake Architecture, ACID Operations & Time Travel
-# MAGIC **Difficulty:** `Intermediate`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC A cloud lakehouse table ingests high-frequency updates, accumulating 50,000 unreferenced obsolete Parquet files and generating massive cloud storage bills. Platform engineers must reclaim storage capacity safely without corrupting active concurrent readers.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Execute Delta Lake `VACUUM` management: understand the default 7-day retention safety check, bypass retention for testing (`spark.databricks.delta.vacuum.parallelDelete.enabled`), evaluate `DRY RUN` mode to audit candidate files before permanent deletion, and prevent race conditions.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC Delta `VACUUM` physically deletes data files that have been marked as removed (tombstoned) in the transaction log and are older than the retention threshold (default 168 hours / 7 days). The safety check prevents deleting files still being read by long-running queries.
+"""
+Module 05 / 037: VACUUM Command, Retention Hours & Safe Tombstone Management
 
-# COMMAND ----------
+Scenario & Scale:
+    A high-frequency streaming Delta table accumulates 50,000 tombstoned Parquet
+    files per week across 120 TB of historical data, inflating S3/ADLS storage
+    bills by 4x. Storage engineers must reclaim unreferenced files safely
+    without breaking active concurrent BI queries or streaming jobs.
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+Goal:
+    Audit eligible files with `VACUUM ... DRY RUN`, enforce safe retention
+    windows (>=168 hours in production), and verify physical storage cleanup
+    without corrupting active snapshots.
+"""
 
-# COMMAND ----------
+from __future__ import annotations
 
-import os
-import sys
-import shutil
 from pathlib import Path
+import tempfile
 
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_037_VACUUM_Command_Retention_Hours_and_Safe_Tombstone_Management")
+from pyspark.sql import SparkSession
+
+
+def build_spark() -> SparkSession:
+    """Create an ANSI-enabled Spark 4.0+ session with Delta Lake."""
+    return (
+        SparkSession.builder.appName("037_Delta_VACUUM_Safe_Tombstones")
         .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
-        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.ansi.enabled", "true")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .config(
+            "spark.sql.catalog.spark_catalog",
+            "org.apache.spark.sql.delta.catalog.DeltaCatalog",
+        )
         .getOrCreate()
     )
 
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+# ---------------------------------------------------------------------------
+# (2) Anti-Pattern: Disabling retention safety check with RETAIN 0 HOURS in prod
+# ---------------------------------------------------------------------------
+def anti_pattern_zero_hour_vacuum(spark: SparkSession, delta_uri: str) -> None:
+    # ❌ Bad Practice: Turning off `retentionDurationCheck` and running `RETAIN 0 HOURS`
+    # on a live production table with active readers or concurrent MERGE/streaming jobs.
+    # Otherwise: `VACUUM` physically deletes files referenced by snapshots started
+    # minutes earlier, crashing concurrent readers with `FileNotFoundException` and
+    # permanently destroying Time Travel / `RESTORE` recovery points.
+    spark.conf.set("spark.databricks.delta.vacuum.retentionDurationCheck.enabled", "false")
+    spark.sql(f"VACUUM delta.`{delta_uri}` RETAIN 0 HOURS")
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 1: Generating Tombstoned Files via Overwrites
-# MAGIC Create obsolete historical data files.
+# ---------------------------------------------------------------------------
+# (3) ANSI-safe PySpark 4.0+ Fix: DRY RUN Audit + Retention-Guarded VACUUM
+# ---------------------------------------------------------------------------
+def good_practice_safe_vacuum(spark: SparkSession, delta_dir: Path) -> None:
+    # ✅ Good Practice: Always execute `VACUUM ... DRY RUN` first to audit candidate
+    # paths, keep `retentionDurationCheck.enabled=true` (>=168 hours) in production,
+    # and run `VACUUM` using parallel deletion (`parallelDelete.enabled=true`).
+    target_uri = str(delta_dir)
+    for batch_idx in range(1, 4):
+        rows = [(f"ROW-{batch_idx}-{i}", f"batch_{batch_idx}") for i in range(5)]
+        spark.createDataFrame(rows, "id STRING, batch STRING").write.format("delta").mode(
+            "overwrite"
+        ).save(target_uri)
 
-# COMMAND ----------
+    # Preview unreferenced files safely; 168h default protects 7 days of Time Travel.
+    dry_run_default = spark.sql(f"VACUUM delta.`{target_uri}` DRY RUN")
+    print(f"Files eligible under default 168h retention: {dry_run_default.count()}")
 
-delta_vac_path = "/tmp/delta_vacuum_037"
-if Path(delta_vac_path).exists():
-    shutil.rmtree(delta_vac_path)
+    # Local ephemeral test cleanup only (demonstrating DRY RUN -> VACUUM flow):
+    spark.conf.set("spark.databricks.delta.vacuum.parallelDelete.enabled", "true")
+    spark.conf.set("spark.databricks.delta.vacuum.retentionDurationCheck.enabled", "false")
+    try:
+        candidates = spark.sql(f"VACUUM delta.`{target_uri}` RETAIN 0 HOURS DRY RUN")
+        candidates.show(truncate=False)
+        spark.sql(f"VACUUM delta.`{target_uri}` RETAIN 0 HOURS")
+    finally:
+        spark.conf.set("spark.databricks.delta.vacuum.retentionDurationCheck.enabled", "true")
 
-# Write 3 successive batches to generate orphaned parquet files
-for b in range(1, 4):
-    data = [(f"ROW-{b}-{i}", f"batch_{b}") for i in range(5)]
-    spark.createDataFrame(data, ["id", "batch"]).write.format("delta").mode("overwrite").save(delta_vac_path)
+    active_files = list(delta_dir.glob("*.parquet"))
+    print(f"Active Parquet files remaining: {len(active_files)}")
+    spark.read.format("delta").load(target_uri).orderBy("id").show(truncate=False)
 
-# List physical parquet files on disk
-parquet_files = list(Path(delta_vac_path).glob("*.parquet"))
-print(f"Total physical Parquet files in directory: {len(parquet_files)}")
 
-# COMMAND ----------
+# ---------------------------------------------------------------------------
+# (4) explain("formatted") & Spark UI Diagnostic Notes (Comments Only)
+# ---------------------------------------------------------------------------
+# - `VACUUM` executes a distributed Spark listing job (`parallelDelete`) comparing
+#   physical storage objects against active `add` actions and non-expired `remove`
+#   tombstones in `_delta_log`.
+# - In the Spark UI Jobs tab, monitor the directory-listing stage duration; on 100K+
+#   partitioned tables, ensure `spark.databricks.delta.vacuum.parallelDelete.enabled`
+#   is `true` so object-store `DELETE` API calls scale across executors instead of
+#   bottlenecking on the driver.
 
-# MAGIC %md
-# MAGIC ### Step 2: Executing VACUUM with DRY RUN First
-# MAGIC Audit which files are eligible for deletion without actually deleting them.
 
-# COMMAND ----------
+# ---------------------------------------------------------------------------
+# (5) Production & Interview Gotchas
+# ---------------------------------------------------------------------------
+# 1. `VACUUM` Does NOT Delete `_delta_log/*.json`: Transaction logs are managed
+#    separately by `delta.logRetentionDuration` (default 30 days) during checkpoints.
+# 2. Retention Floor Alignment: Set `delta.deletedFileRetentionDuration` >= longest
+#    running batch/streaming job SLA + required Time Travel window (e.g., `interval 7 days`).
+# 3. `VACUUM` Requires No Manual `OPTIMIZE`: `VACUUM` only deletes files already marked
+#    `remove` in `_delta_log`; run `OPTIMIZE` first to compact active small files.
+# 4. Shallow Clones Warning: Vacuuming a parent table deletes files referenced by any
+#    shallow clone pointing to it—use `VACUUM` cautiously when shallow clones exist.
 
-# Disable safety retention check ONLY for local demonstration
-spark.conf.set("spark.databricks.delta.vacuum.parallelDelete.enabled", "true")
 
-# DRY RUN lists files eligible for deletion without deleting them
-df_dry_run = spark.sql(f"VACUUM delta.`{delta_vac_path}` RETAIN 0 HOURS DRY RUN")
-print("Candidate Files Identified for Deletion by DRY RUN:")
-df_dry_run.show(truncate=False)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 3: Executing Permanent VACUUM & Storage Verification
-# MAGIC Permanently purge unreferenced files and verify disk reclamation.
-
-# COMMAND ----------
-
-# Execute actual vacuum with 0 hours retention (demo environment only)
-spark.sql(f"SET spark.databricks.delta.vacuum.retentionDurationCheck.enabled = false")
-spark.sql(f"VACUUM delta.`{delta_vac_path}` RETAIN 0 HOURS")
-
-remaining_parquet = list(Path(delta_vac_path).glob("*.parquet"))
-print(f"Physical Parquet files remaining on disk after VACUUM: {len(remaining_parquet)}")
-
-# Current data remains 100% accessible
-spark.read.format("delta").load(delta_vac_path).show()
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **Delta `VACUUM` cleans up orphaned data files no longer referenced by the current table snapshot.**
-# MAGIC - **Default retention is 7 days (168 hours) to protect concurrent active queries and time-travel SLA.**
-# MAGIC - **Always run `VACUUM ... DRY RUN` first in production to preview files slated for permanent deletion.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. What dangerous consequence occurs if you disable `retentionDurationCheck` and vacuum with 0 hours during active concurrent queries?
-# MAGIC 2. Does `VACUUM` delete transaction log JSON files inside `_delta_log/`?
-# MAGIC 3. How does `VACUUM` interact with Delta Lake's time-travel capabilities?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+if __name__ == "__main__":
+    spark = build_spark()
+    try:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            good_practice_safe_vacuum(spark, Path(tmp_dir) / "delta_vacuum")
+    finally:
+        spark.stop()

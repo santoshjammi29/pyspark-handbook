@@ -1,136 +1,138 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 039: Z-Order Multi-Dimensional Indexing vs Liquid Clustering (CLUSTER BY)
-# MAGIC
-# MAGIC **Module:** Module 04: Delta Lake Architecture, ACID Operations & Time Travel
-# MAGIC **Difficulty:** `Advanced`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC An ad-tech analytics platform runs ad-hoc queries filtering on combinations of `customer_id`, `event_date`, and `campaign_id`. Traditional Hive partitioning on all three columns causes over-partitioning, while single-column sorting leaves other query predicates unoptimized.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Compare multi-dimensional indexing techniques: implement `OPTIMIZE ... ZORDER BY (col1, col2)` to co-locate multidimensional data along space-filling Hilbert/Morton curves, and contrast with modern Databricks Liquid Clustering (`CLUSTER BY`) which supports incremental re-clustering without full rewrites.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC Z-Ordering maps multi-dimensional data onto a 1D space-filling curve, preserving spatial locality so queries filtering on any subset of Z-ordered columns skip unneeded Parquet files. Liquid Clustering (Databricks Runtime 13.3+) replaces partitioning and Z-order with dynamic clustering that scales incrementally.
+"""
+Module 05 / 039: Z-Order Multi-Dimensional Indexing vs Liquid Clustering (CLUSTER BY)
 
-# COMMAND ----------
+Scenario & Scale:
+    An ad-tech analytics warehouse executes 10,000+ interactive queries/day over
+    a 60 TB telemetry table filtering arbitrarily on `device_id`, `campaign_id`,
+    and `event_date`. Hive partitioning on all three columns creates millions of
+    tiny partition directories, while single-column sorting leaves other filters
+    scanning 100% of files.
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+Goal:
+    Eliminate over-partitioning by applying Delta `OPTIMIZE ... ZORDER BY`
+    (space-filling curve co-location) and modern Liquid Clustering (`CLUSTER BY`),
+    enabling incremental Hilbert clustering without partition lock-in.
+"""
 
-# COMMAND ----------
+from __future__ import annotations
 
-import os
-import sys
-import shutil
 from pathlib import Path
+import random
+import tempfile
 
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_039_Z_Order_Multi_Dimensional_Indexing_vs_Liquid_Clustering_CLUSTER_BY")
+from pyspark.sql import DataFrame, SparkSession
+
+
+def build_spark() -> SparkSession:
+    """Create an ANSI-enabled Spark 4.0+ session with Delta Lake."""
+    return (
+        SparkSession.builder.appName("039_ZOrder_vs_Liquid_Clustering")
         .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
-        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.ansi.enabled", "true")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .config(
+            "spark.sql.catalog.spark_catalog",
+            "org.apache.spark.sql.delta.catalog.DeltaCatalog",
+        )
         .getOrCreate()
     )
 
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+# ---------------------------------------------------------------------------
+# (2) Anti-Pattern: Hive partitioning on high-cardinality filter columns
+# ---------------------------------------------------------------------------
+def anti_pattern_over_partitioning(df: DataFrame, target_uri: str) -> None:
+    # ❌ Bad Practice: Partitioning physically by high-cardinality columns such as
+    # `device_id` and `campaign_id` alongside `event_date`.
+    # Otherwise: 100K devices x 500 campaigns x 365 days explodes into billions of
+    # tiny KB-sized Parquet files and directory prefixes, saturating object-store
+    # metadata APIs and making `OPTIMIZE` practically impossible across partitions.
+    (
+        df.write.format("delta")
+        .partitionBy("event_date", "campaign_id", "device_id")
+        .mode("overwrite")
+        .save(target_uri)
+    )
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 1: Generating Multi-Dimensional Telemetry Dataset
-# MAGIC Create dataset queried across multiple filter dimensions.
+# ---------------------------------------------------------------------------
+# (3) ANSI-safe PySpark 4.0+ Fix: Z-Order Indexing & Liquid Clustering DDL
+# ---------------------------------------------------------------------------
+def good_practice_clustering(spark: SparkSession, delta_dir: Path) -> None:
+    # ✅ Good Practice: Keep tables unpartitioned (or coarse-grained) and co-locate
+    # multi-dimensional query predicates using Liquid Clustering (`CLUSTER BY`) for
+    # incremental Hilbert clustering, or `OPTIMIZE ... ZORDER BY` on legacy tables.
+    target_uri = str(delta_dir)
+    rng = random.Random(42)
+    rows = [
+        (
+            f"DEV-{rng.randint(1, 100):03d}",
+            f"CAMP-{rng.randint(1, 20):02d}",
+            f"2026-01-{rng.randint(1, 10):02d}",
+            round(rng.uniform(10.0, 500.0), 2),
+        )
+        for _ in range(1000)
+    ]
+    df = spark.createDataFrame(
+        rows, "device_id STRING, campaign_id STRING, event_date STRING, metric_value DOUBLE"
+    )
+    df.write.format("delta").mode("overwrite").save(target_uri)
 
-# COMMAND ----------
+    # Path-based Z-ORDER BY for existing non-clustered tables:
+    spark.sql(f"OPTIMIZE delta.`{target_uri}` ZORDER BY (device_id, campaign_id)").select(
+        "path", "metrics.numFilesAdded", "metrics.numFilesRemoved"
+    ).show(truncate=False)
 
-delta_zorder_path = "/tmp/delta_zorder_039"
-if Path(delta_zorder_path).exists():
-    shutil.rmtree(delta_zorder_path)
+    # Modern Delta 3.x/4.0 Liquid Clustering (incremental, partition-free):
+    spark.sql(
+        f"""
+        CREATE TABLE IF NOT EXISTS ad_telemetry_liquid (
+            device_id STRING,
+            campaign_id STRING,
+            event_date DATE,
+            metric_value DOUBLE
+        )
+        USING DELTA
+        CLUSTER BY (device_id, campaign_id)
+        LOCATION '{target_uri}_liquid'
+        """
+    )
+    # Subsequent `OPTIMIZE ad_telemetry_liquid` clusters only newly ingested data
+    # incrementally via Hilbert curves, and `ALTER TABLE ... CLUSTER BY (...)`
+    # changes clustering keys in metadata without rewriting historical files.
+    spark.sql("DROP TABLE IF EXISTS ad_telemetry_liquid")
 
-import random
-random.seed(42)
 
-telemetry = [
-    (f"DEV-{random.randint(1, 100):03d}", f"CAMP-{random.randint(1, 20):02d}", f"2023-11-{random.randint(1, 10):02d}", round(random.uniform(10.0, 500.0), 2))
-    for _ in range(1000)
-]
+# ---------------------------------------------------------------------------
+# (4) explain("formatted") & Spark UI Diagnostic Notes (Comments Only)
+# ---------------------------------------------------------------------------
+# - In `explain("formatted")`, filtering on `device_id = 'DEV-042'` or
+#   `campaign_id = 'CAMP-05'` pushes `PushedFilters` down to Delta's file-level
+#   min/max column statistics (`_delta_log` stats JSON).
+# - In the Spark UI SQL tab, compare `number of files pruned` vs `number of files read`
+#   and `scan time`: effective Z-Order / Liquid Clustering prunes 85–99% of Parquet
+#   files without creating a single Hive partition directory.
 
-schema = "device_id STRING, campaign_id STRING, event_date STRING, metric_value DOUBLE"
-df_telemetry = spark.createDataFrame(telemetry, schema)
-df_telemetry.write.format("delta").mode("overwrite").save(delta_zorder_path)
 
-print("Telemetry Delta table written.")
+# ---------------------------------------------------------------------------
+# (5) Production & Interview Gotchas
+# ---------------------------------------------------------------------------
+# 1. Z-Order vs Liquid Clustering (`CLUSTER BY`): `ZORDER BY` is NOT incremental—re-running
+#    it re-touches all files in the partition; Liquid Clustering uses Hilbert curves and
+#    tracks clustering state in `_delta_log` so `OPTIMIZE` only re-clusters unclustered data.
+# 2. Keep Clustering Keys to 2–4 Columns: Adding 8+ columns dilutes space-filling curve
+#    locality so each column gets wide, overlapping min/max ranges and zero file skipping.
+# 3. Stats Collection Columns: Delta only writes min/max stats for the first 32 columns
+#    by default (`delta.dataSkippingNumIndexedCols`); place clustering/Z-ordered columns
+#    within the first 32 columns (or widen the property).
+# 4. `CLUSTER BY` Cannot Combine with `PARTITIONED BY`: Liquid Clustering replaces Hive
+#    partitioning entirely—never mix both on the same table.
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 2: Applying Z-ORDER BY Multi-Dimensional Compaction
-# MAGIC Run OPTIMIZE with ZORDER BY on multiple high-cardinality query columns.
-
-# COMMAND ----------
-
-# Z-Order on device_id and campaign_id
-df_zorder_res = spark.sql(f"OPTIMIZE delta.`{delta_zorder_path}` ZORDER BY (device_id, campaign_id)")
-df_zorder_res.select("path", "metrics.numFilesAdded", "metrics.numFilesRemoved").show(truncate=False)
-
-print("Table successfully Z-Ordered for fast multi-column data skipping!")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 3: Architectural Deep Dive: Liquid Clustering (CLUSTER BY)
-# MAGIC Explain Databricks Liquid Clustering syntax and operational advantages.
-
-# COMMAND ----------
-
-# In Databricks Runtime 13.3+ / Unity Catalog, Liquid Clustering is declared via:
-# CREATE TABLE events (
-#     device_id STRING,
-#     campaign_id STRING,
-#     event_date DATE,
-#     metric_value DOUBLE
-# ) USING DELTA
-# CLUSTER BY (device_id, campaign_id);
-
-# To re-cluster incrementally:
-# OPTIMIZE events;  -- Only clusters newly appended data without rewriting entire table!
-
-print("Liquid Clustering advantages: no partition lock-in, non-destructive column changes, and incremental re-clustering!")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **Z-Ordering arranges multi-dimensional data along a Morton space-filling curve for optimal file skipping.**
-# MAGIC - **Z-Order requires periodic full rewrites of data files; Liquid Clustering (`CLUSTER BY`) enables incremental clustering.**
-# MAGIC - **Choose clustering columns that appear frequently in query WHERE clause filters and possess high cardinality.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. How does Z-Ordering achieve file skipping across multiple columns simultaneously without creating Hive partition directories?
-# MAGIC 2. What is the main limitation of traditional Hive partitioning that Liquid Clustering solves?
-# MAGIC 3. Why should you limit Z-Order to 2-4 columns rather than Z-ordering 10+ columns?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+if __name__ == "__main__":
+    spark = build_spark()
+    try:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            good_practice_clustering(spark, Path(tmp_dir) / "delta_zorder")
+    finally:
+        spark.stop()

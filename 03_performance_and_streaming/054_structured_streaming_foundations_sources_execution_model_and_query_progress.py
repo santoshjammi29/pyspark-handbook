@@ -1,150 +1,124 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 054: Structured Streaming Foundations: Sources, Execution Model and Query Progress
-# MAGIC
-# MAGIC **Module:** Module 06: Streaming & Near Real-Time Processing
-# MAGIC **Difficulty:** `Intermediate`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC A payments platform monitors live transaction throughput. As card swipes occur across the globe, an unbounded stream must be parsed, enriched, and aggregated in real time without dropping micro-batches.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Master Spark Structured Streaming fundamentals: create a streaming DataFrame from the memory/rate stream source, inspect stream schema, configure streaming queries (`readStream` / `writeStream`), monitor execution metrics via `StreamingQueryProgress`, and manage query lifecycle.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC Spark Structured Streaming treats a live stream as an unbounded, continuously appended table. The engine processes micro-batches incrementally, maintaining offsets in a write-ahead log (WAL) and state in RocksDB/memory, providing end-to-end exactly-once fault tolerance.
+"""Scenario & Scale: Payments platform ingesting live card swipes globally.
 
-# COMMAND ----------
+Processes 50k+ events/sec continuously via Structured Streaming without
+dropping micro-batches, leveraging WAL offsets and RocksDB state tracking.
+"""
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+from pyspark.sql import DataFrame, SparkSession, functions as F
+from pyspark.sql.streaming import StreamingQuery
 
-# COMMAND ----------
 
-import os
-import sys
-import shutil
-from pathlib import Path
+# -----------------------------------------------------------------------------
+# 2. Anti-Pattern
+# -----------------------------------------------------------------------------
+# ❌ Bad Practice: Pulling micro-batch rows to the driver via .collect() /
+# .toPandas() or omitting checkpointLocation and outputMode guarantees.
+# Otherwise: Driver OOM crashes under burst traffic, unbounded WAL loss on
+# restart, and duplicate or dropped payment transactions across failures.
+def bad_ingest_stream(spark: SparkSession) -> None:
+    df_raw = spark.readStream.format("rate").option("rowsPerSecond", 5).load()
+    # Triggering unbounded driver collection or console sink without checkpoint
+    df_raw.writeStream.format("console").start()
 
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_054_Structured_Streaming_Foundations_Sources_Execution_Model_and_Query_Progress")
-        .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
-        .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-        .getOrCreate()
+
+# -----------------------------------------------------------------------------
+# 3. ANSI-safe PySpark 4.0+ Fix
+# -----------------------------------------------------------------------------
+# ✅ Good Practice: Declarative streaming DataFrame transformations with explicit
+# schemas, ANSI-safe casting/division, checkpointLocation, and query telemetry.
+def build_transaction_stream(
+    spark: SparkSession,
+    rows_per_second: int = 10,
+) -> DataFrame:
+    """Build a normalized synthetic payments stream using the rate source."""
+    df_raw = (
+        spark.readStream.format("rate")
+        .option("rowsPerSecond", rows_per_second)
+        .option("numPartitions", 2)
+        .load()
+    )
+    return df_raw.select(
+        F.col("timestamp").alias("event_time"),
+        F.concat(F.lit("TXN-"), F.col("value").cast("string")).alias(
+            "transaction_id"
+        ),
+        F.round(
+            F.try_cast(F.col("value") % F.lit(500), "double") + F.lit(10.50),
+            2,
+        ).alias("amount"),
+        F.when(F.col("value") % F.lit(10) == 0, F.lit("HIGH_RISK"))
+        .otherwise(F.lit("STANDARD"))
+        .alias("risk_category"),
     )
 
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+def start_stream_with_checkpoint(
+    df_stream: DataFrame,
+    sink_uri: str,
+    checkpoint_uri: str,
+    query_name: str = "live_transactions",
+) -> StreamingQuery:
+    """Start an append-mode Parquet stream with durable WAL checkpointing."""
+    return (
+        df_stream.writeStream.format("parquet")
+        .queryName(query_name)
+        .outputMode("append")
+        .option("checkpointLocation", checkpoint_uri)
+        .start(sink_uri)
+    )
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 1: Creating an Unbounded Synthetic Streaming Source
-# MAGIC Use Spark's built-in 'rate' stream source to generate synthetic streaming timestamps.
+def inspect_query_progress(query: StreamingQuery) -> dict:
+    """Return key Structured Streaming throughput and latency telemetry."""
+    progress = query.lastProgress or {}
+    return {
+        "batch_id": progress.get("batchId"),
+        "num_input_rows": progress.get("numInputRows", 0),
+        "input_rows_per_sec": progress.get("inputRowsPerSecond", 0.0),
+        "processed_rows_per_sec": progress.get("processedRowsPerSecond", 0.0),
+        "duration_ms": progress.get("durationMs", {}),
+    }
 
-# COMMAND ----------
 
-# rate source generates timestamp and monotonic value at configured rows per second
-df_stream_raw = (
-    spark.readStream
-    .format("rate")
-    .option("rowsPerSecond", 5)
-    .option("numPartitions", 2)
-    .load()
-)
+# -----------------------------------------------------------------------------
+# 4. explain("formatted") / Spark UI Diagnostic Notes
+# -----------------------------------------------------------------------------
+# df_stream.explain("formatted") shows StreamingRelationV2 -> Project.
+# Spark UI -> Structured Streaming tab:
+#   - Compare Input Rate (rows/s) vs Process Rate (rows/s); sustained
+#     Process Rate < Input Rate signals growing micro-batch backlog.
+#   - Inspect Batch Duration breakdown: triggerExecution = getBatch +
+#     queryPlanning + addBatch + walCommit + commitOffsets.
+#   - Verify Offset Log and Commit Log advance monotonically per batchId.
 
-print(f"Is DataFrame streaming: {df_stream_raw.isStreaming}")
-df_stream_raw.printSchema()
 
-# COMMAND ----------
+# -----------------------------------------------------------------------------
+# 5. Production / Interview Gotchas
+# -----------------------------------------------------------------------------
+# 1. Exactly-once fault tolerance requires BOTH a replayable source (Kafka,
+#    cloudFiles, file stream) AND an idempotent sink + durable checkpointLocation.
+# 2. Append mode emits rows only once; Update emits changed keys; Complete
+#    re-emits the full aggregation table every micro-batch (only for small tables).
+# 3. Never mutate checkpointLocation schema incompatibly without draining the
+#    backlog or provisioning a fresh checkpoint directory.
 
-# MAGIC %md
-# MAGIC ### Step 2: Streaming Transformations: Deriving Live Transaction Metrics
-# MAGIC Apply standard DataFrame transformations over the unbounded streaming dataset.
 
-# COMMAND ----------
+if __name__ == "__main__":
+    import tempfile
+    import time
 
-df_transactions_stream = df_stream_raw.select(
-    F.col("timestamp").alias("event_time"),
-    F.concat(F.lit("TXN-"), F.col("value")).alias("transaction_id"),
-    F.round((F.col("value") % 500) + 10.50, 2).alias("amount"),
-    F.when(F.col("value") % 10 == 0, "HIGH_RISK").otherwise("STANDARD").alias("risk_category")
-)
-
-df_transactions_stream.printSchema()
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 3: Starting Memory Sink & Inspecting StreamingQueryProgress
-# MAGIC Start stream writing to in-memory table for interactive querying and inspect progress metrics.
-
-# COMMAND ----------
-
-import time
-
-# Start streaming query writing to in-memory table
-query = (
-    df_transactions_stream.writeStream
-    .format("memory")
-    .queryName("live_transactions")
-    .outputMode("append")
-    .start()
-)
-
-print(f"Streaming query started! ID: {query.id} | Status: {query.status['message']}")
-
-# Let the stream run for 3 seconds to accumulate micro-batches
-time.sleep(3)
-
-# Query recent progress
-progress = query.lastProgress
-if progress:
-    print(f"Input Rate: {progress.get('inputRowsPerSecond', 0):.1f} rows/sec")
-    print(f"Processing Rate: {progress.get('processedRowsPerSecond', 0):.1f} rows/sec")
-    print(f"Batch ID: {progress.get('batchId', 0)}")
-
-# Query the in-memory streaming table using Spark SQL
-print("Live In-Memory Streaming Snapshot:")
-spark.sql("SELECT * FROM live_transactions ORDER BY event_time DESC LIMIT 5").show(truncate=False)
-
-# Safely stop streaming query
-query.stop()
-print("Streaming query safely stopped.")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **Structured Streaming abstracts streaming into an unbounded table queried using standard DataFrame API operations.**
-# MAGIC - **Output modes: `append` (emits new rows), `update` (emits changed rows), `complete` (emits entire aggregated table).**
-# MAGIC - **`query.lastProgress` provides vital telemetry: input rows per second, processing latency, and state memory.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. What is the difference between micro-batch execution and Continuous Processing mode in Spark Streaming?
-# MAGIC 2. How does the checkpoint directory guarantee exactly-once processing during executor node crashes?
-# MAGIC 3. What are the three output modes in Structured Streaming and when must each be used?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+    spark = (
+        SparkSession.builder.appName("054_StructuredStreamingFoundations")
+        .config("spark.sql.shuffle.partitions", "4")
+        .getOrCreate()
+    )
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        df_txns = build_transaction_stream(spark, rows_per_second=5)
+        query = start_stream_with_checkpoint(
+            df_txns,
+            sink_uri=f"{tmp_dir}/sink",
+            checkpoint_uri=f"{tmp_dir}/chk",
+        )
+        time.sleep(2)
+        print(inspect_query_progress(query))
+        query.stop()

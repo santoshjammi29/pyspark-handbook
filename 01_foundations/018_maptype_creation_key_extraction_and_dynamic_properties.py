@@ -1,136 +1,105 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 018: MapType Creation, Key Extraction and Dynamic Properties
-# MAGIC
-# MAGIC **Module:** Module 02: Complex Data Types & Nested Structures Handling
-# MAGIC **Difficulty:** `Intermediate`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC An advertising technology platform captures custom user ad-tracking attributes (cookies, campaign IDs, UTM tags, experiment variants) as dynamic key-value pairs where keys vary across partners and cannot be fixed into a static schema.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Master MapType operations: construct maps from column pairs (`create_map()`), extract keys (`map_keys()`), extract values (`map_values()`), build maps from paired arrays (`map_from_arrays()`), and query dynamic attributes safely without null pointer exceptions.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC MapType represents key-value collections with arbitrary keys of identical data type. Unlike StructType (where field names are fixed in schema metadata), MapType allows dynamic runtime keys, making it ideal for sparse key-value attributes.
+"""Scenario & Scale: Ad-Tech dynamic UTM & experiment attribute pipeline (400M events/day).
 
-# COMMAND ----------
+Business Context:
+Store variable partner tracking parameters in `MapType`, safely look up dynamic keys
+under Spark 4.0 ANSI mode, inspect key/value arrays, and normalize sparse maps when needed.
+"""
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import functions as F
+from pyspark.sql import types as T
 
-# COMMAND ----------
 
-import os
-import sys
-import shutil
-from pathlib import Path
-
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_018_MapType_Creation_Key_Extraction_and_Dynamic_Properties")
-        .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
+def build_spark(app_name: str = "018_MapType_Dynamic_Properties") -> SparkSession:
+    """Create or reuse a portable SparkSession with ANSI mode enabled."""
+    return (
+        SparkSession.builder.appName(app_name)
+        .config("spark.sql.ansi.enabled", "true")
         .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
         .getOrCreate()
     )
 
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+# ---------------------------------------------------------------------------
+# 1. Anti-Pattern
+# ---------------------------------------------------------------------------
+# ❌ Bad Practice:
+# - Defining a 300-column sparse `StructType` for dynamic partner UTM/experiment keys,
+#   or using `F.col("attributes")["utm_campaign"]` assuming strict ANSI key checks.
+# Otherwise:
+# - Static structs require constant schema migrations for every new partner tag.
+# - Under `spark.sql.ansi.enabled=true` + `spark.sql.mapKeyDedupPolicy=EXCEPTION`,
+#   duplicate keys in `map_from_arrays` abort the job unless handled/deduplicated.
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 1: Creating Ad-Tech Campaign Metadata with MapType
-# MAGIC Construct maps using create_map and map_from_arrays.
-
-# COMMAND ----------
-
-# Build map using paired key-value lists
-campaign_data = [
-    ("EV-1", ["utm_source", "utm_campaign", "device"], ["google", "black_friday", "mobile"]),
-    ("EV-2", ["utm_source", "experiment_group"], ["facebook", "variant_b"]),
-    ("EV-3", ["utm_source", "utm_medium", "utm_campaign"], ["linkedin", "cpc", "q4_enterprise"])
-]
-
-df_raw_campaigns = spark.createDataFrame(campaign_data, ["event_id", "param_keys", "param_vals"])
-
-# Convert parallel arrays into MapType
-df_mapped = df_raw_campaigns.withColumn(
-    "attributes",
-    F.map_from_arrays(F.col("param_keys"), F.col("param_vals"))
+# ---------------------------------------------------------------------------
+# 2. ANSI-Safe PySpark 4.0+ Fix
+# ---------------------------------------------------------------------------
+# ✅ Good Practice: `MapType` via `map_from_arrays` + `F.try_element_at` for safe lookups.
+CAMPAIGN_SCHEMA = T.StructType(
+    [
+        T.StructField("event_id", T.StringType(), nullable=False),
+        T.StructField("param_keys", T.ArrayType(T.StringType()), nullable=False),
+        T.StructField("param_vals", T.ArrayType(T.StringType()), nullable=False),
+    ]
 )
 
-df_mapped.printSchema()
-df_mapped.select("event_id", "attributes").show(truncate=False)
 
-# COMMAND ----------
+def build_and_query_attributes(df: DataFrame) -> DataFrame:
+    """Construct a MapType attribute bag and extract dynamic keys safely."""
+    attributes_map = F.map_from_arrays(F.col("param_keys"), F.col("param_vals"))
+    return df.withColumn("attributes", attributes_map).withColumns(
+        {
+            "source": F.try_element_at(F.col("attributes"), F.lit("utm_source")),
+            "campaign": F.coalesce(
+                F.try_element_at(F.col("attributes"), F.lit("utm_campaign")),
+                F.lit("ORGANIC"),
+            ),
+            "all_keys": F.map_keys(F.col("attributes")),
+            "all_values": F.map_values(F.col("attributes")),
+        }
+    )
 
-# MAGIC %md
-# MAGIC ### Step 2: Querying Map Keys, Values & Dynamic Lookup
-# MAGIC Access map values by key name using bracket notation and inspect key catalogs.
 
-# COMMAND ----------
+def main() -> None:
+    spark = build_spark()
 
-# Querying specific keys
-df_extracted = df_mapped.withColumn(
-    "source", F.col("attributes")["utm_source"]
-).withColumn(
-    "campaign", F.coalesce(F.col("attributes")["utm_campaign"], F.lit("ORGANIC"))
-).withColumn(
-    "all_keys", F.map_keys(F.col("attributes"))
-).withColumn(
-    "all_values", F.map_values(F.col("attributes"))
-)
+    campaign_data = [
+        ("EV-1", ["utm_source", "utm_campaign", "device"], ["google", "black_friday", "mobile"]),
+        ("EV-2", ["utm_source", "experiment_group"], ["facebook", "variant_b"]),
+        (
+            "EV-3",
+            ["utm_source", "utm_medium", "utm_campaign"],
+            ["linkedin", "cpc", "q4_enterprise"],
+        ),
+    ]
+    df_raw = spark.createDataFrame(campaign_data, schema=CAMPAIGN_SCHEMA)
+    df_enriched = build_and_query_attributes(df_raw)
 
-df_extracted.select("event_id", "source", "campaign", "all_keys").show(truncate=False)
+    df_kv = df_enriched.select("event_id", F.explode("attributes").alias("attr_key", "attr_value"))
 
-# COMMAND ----------
+    ev2 = df_enriched.filter(F.col("event_id") == "EV-2").first()
+    assert ev2["source"] == "facebook" and ev2["campaign"] == "ORGANIC"
+    assert df_kv.count() == 8
 
-# MAGIC %md
-# MAGIC ### Step 3: Exploding MapType into Relational Key-Value Rows
-# MAGIC Convert sparse key-value pairs into normalized relational rows.
 
-# COMMAND ----------
+# ---------------------------------------------------------------------------
+# 3. explain("formatted") / Spark UI Diagnostic Notes
+# ---------------------------------------------------------------------------
+# - `df_enriched.explain("formatted")` stays inside a narrow `Project` using native
+#   `CreateMap` / `MapFromArrays` and `TryElementAt` expressions.
+# - `F.explode("attributes")` introduces a `Generate explode(attributes)` expansion;
+#   prefer `map_keys` / `map_filter` when full row normalization is not required.
 
-df_kv_pairs = df_mapped.select(
-    "event_id",
-    F.explode("attributes").alias("attr_key", "attr_value")
-)
+# ---------------------------------------------------------------------------
+# 4. Production & Interview Gotchas
+# ---------------------------------------------------------------------------
+# 1. `MapType` enforces homogeneous key and value types (e.g. `MAP<STRING, STRING>`);
+#    for mixed-type semi-structured payloads in Spark 4.0+, prefer `VARIANT`.
+# 2. `F.map_from_arrays` requires `keys` and `values` arrays of equal length on every row;
+#    mismatched lengths raise an error in ANSI mode.
+# 3. `F.map_filter` and `F.transform_values` allow in-place map pruning/masking
+#    without exploding keys into rows.
 
-df_kv_pairs.show()
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **Use `MapType` for semi-structured data where keys are dynamic, variable, or unpredictable.**
-# MAGIC - **`map_from_arrays(keys_col, values_col)` builds maps from two parallel array columns.**
-# MAGIC - **Accessing non-existent map keys returns `NULL` safely rather than raising runtime errors.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. What is the difference between `MapType` and `StructType` in PySpark?
-# MAGIC 2. When should you choose `MapType` over a normalized child table in Lakehouse architecture?
-# MAGIC 3. How does `explode(map_col)` generate key and value columns simultaneously?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+if __name__ == "__main__":
+    main()

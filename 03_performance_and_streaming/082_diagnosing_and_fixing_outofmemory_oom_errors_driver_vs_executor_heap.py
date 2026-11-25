@@ -1,135 +1,123 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 082: Diagnosing and Fixing OutOfMemory (OOM) Errors: Driver vs Executor Heap
-# MAGIC
-# MAGIC **Module:** Module 08: Performance Tuning, Query Optimization & Skew Mitigation
-# MAGIC **Difficulty:** `Advanced`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC A production ETL job intermittently crashes with `java.lang.OutOfMemoryError: Java heap space`. On-call engineers arbitrarily double the cluster size, increasing cloud costs by $10,000 without resolving the root cause.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Diagnose and resolve Spark OutOfMemory (OOM) failures: differentiate between Driver OOM and Executor OOM, identify anti-patterns (e.g. `df.collect()` on big data, unconstrained broadcast joins, key skew in `groupBy`), and apply memory-safe architectural fixes.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC Driver OOM occurs when the master node runs out of memory, usually caused by collecting large DataFrames (`collect()`, `toPandas()`), broadcasting tables larger than driver memory, or accumulating massive lineage DAGs. Executor OOM occurs when worker tasks process partitions exceeding available JVM heap or off-heap memory.
+"""Scenario & Scale: Production ETL crashing with Java heap space OOMs.
 
-# COMMAND ----------
+Separates Driver OOM vs Executor OOM root causes and provides Spark 4.0 /
+Spark Connect-safe mitigations (bounded driver reads & staging lineage cuts).
+"""
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+from typing import List
 
-# COMMAND ----------
+from pyspark.sql import DataFrame, Row, SparkSession, functions as F
 
-import os
-import sys
-import shutil
-from pathlib import Path
 
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_082_Diagnosing_and_Fixing_OutOfMemory_OOM_Errors_Driver_vs_Executor_Heap")
-        .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
-        .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-        .getOrCreate()
+# -----------------------------------------------------------------------------
+# 2. Anti-Pattern
+# -----------------------------------------------------------------------------
+# ❌ Bad Practice: Calling `.collect()` / `.toPandas()` on large DataFrames,
+# broadcasting multi-GB tables, or chaining 100+ `withColumn()` loops without
+# breaking the Catalyst/lineage tree.
+# Otherwise: Driver JVM exhausts `spark.driver.memory` (`OutOfMemoryError: Java
+# heap space` or `GC overhead limit exceeded`); on workers, huge `collect_list`
+# or undersized partitions trigger Executor OOM (`Exit code 137` container kill).
+def bad_driver_collect_and_deep_dag(df: DataFrame) -> List[Row]:
+    for i in range(150):
+        # Deeply nested projection tree causes Catalyst planning/driver OOM
+        df = df.withColumn(f"c_{i}", F.col("id") + F.lit(i))
+    return df.collect()  # Pulls entire distributed dataset to driver heap!
+
+
+# -----------------------------------------------------------------------------
+# 3. ANSI-safe PySpark 4.0+ Fix
+# -----------------------------------------------------------------------------
+# ✅ Good Practice: Bound driver pulls with `limit(n)` / `take(n)` or
+# `toLocalIterator()`, combine projections in a single `select(...)`, and break
+# deep iterative DAGs using a staging write/read (portable across Spark Connect
+# without JVM checkpoint directory configuration).
+def safe_driver_sample(df: DataFrame, max_rows: int = 10) -> List[Row]:
+    """Retrieve bounded rows safely without pulling full data to driver."""
+    return list(df.limit(max_rows).toLocalIterator())
+
+
+def truncate_lineage_via_staging(
+    spark: SparkSession,
+    df: DataFrame,
+    staging_uri: str,
+) -> DataFrame:
+    """Break deep Catalyst logical/physical lineage cleanly via staging I/O."""
+    df.write.mode("overwrite").parquet(staging_uri)
+    return spark.read.parquet(staging_uri)
+
+
+def build_oom_diagnostic_matrix(spark: SparkSession) -> DataFrame:
+    """Return structured Driver vs Executor OOM triage reference."""
+    rows = [
+        (
+            "Driver OOM",
+            "collect() / toPandas() on big DF",
+            "Write to sink or bound with limit()/toLocalIterator()",
+        ),
+        (
+            "Driver OOM",
+            "Oversized broadcast table (> driver RAM)",
+            "Lower autoBroadcastJoinThreshold or disable broadcast hint",
+        ),
+        (
+            "Driver OOM",
+            "100+ chained withColumn() deep DAG",
+            "Batch into single select() or stage to Parquet/Delta",
+        ),
+        (
+            "Executor OOM",
+            "Severe key skew or collect_list(hot_key)",
+            "Enable AQE skewJoin, salt key, or use Window/agg",
+        ),
+        (
+            "Executor OOM",
+            "Undersized shuffle partitions (>2 GB/task)",
+            "Increase spark.sql.shuffle.partitions (~150 MB/task)",
+        ),
+    ]
+    return spark.createDataFrame(
+        rows, "failure_type STRING, root_cause STRING, remediation STRING"
     )
 
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+# -----------------------------------------------------------------------------
+# 4. explain("formatted") / Spark UI Diagnostic Notes
+# -----------------------------------------------------------------------------
+# Spark UI OOM Forensics:
+#   - Driver OOM: Driver log shows `java.lang.OutOfMemoryError` during
+#     `SparkPlan.executeCollect`, `BroadcastExchange`, or Catalyst rule batching;
+#     UI disconnects completely and job never enters or stalls before stage tasks.
+#   - Executor OOM: Executors tab shows `ExecutorLostFailure (Container killed
+#     by YARN/K8s for exceeding memory limits, exit code 137)` or `GC overhead`;
+#     inspect `Peak Execution Memory`, `Spill (Disk)`, and `Memory Overhead`.
+#   - `truncate_lineage_via_staging()` resets `explain("formatted")` to a clean
+#     single `FileScan parquet` node.
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 1: Driver OOM vs Executor OOM Root Cause Diagnostic Matrix
-# MAGIC Review architectural causes and solutions for memory crashes.
+# -----------------------------------------------------------------------------
+# 5. Production / Interview Gotchas
+# -----------------------------------------------------------------------------
+# 1. `Exit code 137` in Kubernetes/YARN is usually OFF-HEAP / container memory
+#    breach (`spark.executor.memoryOverhead`), NOT JVM heap—tune off-heap /
+#    Arrow Python worker memory (`spark.executor.pyspark.memory`), not just `-Xmx`.
+# 2. `df.cache()` preserves the full lineage DAG (recomputing lost partitions on
+#    failure), whereas staging to storage or `checkpoint()` truncates lineage.
+# 3. Calling `df.withColumn(...)` inside a Python loop builds an $O(N^2)$ Catalyst
+#    Schema/Project plan; pass a single `.select(*exprs)` list instead.
 
-# COMMAND ----------
 
-matrix = [
-    ("Driver OOM", "Calling df.collect() or df.toPandas() on millions of rows", "Use df.take(n), write to Delta, or use limit()"),
-    ("Driver OOM", "Broadcasting table larger than spark.driver.memory", "Disable broadcast or increase autoBroadcastJoinThreshold check"),
-    ("Driver OOM", "Chaining 100+ withColumn transformations (deep DAG)", "Break lineage using checkpoint() or write intermediate Delta table"),
-    ("Executor OOM", "Severe data skew (millions of rows on one join key)", "Apply Salting or enable AQE skew join"),
-    ("Executor OOM", "Shuffle partitions too low (5GB per partition)", "Increase spark.sql.shuffle.partitions to target 150MB/partition"),
-    ("Executor OOM", "collect_list() on high-cardinality skewed key", "Filter before collect or use window functions")
-]
+if __name__ == "__main__":
+    import tempfile
 
-schema = "failure_type STRING, common_root_cause STRING, architectural_remediation STRING"
-df_oom_matrix = spark.createDataFrame(matrix, schema)
-df_oom_matrix.show(truncate=False)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 2: Demonstrating Memory-Safe Sampling vs Unsafe collect()
-# MAGIC Replace dangerous full collect with safe streaming limit and take.
-
-# COMMAND ----------
-
-df_large_mock = spark.range(1, 1000000, 1, 4)
-
-# UNSAFE: df_large_mock.collect()  <- Pulls all 1,000,000 objects into driver JVM heap!
-
-# SAFE 1: take(n) only collects requested records
-sample_rows = df_large_mock.take(5)
-print(f"Safely collected {len(sample_rows)} rows without loading full dataset into driver memory.")
-
-# SAFE 2: toLocalIterator() streams partition-by-partition to driver
-iterator = df_large_mock.limit(10).toLocalIterator()
-first_three = [next(iterator).id for _ in range(3)]
-print("First 3 items via streaming iterator:", first_three)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 3: Breaking Deep Lineage Trees with Checkpoint
-# MAGIC Truncate deep Catalyst DAG execution graphs to prevent driver stack overflows.
-
-# COMMAND ----------
-
-# Set checkpoint directory
-spark.sparkContext.setCheckpointDir("/tmp/spark_checkpoints_082")
-
-df_deep = spark.range(1, 100)
-for _ in range(10):
-    df_deep = df_deep.filter(F.col("id") > 0)
-
-# checkpoint() truncates logical plan, saving current RDD to storage and resetting lineage
-df_checkpointed = df_deep.checkpoint()
-print("Lineage graph successfully truncated with checkpoint()!")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **Driver OOM is caused by `.collect()`, `.toPandas()`, oversized broadcast tables, or deep Catalyst plans.**
-# MAGIC - **Executor OOM is caused by key skew, insufficient shuffle partitions, or large in-memory window buffers.**
-# MAGIC - **Use `checkpoint()` to truncate deep lineage graphs in iterative ML or recursive algorithms.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. How do you determine from Spark UI whether an OOM error occurred on the Driver or on an Executor?
-# MAGIC 2. What is the difference between `df.cache()` and `df.checkpoint()` in terms of lineage truncation?
-# MAGIC 3. How does off-heap memory (`spark.memory.offHeap.enabled`) prevent JVM garbage collection pauses?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+    spark = (
+        SparkSession.builder.appName("082_OOMDiagnosisAndMitigation")
+        .config("spark.sql.shuffle.partitions", "4")
+        .getOrCreate()
+    )
+    build_oom_diagnostic_matrix(spark).show(truncate=False)
+    df_large = spark.range(1, 100_000, 1, 4)
+    print("Safe sample IDs:", [r.id for r in safe_driver_sample(df_large, 3)])
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        df_cut = truncate_lineage_via_staging(spark, df_large, f"{tmp_dir}/stg")
+        df_cut.explain("formatted")

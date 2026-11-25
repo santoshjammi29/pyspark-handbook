@@ -1,146 +1,108 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 097: Project Retail: Omnichannel Multi-Source Lakehouse ETL
-# MAGIC
-# MAGIC **Module:** Module 10: End-to-End Enterprise Projects & Production Workflows
-# MAGIC **Difficulty:** `Advanced`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC A major omnichannel retailer operates physical retail stores, an e-commerce website, and customer support via Salesforce. Data resides in three separate silos: PostgreSQL (store inventory), Clickstream logs (web), and Salesforce (customer CRM). Marketing requires a consolidated 360 customer purchase profile.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Execute an end-to-end retail multi-source integration pipeline: (1) Ingest multi-format sources (Postgres JDBC simulation, Web clickstream JSON, and Salesforce CSV), (2) Reconcile identity across customer identifiers, (3) Perform Delta Lake `MERGE INTO` upserts, and (4) Build a multi-channel revenue analytics model.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC Omnichannel retail requires resolving disparate identity keys (e.g. loyalty card ID from store POS vs email from web cookies). The Silver layer performs identity resolution, linking disparate keys to a conformed master `customer_sk`.
+"""Project Retail: Omnichannel Multi-Source Lakehouse ETL (PySpark 4.0+).
 
-# COMMAND ----------
+Scenario & Scale:
+    An omnichannel retailer reconciles 80M daily store POS transactions, web
+    clickstream orders, and CRM profiles into a unified Customer 360 CLV model
+    with < 30-minute end-to-end batch freshness.
+"""
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+from __future__ import annotations
 
-# COMMAND ----------
+from pyspark.sql import DataFrame, SparkSession, functions as F, types as T
 
-import os
-import sys
-import shutil
-from pathlib import Path
 
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
+# ---------------------------------------------------------------------------
+# Anti-Pattern
+# ---------------------------------------------------------------------------
+# ❌ Bad Practice: Combining channels with positional `union()` when source
+# schemas have drifted column order, or joining unbroadcasted CRM tables blindly.
+# Otherwise: `union()` silently swaps columns (e.g. `channel_id` into `amount`),
+# corrupting financial totals or triggering ANSI cast exceptions downstream.
+def transform_union_positional_bad(df_pos: DataFrame, df_web: DataFrame) -> DataFrame:
+    return df_pos.union(df_web)  # Unsafe if column positions differ
+
+
+# ---------------------------------------------------------------------------
+# ANSI-Safe PySpark 4.0+ Fix
+# ---------------------------------------------------------------------------
+# ✅ Good Practice: Align heterogeneous channels with `unionByName(allowMissingColumns=True)`,
+# cast amounts with `try_cast`, enrich via broadcast CRM join, and build Gold CLV.
+def transform_conform_omnichannel_sales(
+    df_pos: DataFrame, df_web: DataFrame, df_crm: DataFrame
+) -> DataFrame:
+    """Conform multi-channel sales and enrich with CRM customer segments."""
+    df_all_sales = df_pos.unionByName(df_web, allowMissingColumns=True).withColumn(
+        "amount_dec", F.try_cast(F.col("amount"), T.DecimalType(14, 2))
+    )
+    return (
+        df_all_sales.join(F.broadcast(df_crm), on="cust_id", how="left")
+        .withColumn("segment", F.coalesce(F.col("segment"), F.lit("UNKNOWN")))
+        .withColumn("_conformed_at", F.current_timestamp())
+    )
+
+
+def transform_gold_customer_clv(df_silver: DataFrame) -> DataFrame:
+    """Compute per-customer omnichannel spend and hybrid shopper classification."""
+    return (
+        df_silver.groupBy("cust_id", "name", "segment")
+        .agg(
+            F.round(F.sum("amount_dec"), 2).alias("total_lifetime_spend"),
+            F.count("txn_id").alias("total_purchases"),
+            F.sum(F.when(F.col("channel") == "IN_STORE", F.col("amount_dec")).otherwise(F.lit(0))).alias(
+                "store_spend"
+            ),
+            F.sum(F.when(F.col("channel") == "ONLINE", F.col("amount_dec")).otherwise(F.lit(0))).alias(
+                "online_spend"
+            ),
+            F.countDistinct("channel").alias("active_channels_count"),
+        )
+        .withColumn(
+            "shopper_type",
+            F.when(F.col("active_channels_count") > 1, F.lit("OMNICHANNEL_HYBRID"))
+            .when(F.col("store_spend") > 0, F.lit("IN_STORE_ONLY"))
+            .otherwise(F.lit("ONLINE_ONLY")),
+        )
+    )
+
+
+# ---------------------------------------------------------------------------
+# explain("formatted") / Spark UI Diagnostic Notes
+# ---------------------------------------------------------------------------
+# - `explain("formatted")` shows `Union` feeding directly into `BroadcastHashJoin`
+#   for `df_crm`, followed by a two-stage `HashAggregate` for Gold CLV metrics.
+# - Watch for `NULL` `cust_id` skew (guest checkouts) during `groupBy("cust_id")`;
+#   filter or isolate guest orders before customer-level aggregations.
+
+
+# ---------------------------------------------------------------------------
+# Production & Interview Gotchas
+# ---------------------------------------------------------------------------
+# 1. Always use `unionByName(..., allowMissingColumns=True)` across independent
+#    source feeds so schema evolution on one channel never misaligns columns.
+# 2. `countDistinct("channel")` compiles to a two-stage `HashAggregate` with an
+#    extra `Expand` or grouping key; acceptable for 2-5 channels, but prefer
+#    `approx_count_distinct` on high-cardinality columns.
+# 3. Identity resolution across email cookies and loyalty IDs should run in a
+#    dedicated deterministic Silver identity graph before Gold CLV aggregation.
+
+
+if __name__ == "__main__":
     spark = (
-        SparkSession.builder
-        .appName("UseCase_097_Project_Retail_Omnichannel_Multi_Source_Lakehouse_ETL")
+        SparkSession.builder.appName("097_retail_omnichannel")
         .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
-        .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .config("spark.sql.ansi.enabled", "true")
         .getOrCreate()
     )
-
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
-
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 1: Simulating Multi-Source Ingestion Feeds
-# MAGIC Create store POS transactions, web clickstream sessions, and CRM profiles.
-
-# COMMAND ----------
-
-# Source 1: In-Store POS (from PostgreSQL)
-pos_sales = [("POS-1", "CUST-A", 120.0, "STORE_01"), ("POS-2", "CUST-B", 45.0, "STORE_02")]
-df_pos = spark.createDataFrame(pos_sales, ["txn_id", "cust_id", "amount", "channel_id"]).withColumn("channel", F.lit("IN_STORE"))
-
-# Source 2: Web E-Commerce Orders (from Web JSON logs)
-web_sales = [("WEB-91", "CUST-A", 89.99, "WEB_US"), ("WEB-92", "CUST-C", 310.0, "WEB_US")]
-df_web = spark.createDataFrame(web_sales, ["txn_id", "cust_id", "amount", "channel_id"]).withColumn("channel", F.lit("ONLINE"))
-
-# Source 3: CRM Customer Profiles (from Salesforce)
-crm_customers = [("CUST-A", "Alice Smith", "VIP"), ("CUST-B", "Bob Jones", "Standard"), ("CUST-C", "Charlie Day", "VIP")]
-df_crm = spark.createDataFrame(crm_customers, ["cust_id", "name", "segment"])
-
-print("Multi-Source Ingestion Feeds Prepared.")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 2: Unified Silver Transaction Conformance
-# MAGIC Union all sales channels and enrich with CRM customer segmentation.
-
-# COMMAND ----------
-
-# Union POS and Web sales into unified Silver transactions stream
-df_all_sales = df_pos.unionByName(df_web)
-
-# Enrich with Salesforce CRM attributes
-df_silver_omnichannel = (
-    df_all_sales
-    .join(df_crm, on="cust_id", how="left")
-    .withColumn("_conformed_at", F.current_timestamp())
-)
-
-print("Conformed Silver Omnichannel Transactions:")
-df_silver_omnichannel.show()
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 3: Gold Customer Omnichannel Lifetime Value Summary
-# MAGIC Calculate spend per channel and omnichannel behavior flags.
-
-# COMMAND ----------
-
-df_gold_clv = (
-    df_silver_omnichannel
-    .groupBy("cust_id", "name", "segment")
-    .agg(
-        F.round(F.sum("amount"), 2).alias("total_lifetime_spend"),
-        F.count("txn_id").alias("total_purchases"),
-        F.sum(F.when(F.col("channel") == "IN_STORE", F.col("amount")).otherwise(0)).alias("store_spend"),
-        F.sum(F.when(F.col("channel") == "ONLINE", F.col("amount")).otherwise(0)).alias("online_spend"),
-        F.countDistinct("channel").alias("active_channels_count")
+    df_pos = spark.createDataFrame(
+        [("POS-1", "CUST-A", 120.0, "STORE_01")], "txn_id STRING, cust_id STRING, amount DOUBLE, channel_id STRING"
+    ).withColumn("channel", F.lit("IN_STORE"))
+    df_web = spark.createDataFrame(
+        [("WEB-91", "CUST-A", 89.99, "WEB_US"), ("WEB-92", "CUST-C", 310.0, "WEB_US")],
+        "txn_id STRING, cust_id STRING, amount DOUBLE, channel_id STRING",
+    ).withColumn("channel", F.lit("ONLINE"))
+    df_crm = spark.createDataFrame(
+        [("CUST-A", "Alice", "VIP"), ("CUST-C", "Charlie", "VIP")],
+        "cust_id STRING, name STRING, segment STRING",
     )
-    .withColumn(
-        "shopper_type",
-        F.when(F.col("active_channels_count") > 1, "OMNICHANNEL_HYBRID")
-         .when(F.col("store_spend") > 0, "IN_STORE_ONLY")
-         .otherwise("ONLINE_ONLY")
-    )
-)
-
-print("Gold Customer Omnichannel Value Scorecard:")
-df_gold_clv.show()
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **Omnichannel data pipelines reconcile disparate source systems into a unified Lakehouse schema.**
-# MAGIC - **`unionByName()` combines disparate streams while preserving column order and alignment.**
-# MAGIC - **Omnichannel customer classification identifies high-value hybrid shoppers for personalized marketing.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. How do you perform identity resolution across disparate retail channels without a universal user ID?
-# MAGIC 2. What is the difference between `union()` and `unionByName()` in PySpark?
-# MAGIC 3. How do you design a Delta Lake medallion architecture to handle multi-source CDC merges?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+    df_silver = transform_conform_omnichannel_sales(df_pos, df_web, df_crm)
+    transform_gold_customer_clv(df_silver).show(truncate=False)

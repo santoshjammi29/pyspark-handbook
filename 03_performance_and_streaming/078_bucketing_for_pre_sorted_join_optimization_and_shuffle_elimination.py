@@ -1,140 +1,121 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 078: Bucketing for Pre-Sorted Join Optimization and Shuffle Elimination
-# MAGIC
-# MAGIC **Module:** Module 08: Performance Tuning, Query Optimization & Skew Mitigation
-# MAGIC **Difficulty:** `Advanced`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC Two multi-billion-row fact tables (Orders and Shipments) are joined hourly in a critical financial pipeline. Because both tables are huge, broadcast joins are impossible. Every run shuffles 5TB of data across the network, consuming 40 minutes of compute.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Eliminate shuffle using Spark Bucketing: create bucketed tables with `bucketBy()` and `sortBy()`, configure matching bucket counts on both tables, and verify the total elimination of the Exchange (shuffle) operator from Sort-Merge Joins.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC Bucketing pre-shuffles and pre-sorts data on write according to a hash function of the bucket column. When two tables bucketed on the same key with identical (or multiple) bucket counts are joined, Spark reads matching bucket files directly without triggering any network shuffle (`Exchange` operator disappears).
+"""Scenario & Scale: Hourly join of two multi-billion-row fact tables (5 TB).
 
-# COMMAND ----------
+Eliminates wide SortMergeJoin network shuffles (`Exchange`) using managed
+table bucketing (`bucketBy` + `sortBy`) on matching keys and bucket counts.
+"""
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+from pyspark.sql import DataFrame, SparkSession
 
-# COMMAND ----------
 
-import os
-import sys
-import shutil
-from pathlib import Path
+# -----------------------------------------------------------------------------
+# 2. Anti-Pattern
+# -----------------------------------------------------------------------------
+# ❌ Bad Practice: Joining two multi-TB unbucketed tables repeatedly on the
+# same high-cardinality key, or bucketing with incompatible bucket counts /
+# writing via path-based `.save()` (which ignores bucket metadata).
+# Otherwise: Every hourly job re-shuffles and re-sorts 5 TB over the network
+# (`Exchange hashpartitioning` + `Sort` on both sides), wasting 40+ min/run.
+def bad_mismatched_bucket_write(df_orders: DataFrame, path_uri: str) -> None:
+    # Path-based save() cannot register bucketing metadata in the Hive/catalog
+    df_orders.write.format("parquet").mode("overwrite").save(path_uri)
 
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_078_Bucketing_for_Pre_Sorted_Join_Optimization_and_Shuffle_Elimination")
-        .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
-        .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-        .getOrCreate()
+
+# -----------------------------------------------------------------------------
+# 3. ANSI-safe PySpark 4.0+ Fix
+# -----------------------------------------------------------------------------
+# ✅ Good Practice: Write both managed catalog tables via `saveAsTable()` with
+# identical `bucketBy(num_buckets, key)` and `sortBy(key)`, and enable
+# `spark.sql.sources.bucketing.enabled` (+ bucket coalescing when multiples).
+def write_bucketed_pair(
+    df_orders: DataFrame,
+    df_shipments: DataFrame,
+    db_name: str = "bucket_perf_db",
+    num_buckets: int = 8,
+) -> None:
+    """Persist pre-bucketed and pre-sorted managed tables for zero-shuffle joins."""
+    spark = df_orders.sparkSession
+    spark.sql(f"CREATE DATABASE IF NOT EXISTS {db_name}")
+    (
+        df_orders.write.format("parquet")
+        .bucketBy(num_buckets, "order_id")
+        .sortBy("order_id")
+        .mode("overwrite")
+        .saveAsTable(f"{db_name}.t_orders")
+    )
+    (
+        df_shipments.write.format("parquet")
+        .bucketBy(num_buckets, "order_id")
+        .sortBy("order_id")
+        .mode("overwrite")
+        .saveAsTable(f"{db_name}.t_shipments")
     )
 
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+def join_bucketed_tables(
+    spark: SparkSession,
+    db_name: str = "bucket_perf_db",
+) -> DataFrame:
+    """Join two identically bucketed tables without triggering Exchange."""
+    spark.conf.set("spark.sql.sources.bucketing.enabled", "true")
+    spark.conf.set("spark.sql.sources.bucketing.autoBucketedScan.enabled", "true")
+    spark.conf.set(
+        "spark.sql.bucketing.coalesceBucketsInJoin.enabled", "true"
+    )
+    df_o = spark.table(f"{db_name}.t_orders")
+    df_s = spark.table(f"{db_name}.t_shipments")
+    return df_o.join(df_s, on="order_id", how="inner")
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 1: Creating Bucketed Orders and Shipments Tables
-# MAGIC Write tables bucketed into 4 buckets on join key 'order_id'.
+# -----------------------------------------------------------------------------
+# 4. explain("formatted") / Spark UI Diagnostic Notes
+# -----------------------------------------------------------------------------
+# df_joined.explain("formatted") confirms shuffle-free SortMergeJoin:
+#   * SortMergeJoin [order_id], [order_id], Inner
+#   :- * Sort [order_id ASC NULLS FIRST]
+#   :  +- FileScan parquet ... SelectedBucketsCount: 8 out of 8
+#   +- * Sort [order_id ASC NULLS FIRST]
+#      +- FileScan parquet ... SelectedBucketsCount: 8 out of 8
+# Notice: NO `Exchange hashpartitioning(...)` node appears above either FileScan!
+# Spark UI -> Stages tab:
+#   - Entire join collapses into a single map-side stage (0 Shuffle Write /
+#     0 Shuffle Read bytes).
 
-# COMMAND ----------
 
-# Ensure Hive support or managed catalog enables bucketing
-spark.sql("CREATE DATABASE IF NOT EXISTS bucket_db_078")
-spark.sql("USE bucket_db_078")
+# -----------------------------------------------------------------------------
+# 5. Production / Interview Gotchas
+# -----------------------------------------------------------------------------
+# 1. Bucketing creates `num_buckets` files *per task* per partition, so
+#    `(partitions * tasks * num_buckets)` can explode small-file counts unless
+#    paired with `repartition(num_buckets, key)` before `bucketBy`.
+# 2. If Table A has 8 buckets and Table B has 16 buckets, enable
+#    `spark.sql.bucketing.coalesceBucketsInJoin.enabled=true` (when one bucket
+#    count is an integer multiple of the other) to coalesce 16->8 without shuffle.
+# 3. Delta Lake / Iceberg generally avoid Hive bucketing in favor of Liquid
+#    Clustering / Z-Order + Deletion Vectors / storage-partitioned joins.
 
-# Create bucketed orders table
-orders = [(f"ORD-{i:03d}", 100.0 + i) for i in range(1, 21)]
-df_ord = spark.createDataFrame(orders, ["order_id", "amount"])
 
-df_ord.write.format("parquet")\
-    .bucketBy(4, "order_id")\
-    .sortBy("order_id")\
-    .mode("overwrite")\
-    .saveAsTable("bucket_db_078.t_orders")
+if __name__ == "__main__":
+    import tempfile
 
-# Create bucketed shipments table with identical bucket count (4)
-shipments = [(f"ORD-{i:03d}", f"CARRIER-{i%3}") for i in range(1, 21)]
-df_ship = spark.createDataFrame(shipments, ["order_id", "carrier"])
-
-df_ship.write.format("parquet")\
-    .bucketBy(4, "order_id")\
-    .sortBy("order_id")\
-    .mode("overwrite")\
-    .saveAsTable("bucket_db_078.t_shipments")
-
-print("Both tables bucketed into 4 buckets and sorted on order_id.")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 2: Verifying Shuffle Elimination in Physical Join Plan
-# MAGIC Join bucketed tables and inspect physical plan.
-
-# COMMAND ----------
-
-# Enable bucketing optimization
-spark.conf.set("spark.sql.sources.bucketing.enabled", "true")
-
-df_b1 = spark.table("bucket_db_078.t_orders")
-df_b2 = spark.table("bucket_db_078.t_shipments")
-
-df_joined_bucket = df_b1.join(df_b2, on="order_id", how="inner")
-
-print("=== PHYSICAL PLAN (Notice absence of 'Exchange hashpartitioning' shuffle!) ===")
-df_joined_bucket.explain(mode="simple")
-df_joined_bucket.show(5)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 3: Clean Up Database
-# MAGIC Drop temporary bucketed tables.
-
-# COMMAND ----------
-
-spark.sql("DROP TABLE IF EXISTS bucket_db_078.t_orders")
-spark.sql("DROP TABLE IF EXISTS bucket_db_078.t_shipments")
-print("Cleaned up temporary tables.")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **Bucketing pre-sorts and pre-distributes data on write, eliminating network shuffle during downstream joins.**
-# MAGIC - **Both tables must be bucketed on the exact same join key and have matching or multiple bucket counts.**
-# MAGIC - **Bucketing requires managed tables (`saveAsTable`); it does not apply to unmanaged path-based writes.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. How does bucketing eliminate the `Exchange` operator in a Sort-Merge Join physical plan?
-# MAGIC 2. What happens if two bucketed tables are joined, but Table A has 8 buckets and Table B has 16 buckets?
-# MAGIC 3. Why is bucketing less common in modern Databricks compared to Z-Ordering and Liquid Clustering?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+    with tempfile.TemporaryDirectory() as warehouse_dir:
+        spark = (
+            SparkSession.builder.appName("078_BucketingShuffleElimination")
+            .config("spark.sql.warehouse.dir", warehouse_dir)
+            .config("spark.sql.shuffle.partitions", "4")
+            .config("spark.sql.autoBroadcastJoinThreshold", "-1")
+            .getOrCreate()
+        )
+        df_ord = spark.createDataFrame(
+            [(f"ORD-{i:03d}", 100.0 + i) for i in range(1, 21)],
+            "order_id STRING, amount DOUBLE",
+        )
+        df_shp = spark.createDataFrame(
+            [(f"ORD-{i:03d}", f"CARRIER-{i % 3}") for i in range(1, 21)],
+            "order_id STRING, carrier STRING",
+        )
+        write_bucketed_pair(df_ord, df_shp, num_buckets=4)
+        df_res = join_bucketed_tables(spark)
+        df_res.explain("formatted")
+        df_res.show(5)
+        spark.sql("DROP TABLE IF EXISTS bucket_perf_db.t_orders")
+        spark.sql("DROP TABLE IF EXISTS bucket_perf_db.t_shipments")

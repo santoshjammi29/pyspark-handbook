@@ -1,157 +1,146 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 069: Slowly Changing Dimension Type 2 (SCD Type 2) Historical Tracking with Effective Dates
-# MAGIC
-# MAGIC **Module:** Module 07: Lakehouse Data Modeling, CDC & SCD Implementation
-# MAGIC **Difficulty:** `Advanced`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC An insurance underwriting platform tracks policyholder residential address history. Premium risk calculations depend strictly on the policyholder's address at the time a claim occurred, requiring complete historical tracking of address changes.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Implement Slowly Changing Dimension Type 2 (SCD Type 2) in PySpark: maintain `effective_start_date`, `effective_end_date`, and `is_current` active flag columns. When an attribute changes, expire the current record by setting `effective_end_date` and insert a new active record.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC SCD Type 2 preserves the full history of attribute changes over time. Delta Lake implements SCD2 using a two-pass MERGE pattern or Union technique: (1) Update existing current records to close the effective date window (`is_current = false`), and (2) Insert the new state with `is_current = true` and `effective_end_date = NULL` (or 9999-12-31).
+"""Slowly Changing Dimension Type 2 (SCD Type 2) via Single-Pass Delta MERGE.
 
-# COMMAND ----------
+Scenario & Scale:
+    An insurance underwriting platform tracks 40M policyholder address histories.
+    Claims require exact point-in-time address lookups; daily 200k-row updates
+    must atomically expire prior versions and insert active rows in < 5 minutes.
+"""
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+from __future__ import annotations
 
-# COMMAND ----------
+from pyspark.sql import DataFrame, SparkSession, functions as F
 
-import os
-import sys
-import shutil
-from pathlib import Path
 
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
+# ---------------------------------------------------------------------------
+# Anti-Pattern
+# ---------------------------------------------------------------------------
+# ❌ Bad Practice: Collecting changed keys to the driver (`df.collect()`) and
+# issuing row-by-row `dt_scd2.update(...)` calls followed by a separate append.
+# Otherwise: Driver OOM on large batches, N+1 sequential Delta commits (breaking
+# atomicity), and partial-failure window where a customer has zero active rows.
+def apply_scd2_driver_loop_bad(dt_scd2, df_to_expire: DataFrame) -> None:
+    for row in df_to_expire.collect():  # Driver OOM & N sequential Delta transactions
+        dt_scd2.update(
+            condition=F.col("sk_id") == row.sk_id,
+            set={"end_date": F.lit(row.change_date), "is_current": F.lit(False)},
+        )
+
+
+# ---------------------------------------------------------------------------
+# ANSI-Safe PySpark 4.0+ Fix
+# ---------------------------------------------------------------------------
+# ✅ Good Practice: Build a staged union DataFrame (`merge_key` = natural key
+# for expiring existing active rows, `merge_key = NULL` for inserting new active
+# versions) and commit atomically in ONE Delta `MERGE INTO` operation.
+def transform_stage_scd2_updates(
+    df_current_dim: DataFrame,
+    df_incoming: DataFrame,
+) -> DataFrame:
+    """Produce staged SCD2 upsert payload for a single-pass atomic Delta MERGE."""
+    df_active = df_current_dim.filter(F.col("is_current") == F.lit(True))
+
+    # Rows whose tracked attributes actually changed -> must expire old + insert new
+    df_changed = (
+        df_incoming.alias("s")
+        .join(
+            df_active.alias("t"),
+            (F.col("s.cust_id") == F.col("t.cust_id")) & (F.col("s.city") != F.col("t.city")),
+            how="inner",
+        )
+        .select(
+            F.col("s.cust_id").alias("cust_id"),
+            F.col("s.name").alias("name"),
+            F.col("s.city").alias("city"),
+            F.col("s.change_date").alias("change_date"),
+        )
+    )
+
+    # New customers not yet in dimension -> insert directly
+    df_brand_new = df_incoming.join(df_active, on="cust_id", how="left_anti")
+
+    # 1. Records with merge_key = cust_id match active row to expire it
+    df_expire_rows = df_changed.withColumn("merge_key", F.col("cust_id"))
+
+    # 2. Records with merge_key = NULL bypass match condition -> trigger INSERT
+    df_insert_rows = df_changed.unionByName(df_brand_new).withColumn(
+        "merge_key", F.lit(None).cast("string")
+    )
+
+    return df_expire_rows.unionByName(df_insert_rows).withColumn(
+        "sk_id",
+        F.xxhash64(F.col("cust_id"), F.col("change_date"), F.col("city")),
+    )
+
+
+def apply_scd2_atomic_merge(
+    spark: SparkSession, scd2_uri: str, df_staged: DataFrame
+) -> None:
+    """Atomically expire previous active rows and insert new SCD2 versions."""
+    from delta.tables import DeltaTable
+
+    dt_scd2 = DeltaTable.forPath(spark, scd2_uri)
+    (
+        dt_scd2.alias("target")
+        .merge(
+            source=df_staged.alias("source"),
+            condition="target.cust_id = source.merge_key AND target.is_current = true",
+        )
+        .whenMatchedUpdate(
+            set={
+                "end_date": F.col("source.change_date"),
+                "is_current": F.lit(False),
+            }
+        )
+        .whenNotMatchedInsert(
+            values={
+                "sk_id": F.col("source.sk_id"),
+                "cust_id": F.col("source.cust_id"),
+                "name": F.col("source.name"),
+                "city": F.col("source.city"),
+                "start_date": F.col("source.change_date"),
+                "end_date": F.lit("9999-12-31"),
+                "is_current": F.lit(True),
+            }
+        )
+        .execute()
+    )
+
+
+# ---------------------------------------------------------------------------
+# explain("formatted") / Spark UI Diagnostic Notes
+# ---------------------------------------------------------------------------
+# - `explain("formatted")` on `transform_stage_scd2_updates` shows one inner join
+#   and one `left_anti` join; for huge dimensions, broadcast `df_incoming` when
+#   delta batch < 100 MB to avoid shuffling the full 40M-row active dimension.
+# - The single `MERGE` produces exactly ONE Delta commit in `DESCRIBE HISTORY`.
+
+
+# ---------------------------------------------------------------------------
+# Production & Interview Gotchas
+# ---------------------------------------------------------------------------
+# 1. The `merge_key = NULL` union trick is the canonical Databricks/Delta SCD2
+#    idiom: `NULL = target.cust_id` never matches, forcing `whenNotMatchedInsert`
+#    for the new active version in the exact same ACID transaction as expiration.
+# 2. Point-in-time joins (`fact.txn_date >= dim.start_date AND fact.txn_date < dim.end_date`)
+#    should use half-open `[start_date, end_date)` intervals so boundary-day
+#    transactions never double-match two SCD2 versions.
+# 3. Always partition or cluster SCD2 tables by `is_current` (or `ZORDER BY (cust_id)`)
+#    so active-record merges skip 95%+ of cold historical Parquet files.
+
+
+if __name__ == "__main__":
     spark = (
-        SparkSession.builder
-        .appName("UseCase_069_Slowly_Changing_Dimension_Type_2_SCD_Type_2_Historical_Tracking_with_Effective_Dates")
+        SparkSession.builder.appName("069_scd_type_2_staged_merge")
         .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
-        .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .config("spark.sql.ansi.enabled", "true")
         .getOrCreate()
     )
-
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
-
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 1: Initializing SCD Type 2 Customer Table in Delta
-# MAGIC Create target dimension table with surrogate keys and validity dates.
-
-# COMMAND ----------
-
-from delta.tables import DeltaTable
-
-scd2_path = "/tmp/delta_dim_customer_scd2_069"
-if Path(scd2_path).exists():
-    shutil.rmtree(scd2_path)
-
-initial_scd2 = [
-    (1, "C-101", "Alice", "Austin", "2023-01-01", "9999-12-31", True),
-    (2, "C-102", "Bob", "Seattle", "2023-01-01", "9999-12-31", True)
-]
-
-schema = "sk_id LONG, cust_id STRING, name STRING, city STRING, start_date STRING, end_date STRING, is_current BOOLEAN"
-spark.createDataFrame(initial_scd2, schema).write.format("delta").mode("overwrite").save(scd2_path)
-
-dt_scd2 = DeltaTable.forPath(spark, scd2_path)
-print("Initial Active SCD Type 2 Dimension:")
-dt_scd2.toDF().show()
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 2: Preparing Inbound Update (Alice moves from Austin to Denver)
-# MAGIC Alice moves to Denver on 2023-11-20; Bob remains unchanged.
-
-# COMMAND ----------
-
-new_cdc_feed = [
-    ("C-101", "Alice", "Denver", "2023-11-20")
-]
-
-df_incoming = spark.createDataFrame(new_cdc_feed, ["cust_id", "name", "city", "change_date"])
-df_incoming.show()
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 3: Executing 2-Stage SCD Type 2 Delta Merge
-# MAGIC Expire the previous version and insert the new active record.
-
-# COMMAND ----------
-
-# Step 1: Identify existing records that need expiration
-df_current = dt_scd2.toDF().filter(F.col("is_current") == True)
-
-df_to_expire = df_incoming.join(
-    df_current,
-    (df_incoming["cust_id"] == df_current["cust_id"]) & (df_incoming["city"] != df_current["city"]),
-    how="inner"
-).select(df_current["sk_id"], df_incoming["change_date"])
-
-# Expire old records: set end_date and is_current = False
-for row in df_to_expire.collect():
-    dt_scd2.update(
-        condition=F.col("sk_id") == row.sk_id,
-        set={"end_date": F.lit(row.change_date), "is_current": F.lit(False)}
+    df_cur = spark.createDataFrame(
+        [(1, "C-101", "Alice", "Austin", "2025-01-01", "9999-12-31", True)],
+        "sk_id LONG, cust_id STRING, name STRING, city STRING, start_date STRING, end_date STRING, is_current BOOLEAN",
     )
-
-# Step 2: Insert new active record
-max_sk = dt_scd2.toDF().agg(F.max("sk_id")).first()[0] or 0
-
-df_new_inserts = df_incoming.select(
-    (F.lit(max_sk) + F.monotonically_increasing_id() + 1).alias("sk_id"),
-    "cust_id",
-    "name",
-    "city",
-    F.col("change_date").alias("start_date"),
-    F.lit("9999-12-31").alias("end_date"),
-    F.lit(True).alias("is_current")
-)
-
-df_new_inserts.write.format("delta").mode("append").save(scd2_path)
-
-print("Final SCD Type 2 Dimension Table (Notice Alice's historical record preserved!):")
-dt_scd2.toDF().orderBy("cust_id", "start_date").show()
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **SCD Type 2 preserves complete historical lineage using effective start date, end date, and `is_current` flags.**
-# MAGIC - **Surrogate keys (not natural keys) are mandatory because the same natural key appears across multiple rows.**
-# MAGIC - **Queries join fact tables to SCD2 dimensions using point-in-time condition: `fact.date BETWEEN dim.start_date AND dim.end_date`.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. What is the difference between SCD Type 1, SCD Type 2, and SCD Type 3?
-# MAGIC 2. How do point-in-time queries join transaction facts with SCD Type 2 dimension tables?
-# MAGIC 3. Why can natural keys NOT serve as primary keys in an SCD Type 2 dimension table?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+    df_in = spark.createDataFrame(
+        [("C-101", "Alice", "Denver", "2025-02-01"), ("C-103", "Cara", "Boston", "2025-02-01")],
+        "cust_id STRING, name STRING, city STRING, change_date STRING",
+    )
+    transform_stage_scd2_updates(df_cur, df_in).show(truncate=False)

@@ -1,135 +1,87 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 059: Streaming Deduplication Across Time Windows with Watermarks
-# MAGIC
-# MAGIC **Module:** Module 06: Streaming & Near Real-Time Processing
-# MAGIC **Difficulty:** `Intermediate`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC An IoT gateway ingests sensor readings from connected vehicles over cellular networks. When vehicles enter tunnels or experience network reconnects, duplicate messages are re-sent. The pipeline must eliminate duplicate sensor IDs within a rolling 20-minute window.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Implement streaming deduplication: apply `withWatermark()` paired with `dropDuplicates()` on primary keys and event timestamps. Explain how the watermark bounds the historical key state maintained by the streaming engine.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC In Structured Streaming, calling `dropDuplicates(['key'])` without a watermark causes Spark to store every primary key ever seen in memory forever, eventually triggering an Executor OOM. Supplying a watermark allows Spark to evict keys older than the watermark threshold from the state store.
+"""Scenario & Scale: IoT gateway ingesting connected-vehicle cellular telemetry.
 
-# COMMAND ----------
+Eliminates duplicate sensor events caused by tunnel reconnects within a rolling
+20-minute SLA window while capping RocksDB key state memory.
+"""
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+from pyspark.sql import DataFrame, SparkSession
 
-# COMMAND ----------
 
-import os
-import sys
-import shutil
-from pathlib import Path
+# -----------------------------------------------------------------------------
+# 2. Anti-Pattern
+# -----------------------------------------------------------------------------
+# ❌ Bad Practice: Calling dropDuplicates(["device_id"]) without a watermark or
+# omitting the watermarked timestamp column from the deduplication key list.
+# Otherwise: Spark buffers every distinct device_id ever observed in state
+# memory indefinitely, leading to unrecoverable RocksDB disk/RAM exhaustion.
+def bad_unbounded_dedup(df_stream: DataFrame) -> DataFrame:
+    return df_stream.dropDuplicates(["device_id"])
 
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
+
+# -----------------------------------------------------------------------------
+# 3. ANSI-safe PySpark 4.0+ Fix
+# -----------------------------------------------------------------------------
+# ✅ Good Practice: Combine withWatermark("event_time", window) with
+# dropDuplicates(["device_id", "event_time"]) (or dropDuplicatesWithinWatermark
+# in Spark 3.5+/4.0 when exact timestamp differs across retries).
+def deduplicate_telemetry_stream(
+    df_stream: DataFrame,
+    watermark_delay: str = "20 minutes",
+    within_watermark_only: bool = False,
+) -> DataFrame:
+    """Deduplicate streaming sensor events with bounded watermark eviction."""
+    watermarked = df_stream.withWatermark("event_time", watermark_delay)
+    if within_watermark_only:
+        # Spark 3.5+/4.0: deduplicates by device_id even if retry timestamp shifts
+        return watermarked.dropDuplicatesWithinWatermark(["device_id"])
+    return watermarked.dropDuplicates(["device_id", "event_time"])
+
+
+# -----------------------------------------------------------------------------
+# 4. explain("formatted") / Spark UI Diagnostic Notes
+# -----------------------------------------------------------------------------
+# df_deduped.explain("formatted") shows:
+#   EventTimeWatermark event_time#..., 20 minutes
+#   -> Exchange hashpartitioning(device_id, event_time)
+#   -> StreamingDeduplicate [device_id, event_time]
+# Spark UI -> Structured Streaming tab -> State Operators:
+#   - Track `numRowsTotal`: keys whose event_time < (max_event_time - 20 min)
+#     are evicted after each micro-batch commit.
+#   - Monitor `numRowsDroppedByWatermark` vs duplicates dropped internally by
+#     StreamingDeduplicate (`numRowsUpdated` stays 0, duplicates discarded).
+
+
+# -----------------------------------------------------------------------------
+# 5. Production / Interview Gotchas
+# -----------------------------------------------------------------------------
+# 1. Standard dropDuplicates() requires the watermark column in the subset keys
+#    to enable state eviction; omit it and Spark keeps all keys forever.
+# 2. dropDuplicatesWithinWatermark(["device_id"]) removes that requirement and
+#    evicts keys purely by arrival/event watermark, ideal when retries assign new
+#    timestamps—but duplicates arriving after the watermark window pass through.
+# 3. Size the watermark conservatively above p99 network reconnect latency so
+#    legitimate late retries are still caught before key eviction.
+
+
+if __name__ == "__main__":
+    from datetime import datetime, timedelta
+
     spark = (
-        SparkSession.builder
-        .appName("UseCase_059_Streaming_Deduplication_Across_Time_Windows_with_Watermarks")
-        .master("local[*]")
+        SparkSession.builder.appName("059_StreamingDeduplicationWatermark")
         .config("spark.sql.shuffle.partitions", "4")
-        .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
         .getOrCreate()
     )
-
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
-
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 1: Understanding Streaming Deduplication State Store Eviction
-# MAGIC Illustrate how watermarking enables bounded key tracking in state stores.
-
-# COMMAND ----------
-
-# Architectural Blueprint:
-# stream.withWatermark("event_time", "20 minutes").dropDuplicates(["device_id", "event_time"])
-# Keys older than (max_event_time - 20 minutes) are evicted from memory.
-# New duplicates within the 20-minute window are safely identified and dropped!
-
-print("Streaming deduplication memory bounds blueprint mapped.")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 2: Simulating Sensor Stream with Duplicate Ingestion
-# MAGIC Create dataset containing both unique and duplicate readings across time.
-
-# COMMAND ----------
-
-from datetime import datetime, timedelta
-
-base_ts = datetime(2023, 11, 20, 15, 0, 0)
-
-telemetry_stream = [
-    ("DEV-01", base_ts, 22.5),
-    ("DEV-02", base_ts, 25.0),
-    ("DEV-01", base_ts, 22.5), # Exact duplicate within window -> MUST DROP
-    ("DEV-01", base_ts + timedelta(minutes=5), 23.0), # Valid new reading -> KEEP
-    ("DEV-03", base_ts + timedelta(minutes=10), 19.5)
-]
-
-schema = "device_id STRING, event_time TIMESTAMP, temp DOUBLE"
-df_stream_telemetry = spark.createDataFrame(telemetry_stream, schema)
-df_stream_telemetry.show(truncate=False)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 3: Executing Watermarked Streaming Deduplication
-# MAGIC Apply watermark and dropDuplicates over device_id and event_time.
-
-# COMMAND ----------
-
-# Deduplicate streaming data within a 20-minute watermark window
-df_deduped = (
-    df_stream_telemetry
-    .withWatermark("event_time", "20 minutes")
-    .dropDuplicates(["device_id", "event_time"])
-)
-
-print("Deduplicated Stream Output:")
-df_deduped.orderBy("device_id", "event_time").show(truncate=False)
-
-# Verification assertion
-assert df_deduped.count() == 4, f"Expected 4 unique readings, found {df_deduped.count()}"
-print("Streaming deduplication assertion verified successfully!")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **Always combine `dropDuplicates([keys, timestamp_col])` with `withWatermark()` in streaming jobs.**
-# MAGIC - **Omitting the watermark causes state store memory to grow monotonically until the cluster crashes.**
-# MAGIC - **Duplicates arriving after the watermark has passed may be re-processed as new records; size the watermark to cover maximum expected network delay.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. What happens to the state store if you call `dropDuplicates(['id'])` without a watermark in Structured Streaming?
-# MAGIC 2. Why must the event-time column be included in `dropDuplicates` when using watermarks?
-# MAGIC 3. How does RocksDB state store handle state recovery during executor restarts?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+    base_ts = datetime(2025, 1, 15, 15, 0, 0)
+    telemetry = [
+        ("DEV-01", base_ts, 22.5),
+        ("DEV-02", base_ts, 25.0),
+        ("DEV-01", base_ts, 22.5),  # Exact duplicate -> dropped
+        ("DEV-01", base_ts + timedelta(minutes=5), 23.0),
+        ("DEV-03", base_ts + timedelta(minutes=10), 19.5),
+    ]
+    df = spark.createDataFrame(
+        telemetry, "device_id STRING, event_time TIMESTAMP, temp DOUBLE"
+    )
+    df_out = deduplicate_telemetry_stream(df)
+    assert df_out.count() == 4
+    df_out.orderBy("device_id", "event_time").show(truncate=False)

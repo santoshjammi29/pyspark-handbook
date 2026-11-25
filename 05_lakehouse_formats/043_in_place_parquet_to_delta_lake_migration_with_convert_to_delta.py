@@ -1,131 +1,122 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 043: In-Place Parquet to Delta Lake Migration with CONVERT TO DELTA
-# MAGIC
-# MAGIC **Module:** Module 04: Delta Lake Architecture, ACID Operations & Time Travel
-# MAGIC **Difficulty:** `Intermediate`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC An enterprise data platform has 100TB of historical data stored across partitioned Parquet directories in Amazon S3 or Azure ADLS. Re-writing all Parquet files into Delta would take days and cost thousands of dollars in cloud compute.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Perform a zero-copy, in-place migration of an existing Parquet table to Delta Lake using `CONVERT TO DELTA`. Preserve existing partition directory hierarchies and verify instant ACID transaction log generation without moving data files.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC `CONVERT TO DELTA` reads the file metadata and directory structure of an existing Parquet directory and synthesizes commit `000000.json` in `_delta_log/` in seconds. It does not rewrite or copy underlying Parquet data files, making it a zero-copy instant operation.
+"""
+Module 05 / 043: In-Place Parquet to Delta Lake Migration (CONVERT TO DELTA)
 
-# COMMAND ----------
+Scenario & Scale:
+    An enterprise warehouse holds 100 TB of historical Hive-partitioned Parquet
+    directories across S3/ADLS. Rewriting all 100 TB into Delta Lake via
+    `spark.read.parquet(...).write.format("delta")` would take days and burn
+    tens of thousands of dollars in cluster compute and cross-AZ egress.
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+Goal:
+    Execute zero-copy, metadata-only in-place migration using `CONVERT TO DELTA`
+    with explicit `PARTITIONED BY` specification, then verify immediate ACID
+    `UPDATE` / Time Travel capabilities on existing Parquet files.
+"""
 
-# COMMAND ----------
+from __future__ import annotations
 
-import os
-import sys
-import shutil
 from pathlib import Path
+import tempfile
 
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_043_In_Place_Parquet_to_Delta_Lake_Migration_with_CONVERT_TO_DELTA")
+from delta.tables import DeltaTable
+from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
+
+
+def build_spark() -> SparkSession:
+    """Create an ANSI-enabled Spark 4.0+ session with Delta Lake."""
+    return (
+        SparkSession.builder.appName("043_InPlace_Convert_To_Delta")
         .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
-        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.ansi.enabled", "true")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .config(
+            "spark.sql.catalog.spark_catalog",
+            "org.apache.spark.sql.delta.catalog.DeltaCatalog",
+        )
         .getOrCreate()
     )
 
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+# ---------------------------------------------------------------------------
+# (2) Anti-Pattern: Full-table read + rewrite to migrate legacy Parquet
+# ---------------------------------------------------------------------------
+def anti_pattern_full_parquet_rewrite(
+    spark: SparkSession, src_parquet_uri: str, dst_delta_uri: str
+) -> None:
+    # ❌ Bad Practice: Reading 100 TB of existing Parquet files and rewriting every
+    # byte into a brand-new Delta directory.
+    # Otherwise: You pay 2x storage during migration, burn massive executor compute
+    # decoding/re-encoding identical Parquet row groups, and break downstream paths
+    # that still point to the original object-store prefix.
+    spark.read.parquet(src_parquet_uri).write.format("delta").mode("overwrite").save(
+        dst_delta_uri
+    )
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 1: Generating Partitioned Parquet Table
-# MAGIC Create an unmanaged Parquet table partitioned by department.
+# ---------------------------------------------------------------------------
+# (3) ANSI-safe PySpark 4.0+ Fix: Zero-Copy Metadata-Only CONVERT TO DELTA
+# ---------------------------------------------------------------------------
+def good_practice_convert_to_delta(spark: SparkSession, base_dir: Path) -> None:
+    # ✅ Good Practice: Run `CONVERT TO DELTA parquet.`...` PARTITIONED BY (...)` to
+    # read existing Parquet footers and synthesize `_delta_log/00000...00.json` in-place
+    # without copying or rewriting a single data file.
+    target_uri = str(base_dir)
+    records = [
+        ("EMP-01", "Alice", "90000.00", "HR"),
+        ("EMP-02", "Bob", "110000.00", "Engineering"),
+        ("EMP-03", "Charlie", "95000.00", "HR"),
+        ("EMP-04", "Diana", "140000.00", "Engineering"),
+    ]
+    df = spark.createDataFrame(
+        records, "emp_id STRING, name STRING, salary STRING, department STRING"
+    ).withColumn("salary", F.try_cast(F.col("salary"), "DECIMAL(12,2)"))
 
-# COMMAND ----------
+    df.write.format("parquet").partitionBy("department").mode("overwrite").save(target_uri)
 
-parquet_base_path = "/tmp/parquet_legacy_043"
-if Path(parquet_base_path).exists():
-    shutil.rmtree(parquet_base_path)
+    # Zero-copy in-place conversion (NO STATISTICS speeds up 100TB+ footer scans).
+    spark.sql(
+        f"CONVERT TO DELTA parquet.`{target_uri}` PARTITIONED BY (department STRING)"
+    )
+    assert (base_dir / "_delta_log").exists(), "_delta_log must exist after conversion"
 
-legacy_records = [
-    ("EMP-01", "Alice", 90000.0, "HR"),
-    ("EMP-02", "Bob", 110000.0, "Engineering"),
-    ("EMP-03", "Charlie", 95000.0, "HR"),
-    ("EMP-04", "Diana", 140000.0, "Engineering")
-]
+    # Full ACID updates and Time Travel now work immediately on the converted table.
+    dt = DeltaTable.forPath(spark, target_uri)
+    dt.update(condition=F.col("emp_id") == F.lit("EMP-01"), set={"salary": F.lit(98000.00)})
+    dt.toDF().orderBy("emp_id").show(truncate=False)
 
-# Write as standard Parquet partitioned by department
-spark.createDataFrame(legacy_records, ["emp_id", "name", "salary", "department"])    .write.format("parquet")    .partitionBy("department")    .mode("overwrite")    .save(parquet_base_path)
 
-print(f"Legacy partitioned Parquet created at: {parquet_base_path}")
-print(f"Subdirectories: {[d.name for d in Path(parquet_base_path).iterdir() if d.is_dir()]}")
+# ---------------------------------------------------------------------------
+# (4) explain("formatted") & Spark UI Diagnostic Notes (Comments Only)
+# ---------------------------------------------------------------------------
+# - During `CONVERT TO DELTA`, Spark launches a parallel footer-metadata listing job
+#   (reading Parquet footers only, not row data) to populate file sizes and min/max
+#   data-skipping statistics inside commit `00000000000000000000.json`.
+# - In the Spark UI Jobs tab, verify zero shuffle/data-write stages occur during
+#   conversion; appending `NO STATISTICS` skips footer reads altogether on 100 TB+
+#   tables so conversion completes in seconds, followed later by `ANALYZE TABLE`.
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 2: Executing CONVERT TO DELTA In-Place
-# MAGIC Convert Parquet directory to Delta Lake with zero file copies.
+# ---------------------------------------------------------------------------
+# (5) Production & Interview Gotchas
+# ---------------------------------------------------------------------------
+# 1. Freeze Concurrent Parquet Writers During Conversion: If an external non-Delta job
+#    writes raw Parquet files into the directory after `CONVERT TO DELTA`, Delta's
+#    `_delta_log` ignores those files (silent data loss until table repair/rewrite).
+# 2. `PARTITIONED BY` Is Mandatory for Partitioned Parquet: Omitting `PARTITIONED BY`
+#    on Hive-partitioned folders causes conversion to fail or miss partition columns.
+# 3. Parquet-Only Support: `CONVERT TO DELTA` works only on Parquet (and Iceberg
+#    metadata via `CONVERT TO DELTA iceberg.`...``); CSV/JSON/Avro always require a
+#    full read-and-write ingestion pass.
+# 4. Schema Incompatibilities: Legacy Parquet files with inconsistent column types
+#    across partitions (e.g., `INT` in 2022, `BIGINT` in 2024) must be reconciled or
+#    rewritten before converting to a unified Delta schema.
 
-# COMMAND ----------
 
-# Execute CONVERT TO DELTA with partition specification
-spark.sql(f"CONVERT TO DELTA parquet.`{parquet_base_path}` PARTITIONED BY (department STRING)")
-
-print("CONVERT TO DELTA completed!")
-print(f"Has _delta_log now: {(Path(parquet_base_path) / '_delta_log').exists()}")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 3: Verifying ACID Capabilities on Converted Table
-# MAGIC Verify that UPDATE and ACID operations now function on the converted table.
-
-# COMMAND ----------
-
-from delta.tables import DeltaTable
-
-dt_converted = DeltaTable.forPath(spark, parquet_base_path)
-
-# Execute an ACID update on the newly converted table
-dt_converted.update(condition=F.col("emp_id") == "EMP-01", set={"salary": F.lit(98000.0)})
-
-print("Converted Table after ACID Update:")
-dt_converted.toDF().show()
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **`CONVERT TO DELTA` is a zero-copy metadata-only operation that constructs `_delta_log` instantly.**
-# MAGIC - **For partitioned tables, always specify `PARTITIONED BY (col TYPE)` matching the physical directory structure.**
-# MAGIC - **After conversion, you gain full ACID support, Time Travel, and MERGE capabilities without moving files.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. Does `CONVERT TO DELTA` duplicate or move any underlying Parquet data files?
-# MAGIC 2. What happens if an external system writes new Parquet files into the directory after conversion without going through Delta?
-# MAGIC 3. Can you run `CONVERT TO DELTA` on CSV or JSON files?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+if __name__ == "__main__":
+    spark = build_spark()
+    try:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            good_practice_convert_to_delta(spark, Path(tmp_dir) / "parquet_legacy")
+    finally:
+        spark.stop()

@@ -1,134 +1,114 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 026: Ranking Window Functions: row_number, rank, dense_rank and percent_rank
-# MAGIC
-# MAGIC **Module:** Module 03: Advanced SQL, Aggregations & Analytical Window Functions
-# MAGIC **Difficulty:** `Intermediate`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC A national sales management board ranks sales representatives within each geographic territory based on quarterly quota attainment. The ranking system must handle tie scores appropriately and calculate relative percentile percentiles for bonus distribution.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Compare and implement all four ranking window functions: `row_number()`, `rank()`, `dense_rank()`, and `percent_rank()`. Explain how tied values affect sequential numbering and subsequent rank positions. Filter for Top-N performers per partition.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC Window ranking functions require a WindowSpec with `partitionBy()` and `orderBy()`. Rows are partitioned across executors by partition key and sorted in-memory. If no `partitionBy()` is provided, all data is moved to a single executor partition, creating a catastrophic bottleneck.
+"""Scenario & Scale: Sales quota ranking & Top-N leaderboards (50M rep scores/quarter).
 
-# COMMAND ----------
+Business Context:
+Rank sales reps within geographic territories while handling ties deterministically
+(`row_number`, `rank`, `dense_rank`, `percent_rank`) and pruning Top-N per partition.
+"""
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+from pyspark.sql import DataFrame, SparkSession, Window
+from pyspark.sql import functions as F
+from pyspark.sql import types as T
 
-# COMMAND ----------
 
-import os
-import sys
-import shutil
-from pathlib import Path
-
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_026_Ranking_Window_Functions_row_number_rank_dense_rank_and_percent_rank")
-        .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
+def build_spark(app_name: str = "026_Ranking_Window_Functions") -> SparkSession:
+    """Create or reuse a portable SparkSession with ANSI mode enabled."""
+    return (
+        SparkSession.builder.appName(app_name)
+        .config("spark.sql.ansi.enabled", "true")
         .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
         .getOrCreate()
     )
 
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+# ---------------------------------------------------------------------------
+# 1. Anti-Pattern
+# ---------------------------------------------------------------------------
+# ❌ Bad Practice:
+#   Window.orderBy(F.col("quota_pct").desc())  # missing .partitionBy("region")
+# Otherwise:
+# - An unpartitioned `Window.orderBy(...)` forces Spark to coalesce 100% of rows into
+#   a single partition on one executor (`Exchange SinglePartition`), causing severe
+#   single-node bottleneck and OutOfMemoryError on multi-GB tables.
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 1: Generating Sales Rep Quota Scores with Ties
-# MAGIC Create sales rep performance dataset with identical quota scores.
-
-# COMMAND ----------
-
-reps_data = [
-    ("East", "Alice", 125.0),
-    ("East", "Bob", 110.0),
-    ("East", "Charlie", 110.0), # Tied with Bob
-    ("East", "David", 95.0),
-    ("West", "Eve", 140.0),
-    ("West", "Frank", 130.0),
-    ("West", "Grace", 130.0), # Tied with Frank
-    ("West", "Heidi", 100.0)
-]
-
-schema = "region STRING, rep_name STRING, quota_pct DOUBLE"
-df_reps = spark.createDataFrame(reps_data, schema)
-df_reps.show()
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 2: Executing All Four Ranking Functions Simultaneously
-# MAGIC Observe behavior on tied quota scores.
-
-# COMMAND ----------
-
-window_spec = Window.partitionBy("region").orderBy(F.col("quota_pct").desc())
-
-df_ranked = df_reps.withColumn(
-    "row_num", F.row_number().over(window_spec)
-).withColumn(
-    "rank", F.rank().over(window_spec)
-).withColumn(
-    "dense_rank", F.dense_rank().over(window_spec)
-).withColumn(
-    "percent_rank", F.round(F.percent_rank().over(window_spec), 2)
+# ---------------------------------------------------------------------------
+# 2. ANSI-Safe PySpark 4.0+ Fix
+# ---------------------------------------------------------------------------
+# ✅ Good Practice: Partitioned WindowSpec + tie-breaker ordering + Top-N pruning.
+REPS_SCHEMA = T.StructType(
+    [
+        T.StructField("region", T.StringType(), nullable=False),
+        T.StructField("rep_name", T.StringType(), nullable=False),
+        T.StructField("quota_pct", T.DoubleType(), nullable=False),
+    ]
 )
 
-print("Comprehensive Ranking Comparison:")
-df_ranked.show()
 
-# COMMAND ----------
+def compute_quota_rankings(df: DataFrame) -> DataFrame:
+    """Apply all four ranking functions partitioned by region with deterministic tie-breaking."""
+    tie_aware_window = Window.partitionBy("region").orderBy(
+        F.col("quota_pct").desc(), F.col("rep_name").asc()
+    )
+    score_window = Window.partitionBy("region").orderBy(F.col("quota_pct").desc())
 
-# MAGIC %md
-# MAGIC ### Step 3: Top-2 Performers per Region Filtering
-# MAGIC Filter for top performers using dense_rank to include all tied runners-up.
+    return df.withColumns(
+        {
+            "row_num": F.row_number().over(tie_aware_window),
+            "rank": F.rank().over(score_window),
+            "dense_rank": F.dense_rank().over(score_window),
+            "percent_rank": F.round(F.percent_rank().over(score_window), 2),
+        }
+    )
 
-# COMMAND ----------
 
-# Using dense_rank ensures ties at rank 2 are both included
-df_top2 = df_ranked.filter(F.col("dense_rank") <= 2).select("region", "rep_name", "quota_pct", "dense_rank")
-print("Top 2 Performers per Region (Preserving Ties):")
-df_top2.show()
+def top_n_by_dense_rank(df_ranked: DataFrame, n: int = 2) -> DataFrame:
+    """Return Top-N performers per region while keeping all tied runners-up."""
+    return df_ranked.filter(F.col("dense_rank") <= n).select(
+        "region", "rep_name", "quota_pct", "dense_rank"
+    )
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **`row_number()` assigns strictly unique sequential integers regardless of ties.**
-# MAGIC - **`rank()` produces duplicate ranks on ties and skips subsequent numbers (e.g. 1, 2, 2, 4).**
-# MAGIC - **`dense_rank()` produces duplicate ranks on ties without skipping (e.g. 1, 2, 2, 3).**
-# MAGIC - **Never call `.over(Window.orderBy())` without `partitionBy()` on large tables, as it moves the entire dataset into one partition.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. What is the difference between `rank()` and `dense_rank()` when multiple rows have identical values?
-# MAGIC 2. What happens to cluster resources if you define a Window without a `partitionBy` clause?
-# MAGIC 3. How does `percent_rank()` calculate its value mathematically?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+def main() -> None:
+    spark = build_spark()
+
+    reps_data = [
+        ("East", "Alice", 125.0),
+        ("East", "Bob", 110.0),
+        ("East", "Charlie", 110.0),
+        ("East", "David", 95.0),
+        ("West", "Eve", 140.0),
+        ("West", "Frank", 130.0),
+        ("West", "Grace", 130.0),
+        ("West", "Heidi", 100.0),
+    ]
+    df_reps = spark.createDataFrame(reps_data, schema=REPS_SCHEMA)
+
+    df_ranked = compute_quota_rankings(df_reps)
+    df_top2 = top_n_by_dense_rank(df_ranked, n=2)
+
+    david = df_ranked.filter(F.col("rep_name") == "David").first()
+    assert david["rank"] == 4 and david["dense_rank"] == 3
+    assert df_top2.filter(F.col("region") == "East").count() == 3  # Alice, Bob, Charlie
+
+
+# ---------------------------------------------------------------------------
+# 3. explain("formatted") / Spark UI Diagnostic Notes
+# ---------------------------------------------------------------------------
+# - `df_top2.explain("formatted")` leverages Catalyst's `WindowGroupLimit` operator
+#   for `dense_rank <= 2` / `row_number <= N`, performing partial Top-N pruning BEFORE
+#   `Exchange hashpartitioning(region)` to shrink shuffle I/O dramatically.
+# - Look out for `Exchange SinglePartition` in `explain("formatted")`; it indicates a
+#   missing `partitionBy(...)` clause on a Window specification.
+
+# ---------------------------------------------------------------------------
+# 4. Production & Interview Gotchas
+# ---------------------------------------------------------------------------
+# 1. `row_number()` assigns `1,2,3,4` (always add a unique tie-breaker column for
+#    determinism); `rank()` skips gaps (`1,2,2,4`); `dense_rank()` has no gaps (`1,2,2,3`).
+# 2. `percent_rank()` computes `(rank - 1) / (N - 1)` in `[0.0, 1.0]` and returns `0.0`
+#    for a 1-row partition; `ntile(k)` splits rows into `k` roughly equal buckets.
+# 3. If filtering by `row_number() <= k`, Spark pushes `WindowGroupLimit` down only
+#    when the filter sits immediately above the `Window` without intervening UDFs.
+
+if __name__ == "__main__":
+    main()

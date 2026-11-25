@@ -1,146 +1,111 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 005: String Operations, Regex Extraction & Data Cleansing
-# MAGIC
-# MAGIC **Module:** Module 01: Core PySpark Foundations & DataFrame API
-# MAGIC **Difficulty:** `Beginner`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC A marketing automation system ingests unstructured customer lead notes containing messy phone numbers, email addresses with inconsistent cases, and unformatted address strings.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Apply string manipulation functions: trimming whitespace, case normalization, regex value extraction (`regexp_extract`), masking sensitive values with `regexp_replace`, and parsing delimited tokens into structured columns.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC Spark SQL string functions are backed by native UTF-8 binary representations in Apache Spark's Tungsten project, avoiding Java String object allocation overhead.
+"""Scenario & Scale: Marketing CRM lead cleansing & PII masking (30M leads/day, 10m SLA).
 
-# COMMAND ----------
+Business Context:
+Normalize unstructured contact strings, extract phone/city/state fields via Tungsten
+UTF-8 regex functions, and mask PII before landing records into Silver analytics tables.
+"""
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import functions as F
+from pyspark.sql import types as T
 
-# COMMAND ----------
 
-import os
-import sys
-import shutil
-from pathlib import Path
-
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_005_String_Operations_Regex_Extraction_and_Data_Cleansing")
-        .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
+def build_spark(app_name: str = "005_String_Regex_PII_Masking") -> SparkSession:
+    """Create or reuse a portable SparkSession with ANSI mode enabled."""
+    return (
+        SparkSession.builder.appName(app_name)
+        .config("spark.sql.ansi.enabled", "true")
         .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
         .getOrCreate()
     )
 
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+# ---------------------------------------------------------------------------
+# 1. Anti-Pattern
+# ---------------------------------------------------------------------------
+# ❌ Bad Practice:
+#   @F.udf("string")
+#   def extract_phone_py(s): return re.search(...).group(0)
+# Otherwise:
+# - Row-by-row Python UDFs serialize UTF-8 Tungsten buffers across Py4J/pickle to
+#   Python workers, degrading throughput by 10x-50x and risking `AttributeError` on None.
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 1: Generating Unclean Lead Data
-# MAGIC Simulate raw, unstandardized user inputs.
+# ---------------------------------------------------------------------------
+# 2. ANSI-Safe PySpark 4.0+ Fix
+# ---------------------------------------------------------------------------
+# ✅ Good Practice: Native JVM `regexp_extract` / `regexp_replace` + explicit PII masking.
+LEAD_SCHEMA = T.StructType(
+    [
+        T.StructField("lead_id", T.StringType(), nullable=False),
+        T.StructField("raw_email", T.StringType(), nullable=True),
+        T.StructField("raw_contact_str", T.StringType(), nullable=True),
+    ]
+)
 
-# COMMAND ----------
+PHONE_REGEX = r"(\d{3})[^\d]?(\d{3})[^\d]?(\d{4})"
 
-leads = [
-    ("LEAD-1", "  JOHN.DOE@GMAIL.COM  ", "Phone: (555) 123-4567 | City: New York, NY"),
-    ("LEAD-2", "SARAH_CONNOR@skyNET.io", "Cell: 555.987.6543 | City: Los Angeles, CA"),
-    ("LEAD-3", "unknown_user", "No contact provided | City: Chicago, IL"),
-    ("LEAD-4", "bruce.wayne@WayneEnt.com ", "Direct: +1-555-444-3333 | City: Gotham, NJ")
-]
 
-df_leads = spark.createDataFrame(leads, ["lead_id", "raw_email", "raw_contact_str"])
-df_leads.show(truncate=False)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 2: Sanitizing Emails & Extracting Structured Fields via Regex
-# MAGIC Normalize text and extract patterns using regular expressions.
-
-# COMMAND ----------
-
-# 1. Clean email: trim whitespace and lower case
-df_clean_email = df_leads.withColumn("clean_email", F.lower(F.trim(F.col("raw_email"))))
-
-# 2. Extract 10-digit phone number pattern
-# Matches (xxx) xxx-xxxx, xxx.xxx.xxxx, or xxx-xxx-xxxx
-phone_regex = r"(\d{3})[^\d]?(\d{3})[^\d]?(\d{4})"
-
-df_extracted = df_clean_email.withColumn(
-    "phone_digits",
-    F.regexp_replace(
-        F.regexp_extract(F.col("raw_contact_str"), phone_regex, 0),
+def cleanse_and_mask_leads(df: DataFrame) -> DataFrame:
+    """Extract structured contact attributes and mask email/phone PII in a single pass."""
+    clean_email = F.lower(F.trim(F.col("raw_email")))
+    phone_digits = F.regexp_replace(
+        F.regexp_extract(F.col("raw_contact_str"), PHONE_REGEX, 0),
         r"[^\d]",
-        ""
+        "",
     )
-).withColumn(
-    "city",
-    F.regexp_extract(F.col("raw_contact_str"), r"City:\s*([A-Za-z\s]+),", 1)
-).withColumn(
-    "state",
-    F.regexp_extract(F.col("raw_contact_str"), r",\s*([A-Z]{2})", 1)
-)
 
-df_extracted.select("lead_id", "clean_email", "phone_digits", "city", "state").show(truncate=False)
+    return df.withColumns(
+        {
+            "clean_email": clean_email,
+            "phone_digits": phone_digits,
+            "city": F.regexp_extract(F.col("raw_contact_str"), r"City:\s*([A-Za-z\s]+),", 1),
+            "state": F.regexp_extract(F.col("raw_contact_str"), r",\s*([A-Z]{2})", 1),
+            "masked_email": F.regexp_replace(clean_email, r"(^.).*(@.*$)", "$1***$2"),
+            "masked_phone": F.when(
+                F.length(phone_digits) == 10,
+                F.concat(F.lit("***-***-"), F.substring(phone_digits, 7, 4)),
+            ).otherwise(F.lit("UNAVAILABLE")),
+        }
+    )
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 3: PII Masking on Email & Phone
-# MAGIC Mask phone numbers and email usernames for compliance before landing in analytics tables.
+def main() -> None:
+    spark = build_spark()
 
-# COMMAND ----------
+    leads = [
+        ("LEAD-1", "  JOHN.DOE@GMAIL.COM  ", "Phone: (555) 123-4567 | City: New York, NY"),
+        ("LEAD-2", "SARAH_CONNOR@skyNET.io", "Cell: 555.987.6543 | City: Los Angeles, CA"),
+        ("LEAD-3", "unknown_user", "No contact provided | City: Chicago, IL"),
+        ("LEAD-4", "bruce.wayne@WayneEnt.com ", "Direct: +1-555-444-3333 | City: Gotham, NJ"),
+    ]
+    df_leads = spark.createDataFrame(leads, schema=LEAD_SCHEMA)
+    df_result = cleanse_and_mask_leads(df_leads)
 
-# Mask email username: j***e@domain.com
-df_masked = df_extracted.withColumn(
-    "masked_email",
-    F.regexp_replace(F.col("clean_email"), r"(^.).*(@.*$)", "$1***$2")
-).withColumn(
-    "masked_phone",
-    F.when(
-        F.length(F.col("phone_digits")) == 10,
-        F.concat(F.lit("***-***-"), F.substring(F.col("phone_digits"), 7, 4))
-    ).otherwise(F.lit("UNAVAILABLE"))
-)
+    lead1 = df_result.filter(F.col("lead_id") == "LEAD-1").first()
+    lead3 = df_result.filter(F.col("lead_id") == "LEAD-3").first()
+    assert lead1["masked_email"] == "j***@gmail.com"
+    assert lead1["masked_phone"] == "***-***-4567"
+    assert lead1["city"] == "New York" and lead1["state"] == "NY"
+    assert lead3["masked_phone"] == "UNAVAILABLE"
 
-df_masked.select("lead_id", "masked_email", "masked_phone", "city", "state").show(truncate=False)
 
-# COMMAND ----------
+# ---------------------------------------------------------------------------
+# 3. explain("formatted") / Spark UI Diagnostic Notes
+# ---------------------------------------------------------------------------
+# - `df_result.explain("formatted")` executes inside WholeStageCodegen `Project` on
+#   Tungsten `UTF8String` off-heap/on-heap byte arrays without any `BatchEvalPython` node.
+# - If `BatchEvalPython` appears in the plan, replace the Python UDF with built-in SQL regex.
 
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **`regexp_extract(col, pattern, group_index)` extracts capturing groups where group 0 is the full match.**
-# MAGIC - **Tungsten's native UTF8String implementation avoids garbage collection overhead during large-scale string operations.**
-# MAGIC - **Combine regex cleaning with conditional `when/otherwise` masks to ensure privacy compliance.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. How does Spark's `regexp_extract` handle missing or non-matching patterns?
-# MAGIC 2. What is the performance difference between built-in SQL string functions and a custom Python regex UDF?
-# MAGIC 3. How does Tungsten memory management optimize string representations in Spark?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+# ---------------------------------------------------------------------------
+# 4. Production & Interview Gotchas
+# ---------------------------------------------------------------------------
+# 1. `F.regexp_extract` returns `""` (empty string), NOT `NULL`, when no match is found;
+#    wrap with `F.nullif(..., F.lit(""))` before downstream `isNotNull()` checks.
+# 2. Avoid catastrophic backtracking in regexes (nested quantifiers like `(a+)+`) on
+#    untrusted user text, which can stall executor threads for minutes per partition.
+# 3. Prefer SHA-256 tokenization (`F.sha2`) over simple character masking when analysts
+#    need deterministic join keys across anonymized Silver tables.
+
+if __name__ == "__main__":
+    main()
