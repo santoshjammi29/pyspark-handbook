@@ -1,79 +1,56 @@
 # Contributing to PySpark Handbook
 
-Thank you for your interest in contributing to **PySpark Handbook** (`santoshjammi29/pyspark-handbook`)! This repository is an official component of the **Modern Data Engineering Lakehouse Ecosystem** ([moderndataengineer.uk](https://moderndataengineer.uk)).
+Thank you for contributing to **PySpark Handbook** (`santoshjammi29/pyspark-handbook`), part of the **Modern Data Engineering Lakehouse Ecosystem** ([moderndataengineer.uk](https://moderndataengineer.uk)).
 
-Our curriculum and code samples follow strict architectural standards synthesized from the **Top 25 educational repositories on GitHub** (~5,000,000+ stars).
+This repository is a **code-only, zero-bloat Apache Spark 4.0+ reference handbook**. Keep contributions crisp, portable, and statically verifiable.
 
 ---
 
-## 1. Core Pedagogical Invariants
+## 1. Strict Code-Only Policy
 
-Every drill, exercise, notebook, and architecture guide in this repository must satisfy the **Code-Test-Doc Triad**:
+To keep clones fast and CI under 30 seconds with zero JVM overhead, Pull Requests **must** adhere to these repository guardrails:
 
-```mermaid
-flowchart LR
-    A["1. Theory & Mental Model<br/>(README / Docstring)"] --> B["2. Executable Implementation<br/>(Clean Idiomatic Code)"]
-    B --> C["3. Automated Assertion<br/>(Unit Test / Doctest)"]
+- **No Labs or Notebooks**: Do NOT add `.ipynb` files, `# Databricks notebook source` / `# COMMAND ----------` headers, interactive lab runners, Dockerfiles, or devcontainers.
+- **No Datasets or Large Binaries**: Do NOT commit `*.csv`, `*.parquet`, `*.orc`, `*.avro`, sample data dumps, or any file larger than **500 KB**.
+- **No JVM CI Dependencies**: `requirements.txt` contains lightweight static tooling only (`ruff`, `pytest`). Do not add `pyspark`, `delta-spark`, `jupyter`, or Java installs to CI.
+- **Core vs. Platform Isolation**:
+  - `01_foundations/` through `05_lakehouse_formats/` must be **vendor-neutral, Spark Connect-compatible PySpark 4.0+** with zero `spark.sparkContext` calls and zero hardcoded `/tmp/` writes.
+  - Cloud/vendor-specific integrations (Databricks, Microsoft Fabric, AWS EMR, GCP Dataproc, Kubernetes) belong exclusively in `06_platform_adapters/`.
+
+---
+
+## 2. Mandatory 5-Part Module Blueprint
+
+Every `.py` pattern file in `01_foundations/` .. `06_platform_adapters/` must follow this concise 5-part structure:
+
+1. **Scenario & Scale Docstring**: Production problem statement, data scale context, and Spark 4.0+ / Spark Connect applicability.
+2. **Anti-Pattern (`# ❌ Bad Practice`)**: Realistic broken or slow pattern with an explicit `# Otherwise: <blast radius>` comment (e.g., *Driver OOM*, *ANSI cast exception*, *40x shuffle spill*).
+3. **ANSI-Safe PySpark 4.0+ Fix (`# ✅ Good Practice`)**: Clean, typed, idiomatic DataFrame / SQL / Spark Connect solution safe under `spark.sql.ansi.enabled = true`.
+4. **`explain("formatted")` & Spark UI Diagnostic Notes**: Concise comment block explaining what Catalyst operators, AQE re-optimizations, or Spark UI metrics confirm the fix.
+5. **2–4 Production / Interview Gotchas**: Sharp edge cases, version caveats (e.g., Spark 3.5 -> 4.0), and operational invariants.
+
+---
+
+## 3. Documentation & Diagram Standards
+
+- **Mermaid Safety**: Quote link labels containing parentheses (`-->|"Label (text)"|`), avoid raw `<` / `>` / `<=` in labels, avoid `;` in `sequenceDiagram` notes, and escape literal `\$`.
+- **Relative Links**: Verify all Markdown links resolve relative to the file's directory; use canonical GitHub URLs for cross-repo references.
+- **Whiteboard Invariant**: `assets/whiteboards/` maintains exactly **52** `.webp` blueprints. Do not add `.jpg` files or duplicate aliases.
+
+---
+
+## 4. Local Pre-Flight & PR Workflow
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+python -m compileall -q .
+ruff check .
+pytest tests/
 ```
 
-1. **The Code-Test-Doc Triad**:
-   - **Theory & Mental Model**: Every topic must begin with an intuitive real-world analogy and high-level architecture diagram (Mermaid or ASCII flow).
-   - **Executable Code**: Code must be 100% runnable with zero missing imports or broken pseudocode.
-   - **Automated Test Assertions**: Every code module must include automated verification tests (e.g. `pytest`, `doctest`, or unit assertions) checking happy paths and edge cases.
-
-2. **The Anti-Pattern Standard ("Bad vs Good")**:
-   - Contrastive learning is twice as memorable as isolated clean code.
-   - Every guide should illustrate both:
-     - `❌ Bad Practice`: Common production pitfall or anti-pattern.
-     - `✅ Good Practice`: Hardened, performant, production-ready solution.
-   - **The "Otherwise" Requirement**: Explicitly state the operational consequence of ignoring the rule (e.g., *Driver OOM*, *Data Corruption*, *Lock Contention*, *Spill to Disk*).
-
-3. **4-Tier Progressive Disclosure Model**:
-   - **Level 100 (Foundations)**: Core definitions, basic syntax, single-node execution.
-   - **Level 200 (Core Mechanics)**: Standard production patterns, schema validation, error handling.
-   - **Level 300 (Complex Scenarios & Skew)**: Performance tuning, partition skew, memory triage, runbooks.
-   - **Level 400 (Staff Architect)**: Cross-cloud trade-offs, FinOps cost curves, zero-trust security.
-
----
-
-## 2. Authoring Guidelines & Schema
-
-### Exercise Directory Layout
-```
-module-name/
-├── README.md               # Visual explanation, Big-O complexity, real-world context
-├── implementation.py       # Production-clean, typed implementation
-└── test_implementation.py  # Self-contained pytest test suite
-```
-
-### Primary Evidence Sourcing
-Every submission must be grounded in primary authoritative documentation:
-- Official documentation (Spark, Delta Lake, Databricks, dbt, Apache Kafka, Microsoft Fabric).
-- Peer-reviewed research papers and seminal industry specifications (e.g., BCBS 239, DORA, Raft, Chandy-Lamport).
-
----
-
-## 3. Pre-Publish Quality Audit Checklist
-
-Before submitting a Pull Request, verify:
-
-- [ ] **1. Triad Compliance**: Does the module contain explanation, runnable code, and automated tests?
-- [ ] **2. 1-Line Mental Model**: Is there an intuitive summary at the top?
-- [ ] **3. Architecture Diagram**: Is there a Mermaid or ASCII data-flow diagram?
-- [ ] **4. Fully Executable**: Does the code run without external dependencies where possible?
-- [ ] **5. Anti-Pattern Demonstrated**: Is there a side-by-side `Bad` vs `Good` comparison?
-- [ ] **6. Complexity Analyzed**: Are Big-O time and auxiliary space bounds explicitly stated?
-- [ ] **7. WCAG 2.2 AA Contrast**: Are all text and diagram elements accessible across themes?
-- [ ] **8. Link Integrity**: Do all internal markdown links resolve correctly?
-- [ ] **9. Taxonomy Alignment**: Does the topic map cleanly to `Apache Spark & Distributed Compute` in `TAXONOMY.md`?
-- [ ] **10. Kebab-Case ID**: Is the unique identifier lowercase kebab-case?
-
----
-
-## 4. Pull Request Workflow
-
-1. **Fork the repository** on GitHub.
-2. **Create a topic branch**: `git checkout -b feat/your-exercise-name`.
-3. **Run local tests**: Ensure all unit tests and linters pass.
-4. **Commit with Conventional Commits**: e.g., `feat(module): add two-phase salting drill`.
-5. **Submit PR**: Reference any relevant issues and verify the CI checks turn green.
+1. Fork the repository and branch from `main` (`feat/...` or `fix/...`).
+2. Follow Conventional Commits (e.g., `feat(spark4): add variant shredding pattern`).
+3. Ensure all static CI checks pass before requesting review.

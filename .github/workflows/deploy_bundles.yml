@@ -1,25 +1,20 @@
 name: Declarative Automation Bundles (DAB) CI/CD Deployment
-# Note: Formerly known as Databricks Asset Bundles (DABs).
-# Production Recommendation: Use keyless OIDC Workload Identity Federation with Azure/AWS 
+# Production Recommendation: Use keyless OIDC Workload Identity Federation with Azure/AWS
 # rather than long-lived client secrets.
 
 on:
   pull_request:
     branches: [ main ]
     paths:
-      - 'databricks.yml'
-      - 'resources/**'
-      - 'notebooks/**'
-      - 'apps/**'
+      - '06_platform_adapters/databricks_asset_bundles/**'
+      - '06_platform_adapters/**'
       - '.github/workflows/deploy_bundles.yml'
 
   push:
     branches: [ main ]
     paths:
-      - 'databricks.yml'
-      - 'resources/**'
-      - 'notebooks/**'
-      - 'apps/**'
+      - '06_platform_adapters/databricks_asset_bundles/**'
+      - '06_platform_adapters/**'
 
   workflow_dispatch:
     inputs:
@@ -35,11 +30,14 @@ on:
 
 jobs:
   # --------------------------------------------------------------------------
-  # 1. Validation & Linting (Runs on every PR)
+  # 1. Validation & Linting (Runs on every PR touching 06_platform_adapters)
   # --------------------------------------------------------------------------
   validate:
     name: Validate Bundle Syntax & Assets
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: 06_platform_adapters/databricks_asset_bundles
     outputs:
       configured: ${{ steps.check-creds.outputs.configured }}
     steps:
@@ -65,8 +63,7 @@ jobs:
 
       - name: Validate Databricks Asset Bundle (Dev Target)
         if: steps.check-creds.outputs.configured == 'true'
-        run: |
-          databricks bundle validate -t dev
+        run: databricks bundle validate -t dev
         env:
           DATABRICKS_HOST: ${{ secrets.DATABRICKS_DEV_HOST }}
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_DEV_TOKEN }}
@@ -78,8 +75,11 @@ jobs:
     name: Deploy to Staging Lakehouse
     needs: [validate]
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.target == 'staging')) && needs.validate.outputs.configured == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: staging
+    defaults:
+      run:
+        working-directory: 06_platform_adapters/databricks_asset_bundles
     steps:
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -88,8 +88,7 @@ jobs:
         uses: databricks/setup-cli@main
 
       - name: Deploy Bundle to Staging
-        run: |
-          databricks bundle deploy -t staging
+        run: databricks bundle deploy -t staging
         env:
           DATABRICKS_HOST: ${{ secrets.DATABRICKS_STAGING_HOST }}
           DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_STAGING_CLIENT_ID }}
@@ -102,8 +101,11 @@ jobs:
     name: Deploy to Production Lakehouse
     needs: [validate]
     if: github.event_name == 'workflow_dispatch' && inputs.target == 'prod' && needs.validate.outputs.configured == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: production
+    defaults:
+      run:
+        working-directory: 06_platform_adapters/databricks_asset_bundles
     steps:
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -112,8 +114,7 @@ jobs:
         uses: databricks/setup-cli@main
 
       - name: Deploy Bundle to Production
-        run: |
-          databricks bundle deploy -t prod
+        run: databricks bundle deploy -t prod
         env:
           DATABRICKS_HOST: ${{ secrets.DATABRICKS_PROD_HOST }}
           DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_PROD_CLIENT_ID }}

@@ -456,7 +456,7 @@ Orchestrating multi-hop Medallion architecture pipelines where bronze, silver, a
 **Architectural Invariants & Gotchas:**
 - dbutils.notebook.exit() only accepts string payloads; always serialize Python dictionaries via json.dumps().
 - dbutils.notebook.run() spawns an ephemeral execution context that shares cluster compute but has isolated local namespace.
-- Widgets can be bound directly to Databricks Workflow job parameters in the UI or via databricks.yml asset bundles.
+- Widgets can be bound directly to Databricks Workflow job parameters in the UI or via `06_platform_adapters/databricks_asset_bundles/databricks.yml` asset bundles.
 - dbutils.widgets.removeAll() cleans up widget definitions when authoring interactive templates.
 
 ---
@@ -582,7 +582,7 @@ except NameError:
     spark = (
         SparkSession.builder
         .appName("UseCase_009_Deduplication_Strategies_dropDuplicates_vs_Window_Row_Number")
-        .master("local[*]")
+        # Spark 4.0+ / Spark Connect: omit .master(); pass .remote("sc://localhost:15002") for remote server
         .config("spark.sql.shuffle.partitions", "4")
         .config("spark.sql.adaptive.enabled", "true")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
@@ -594,9 +594,9 @@ from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
+# Spark Connect-safe session check (avoid spark.sparkContext in Spark 4.0+)
 print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+print(f"Session Active: {spark.conf.get('spark.app.name', 'SparkSession')}")
 
 # --- Execution Step ---
 webhook_events = [
@@ -665,7 +665,7 @@ except NameError:
     spark = (
         SparkSession.builder
         .appName("UseCase_010_Transformations_vs_Actions_Lazy_Evaluation_and_Lineage_Graph")
-        .master("local[*]")
+        # Spark 4.0+ / Spark Connect: omit .master(); pass .remote("sc://localhost:15002") for remote server
         .config("spark.sql.shuffle.partitions", "4")
         .config("spark.sql.adaptive.enabled", "true")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
@@ -677,9 +677,9 @@ from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
+# Spark Connect-safe session check (avoid spark.sparkContext in Spark 4.0+)
 print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+print(f"Session Active: {spark.conf.get('spark.app.name', 'SparkSession')}")
 
 # --- Execution Step ---
 # Generate sequence of 100,000 numbers
@@ -694,8 +694,8 @@ df_wide = df_narrow.groupBy(F.col("id") % 10).agg(F.sum("squared").alias("sum_sq
 print("Transformations registered in Catalyst. No execution has occurred yet!")
 
 # --- Execution Step ---
-print("=== RDD LINEAGE GRAPH (toDebugString) ===")
-print(df_wide.rdd.toDebugString().decode("utf-8"))
+print("=== CATALYST PHYSICAL PLAN (Spark Connect-safe; .rdd.toDebugString() is classic JVM only) ===")
+df_wide.explain("formatted")
 
 # --- Execution Step ---
 import time
@@ -737,7 +737,7 @@ except NameError:
     spark = (
         SparkSession.builder
         .appName("UseCase_011_Custom_PySpark_UDFs_vs_Vectorized_Pandas_UDFs_PyArrow")
-        .master("local[*]")
+        # Spark 4.0+ / Spark Connect: omit .master(); pass .remote("sc://localhost:15002") for remote server
         .config("spark.sql.shuffle.partitions", "4")
         .config("spark.sql.adaptive.enabled", "true")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
@@ -749,9 +749,9 @@ from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
+# Spark Connect-safe session check (avoid spark.sparkContext in Spark 4.0+)
 print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+print(f"Session Active: {spark.conf.get('spark.app.name', 'SparkSession')}")
 
 # --- Execution Step ---
 df_accounts = spark.range(1, 50001, 1, 4).select(
@@ -824,7 +824,7 @@ except NameError:
     spark = (
         SparkSession.builder
         .appName("UseCase_012_Emulating_Databricks_DBUtils_Widgets_and_Secret_Scopes_Locally")
-        .master("local[*]")
+        # Spark 4.0+ / Spark Connect: omit .master(); pass .remote("sc://localhost:15002") for remote server
         .config("spark.sql.shuffle.partitions", "4")
         .config("spark.sql.adaptive.enabled", "true")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
@@ -836,9 +836,9 @@ from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
+# Spark Connect-safe session check (avoid spark.sparkContext in Spark 4.0+)
 print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+print(f"Session Active: {spark.conf.get('spark.app.name', 'SparkSession')}")
 
 # --- Execution Step ---
 import os
@@ -962,7 +962,7 @@ except NameError:
     spark = (
         SparkSession.builder
         .appName("UseCase_013_Array_Creation_Element_Extraction_and_Array_Search_Functions")
-        .master("local[*]")
+        # Spark 4.0+ / Spark Connect: omit .master(); pass .remote("sc://localhost:15002") for remote server
         .config("spark.sql.shuffle.partitions", "4")
         .config("spark.sql.adaptive.enabled", "true")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
@@ -974,9 +974,9 @@ from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
+# Spark Connect-safe session check (avoid spark.sparkContext in Spark 4.0+)
 print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+print(f"Session Active: {spark.conf.get('spark.app.name', 'SparkSession')}")
 
 # --- Execution Step ---
 user_media = [
@@ -1047,7 +1047,7 @@ except NameError:
     spark = (
         SparkSession.builder
         .appName("UseCase_014_Spark_Higher_Order_Functions_Transform_Filter_and_Aggregate")
-        .master("local[*]")
+        # Spark 4.0+ / Spark Connect: omit .master(); pass .remote("sc://localhost:15002") for remote server
         .config("spark.sql.shuffle.partitions", "4")
         .config("spark.sql.adaptive.enabled", "true")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
@@ -1059,9 +1059,9 @@ from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
+# Spark Connect-safe session check (avoid spark.sparkContext in Spark 4.0+)
 print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+print(f"Session Active: {spark.conf.get('spark.app.name', 'SparkSession')}")
 
 # --- Execution Step ---
 loyalty_data = [
@@ -1134,7 +1134,7 @@ except NameError:
     spark = (
         SparkSession.builder
         .appName("UseCase_015_Exploding_and_Flattening_Arrays_explode_vs_explode_outer_and_posexplode")
-        .master("local[*]")
+        # Spark 4.0+ / Spark Connect: omit .master(); pass .remote("sc://localhost:15002") for remote server
         .config("spark.sql.shuffle.partitions", "4")
         .config("spark.sql.adaptive.enabled", "true")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
@@ -1146,9 +1146,9 @@ from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
+# Spark Connect-safe session check (avoid spark.sparkContext in Spark 4.0+)
 print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+print(f"Session Active: {spark.conf.get('spark.app.name', 'SparkSession')}")
 
 # --- Execution Step ---
 bookings = [
@@ -1217,7 +1217,7 @@ except NameError:
     spark = (
         SparkSession.builder
         .appName("UseCase_016_Struct_Creation_Nested_Field_Access_and_Updating_Sub_Fields")
-        .master("local[*]")
+        # Spark 4.0+ / Spark Connect: omit .master(); pass .remote("sc://localhost:15002") for remote server
         .config("spark.sql.shuffle.partitions", "4")
         .config("spark.sql.adaptive.enabled", "true")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
@@ -1229,9 +1229,9 @@ from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
+# Spark Connect-safe session check (avoid spark.sparkContext in Spark 4.0+)
 print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+print(f"Session Active: {spark.conf.get('spark.app.name', 'SparkSession')}")
 
 # --- Execution Step ---
 customers_flat = [
@@ -1306,7 +1306,7 @@ except NameError:
     spark = (
         SparkSession.builder
         .appName("UseCase_018_MapType_Creation_Key_Extraction_and_Dynamic_Properties")
-        .master("local[*]")
+        # Spark 4.0+ / Spark Connect: omit .master(); pass .remote("sc://localhost:15002") for remote server
         .config("spark.sql.shuffle.partitions", "4")
         .config("spark.sql.adaptive.enabled", "true")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
@@ -1318,9 +1318,9 @@ from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
+# Spark Connect-safe session check (avoid spark.sparkContext in Spark 4.0+)
 print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+print(f"Session Active: {spark.conf.get('spark.app.name', 'SparkSession')}")
 
 # --- Execution Step ---
 # Build map using paired key-value lists
@@ -1393,7 +1393,7 @@ except NameError:
     spark = (
         SparkSession.builder
         .appName("UseCase_019_Parsing_Raw_JSON_Payloads_from_json_to_json_and_schema_of_json")
-        .master("local[*]")
+        # Spark 4.0+ / Spark Connect: omit .master(); pass .remote("sc://localhost:15002") for remote server
         .config("spark.sql.shuffle.partitions", "4")
         .config("spark.sql.adaptive.enabled", "true")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
@@ -1405,9 +1405,9 @@ from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
+# Spark Connect-safe session check (avoid spark.sparkContext in Spark 4.0+)
 print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+print(f"Session Active: {spark.conf.get('spark.app.name', 'SparkSession')}")
 
 # --- Execution Step ---
 kafka_stream = [
@@ -1478,7 +1478,7 @@ except NameError:
     spark = (
         SparkSession.builder
         .appName("UseCase_020_Handling_Corrupted_and_Malformed_JSON_Permissive_vs_DropMalformed_vs_FailFast")
-        .master("local[*]")
+        # Spark 4.0+ / Spark Connect: omit .master(); pass .remote("sc://localhost:15002") for remote server
         .config("spark.sql.shuffle.partitions", "4")
         .config("spark.sql.adaptive.enabled", "true")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
@@ -1490,9 +1490,9 @@ from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
+# Spark Connect-safe session check (avoid spark.sparkContext in Spark 4.0+)
 print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+print(f"Session Active: {spark.conf.get('spark.app.name', 'SparkSession')}")
 
 # --- Execution Step ---
 bad_json_lines = [
@@ -1503,24 +1503,21 @@ bad_json_lines = [
     '{"id": "EVT-4", "user": "diana", "score": 100}'
 ]
 
-rdd_dirty = spark.sparkContext.parallelize(bad_json_lines)
+# Spark Connect-safe: avoid spark.sparkContext.parallelize(); parse JSON payloads via from_json
+df_raw = spark.createDataFrame([(line,) for line in bad_json_lines], ["raw_json"])
 
 # --- Execution Step ---
-# Define schema including special corrupt record column
-quarantine_schema = T.StructType([
+payload_schema = T.StructType([
     T.StructField("id", T.StringType(), True),
     T.StructField("user", T.StringType(), True),
     T.StructField("score", T.IntegerType(), True),
-    T.StructField("_corrupt_record", T.StringType(), True)
 ])
 
-# Read with PERMISSIVE mode
 df_permissive = (
-    spark.read
-    .option("mode", "PERMISSIVE")
-    .option("columnNameOfCorruptRecord", "_corrupt_record")
-    .schema(quarantine_schema)
-    .json(rdd_dirty)
+    df_raw
+    .withColumn("parsed", F.from_json(F.col("raw_json"), payload_schema, {"mode": "PERMISSIVE"}))
+    .withColumn("_corrupt_record", F.when(F.col("parsed").isNull(), F.col("raw_json")))
+    .select("parsed.*", "_corrupt_record")
 )
 
 print("Ingested Records with Quarantine Column:")

@@ -796,10 +796,10 @@ They can also be interactively inspected with pan/zoom and theme controls on the
 
 ![Databricks Asset Bundles (DABs) & Serverless CI/CD Architecture](../../assets/whiteboards/databricks_dabs_devops_pipeline.webp)
 
-**Overview:** Modern DataOps and enterprise CI/CD deployment architecture using Databricks Asset Bundles (DABs). Illustrates declarative infrastructure-as-code packaging (databricks.yml) governing jobs, DLT pipelines, models, and cluster resources across dev, staging, and production workspaces. Demonstrates automated linting, validation (bundle validate), artifact packaging, Git branch deployment triggers, and service principal execution.
+**Overview:** Modern DataOps and enterprise CI/CD deployment architecture using Databricks Asset Bundles (DABs). Illustrates declarative infrastructure-as-code packaging (`06_platform_adapters/databricks_asset_bundles/databricks.yml`) governing jobs, DLT pipelines, models, and cluster resources across dev, staging, and production workspaces. Demonstrates automated linting, validation (bundle validate), artifact packaging, Git branch deployment triggers, and service principal execution.
 
 **Key Architecture Points:**
-- Declarative IaC Specification: Complete lakehouse projects (notebooks, Python wheels, DLT pipelines, workflows, cluster specs) declared in structured `databricks.yml` files.
+- Declarative IaC Specification: Complete lakehouse projects (notebooks, Python wheels, DLT pipelines, workflows, cluster specs) declared in structured `06_platform_adapters/databricks_asset_bundles/databricks.yml` files.
 - Multi-Environment Target Isolation: Clean separation of environments (dev, staging, prod) within the same bundle, allowing overrides for cluster sizes, schedule states, and storage locations.
 - CLI-Driven Development Loop: Developers test locally and deploy to personal scratch workspaces using `databricks bundle deploy -t dev` and execute runs using `databricks bundle run`.
 - Automated CI/CD Verification: GitHub Actions or Azure DevOps pipelines run `databricks bundle validate` to catch syntax, schema, and reference errors before merging code.
@@ -813,7 +813,7 @@ They can also be interactively inspected with pan/zoom and theme controls on the
 <summary><strong>Multi-Persona Architectural Breakdown (Click to expand)</strong></summary>
 
 - **Enterprise Architect:** Establishes enterprise DataOps and Git branching strategies; designs service principal permission models across Azure/AWS workspaces; mandates automated deployment gates.
-- **Senior Data Engineer:** Authors root `databricks.yml` configuration templates and custom includes; builds reusable GitHub Actions / Azure DevOps CI/CD pipeline workflows; manages variable substitution across environments.
+- **Senior Data Engineer:** Authors `06_platform_adapters/databricks_asset_bundles/databricks.yml` configuration templates and custom includes; builds reusable GitHub Actions / Azure DevOps CI/CD pipeline workflows; manages variable substitution across environments.
 - **Data Engineer:** Develops pipelines locally in VS Code / PyCharm using Databricks Connect; tests bundle deployments in development sandbox environments; submits Pull Requests with automated bundle validation.
 - **Data Steward:** Reviews audit logs to verify all production jobs and compute resources are deployed via approved CI/CD pipelines rather than manual UI overrides.
 - **Business Analyst:** Benefits from high platform reliability and zero deployment downtime during scheduled report and pipeline releases.
@@ -828,7 +828,7 @@ They can also be interactively inspected with pan/zoom and theme controls on the
 - Unity Catalog Volumes automated file artifact upload and checksum validation
 
 **Production Failure Modes & Incident Triage:**
-- Bundle Validation Failure (`databricks bundle validate`): Schema violation or invalid cluster configuration parameter in `databricks.yml`; verify syntax against Databricks bundle JSON schema.
+- Bundle Validation Failure (`databricks bundle validate`): Schema violation or invalid cluster configuration parameter in `06_platform_adapters/databricks_asset_bundles/databricks.yml`; verify syntax against Databricks bundle JSON schema.
 - Production Deployment Permission Denied: Service principal lacks `CAN_MANAGE` permissions on target production catalog or workspace folder; grant required RBAC roles to service principal.
 - Concurrent Deployment Conflict: Multiple CI/CD runs attempting simultaneous bundle deploy; introduce pipeline concurrency locks / serialize deployment steps in GitHub Actions.
 
@@ -909,7 +909,7 @@ They can also be interactively inspected with pan/zoom and theme controls on the
 **Key Architecture Points:**
 - Non-Blocking Poison Pill Quarantine: Diverts corrupt records, invalid JSON schemas, and deserialization exceptions directly to a DLQ topic or table without halting the main pipeline.
 - Adaptive Circuit Breaker Pattern: Automatically pauses streaming ingestion and triggers PagerDuty alerts if the error rate exceeds pre-configured thresholds (e.g., >2% of micro-batch volume).
-- State Store Checkpoint Isolation: Separates validation stages from stateful aggregations (e.g., stream-stream joins, flatMapGroupsWithState) to protect state store consistency.
+- State Store Checkpoint Isolation: Separates validation stages from stateful aggregations (e.g., stream-stream joins, Spark 4.0 `transformWithState` / legacy `flatMapGroupsWithState`) to protect state store consistency.
 - Dead-Letter Metadata Enrichment: Appends rich failure diagnostic metadata to each quarantined record, including source topic, partition, offset, timestamp, error class, and full stack trace.
 - Idempotent Replay Engine: Dedicated remediation pipeline allows engineers to patch schema parsers, reprocess quarantined events, and merge them back into the main stream with deduplication.
 - Watermark & Late-Data Handling: Distinguishes between corrupt records (routed to DLQ) and valid records arriving outside the watermark window (logged to late-arrival telemetry).
@@ -1443,7 +1443,7 @@ They can also be interactively inspected with pan/zoom and theme controls on the
 <summary><strong>Multi-Persona Architectural Breakdown (Click to expand)</strong></summary>
 
 - **Enterprise Architect:** Defines enterprise multi-environment topology (Dev/Stage/Prod); designs service principal IAM boundaries; establishes change approval gates and disaster recovery rollback SLAs.
-- **Senior Data Engineer:** Authors CI/CD pipeline definition files (GitHub Actions workflows, DABs `databricks.yml`); builds automated testing harnesses and ephemeral schema provisioning scripts.
+- **Senior Data Engineer:** Authors CI/CD pipeline definition files (GitHub Actions workflows, DABs `06_platform_adapters/databricks_asset_bundles/databricks.yml`); builds automated testing harnesses and ephemeral schema provisioning scripts.
 - **Data Engineer:** Develops pipeline features in local branch; runs pre-commit hooks; submits Pull Requests with test coverage; validates deployment logs in Staging.
 - **Data Steward:** Audits deployment release notes and schema change requests; confirms that new production table deployments include mandatory governance tags and ownership assignments.
 - **Business Analyst:** Experiences zero downtime or query disruption during production deployments; relies on consistent, regression-free metric definitions across releases.
@@ -2999,7 +2999,7 @@ They can also be interactively inspected with pan/zoom and theme controls on the
 **Overview:** Architectural breakdown of stateful stream processing in Apache Spark Structured Streaming. Compares in-memory JVM heap state storage (HDFSBackedStateStore) against native off-heap embedded key-value storage (RocksDBStateStore). Details stateful stream-stream joins, event-time watermarking (`withWatermark`), late-arriving data handling, state snapshotting to cloud storage checkpoints, and bounded state eviction.
 
 **Key Architecture Points:**
-- Stateful Streaming Operations: Required for windowed aggregations (`groupBy(window(ts, '1 hour'))`), stream-stream joins, streaming deduplication (`dropDuplicates`), and arbitrary stateful operations (`flatMapGroupsWithState`).
+- Stateful Streaming Operations: Required for windowed aggregations (`groupBy(window(ts, '1 hour'))`), stream-stream joins, streaming deduplication (`dropDuplicates`), and arbitrary stateful operations (`transformWithState` in Spark 4.0+, legacy `flatMapGroupsWithState`).
 - HDFSBackedStateStore (Default): Stores state rows directly on the JVM heap in Java HashMaps; checkpoints state to delta files on cloud storage; limited by JVM heap size and vulnerable to massive GC pauses.
 - RocksDBStateStore Provider: Native C++ embedded Log-Structured Merge (LSM) key-value store; keeps active working state in off-heap memory and local SSDs, scaling to tens of millions of keys per node.
 - Event-Time Watermarking: Declares an allowed lateness threshold (`withWatermark('timestamp', '2 hours')`); tells the engine when historical time windows can be finalized and evicted from state memory.
@@ -3110,7 +3110,7 @@ They can also be interactively inspected with pan/zoom and theme controls on the
 - Broadcast Variables (Read-Only Shared Memory): Caches a read-only dataset (e.g. lookup table, machine learning model) on every executor node once, avoiding re-transmitting it with every task closure.
 - BitTorrent P2P Distribution: Instead of the Driver sending data to hundreds of executors sequentially, executors act as peer seeds, sharing downloaded chunks with peer executors, dramatically reducing Driver network bottlenecks.
 - Accumulators (Write-Only Distributed Counters): Distributed variables that tasks can write to (add values) but cannot read; values are transmitted back to the Driver via heartbeat/completion RPCs and aggregated centrally.
-- The Closure Serialization Hazard: Referencing a normal driver variable inside a transformation (`rdd.map(x => x + largeList)`) copies the variable into every task payload; wrapping it in `sc.broadcast(largeList)` caches it once per worker.
+- The Closure Serialization Hazard: Referencing a normal driver variable inside a transformation (`rdd.map(...)` in classic JVM mode) copies the variable into every task payload; in DataFrame/Spark Connect workloads prefer `F.broadcast(lookup_df)` (or `sc.broadcast()` in classic JVM mode).
 - Accumulator Re-execution Pitfall: Accumulators inside transformations (e.g. `.map()`) can double-count if a stage fails and tasks are retried; reliable accumulators must be executed strictly within actions (`.foreach()`).
 - Broadcast Memory Management & Destruction: Broadcast data resides in executor memory; invoking `.unpersist()` frees executor memory while allowing re-broadcast; invoking `.destroy()` permanently removes data from all nodes.
 - Collection-Level vs Native Accumulators: Built-in LongAccumulator, DoubleAccumulator, and CollectionAccumulator provide thread-safe, lock-free distributed metrics collection for pipeline observability.
@@ -3122,7 +3122,7 @@ They can also be interactively inspected with pan/zoom and theme controls on the
 
 - **Enterprise Architect:** Establishes enterprise guidelines for distributed variable usage; sets broadcast size limits to protect driver memory; designs telemetry frameworks utilizing custom accumulators.
 - **Senior Data Engineer:** Implements custom thread-safe AccumulatorV2 classes; manages broadcast lifecycle to prevent memory leaks; tunes TorrentBroadcast block sizes (`spark.broadcast.blockSize=4m`).
-- **Data Engineer:** Uses `sc.broadcast()` to distribute dimension lookup maps inside UDFs; utilizes accumulators to count malformed records and pipeline anomalies without stopping execution.
+- **Data Engineer:** Uses `F.broadcast(dim_df)` for DataFrame joins (or `sc.broadcast()` in classic JVM mode) to distribute lookup maps; utilizes accumulators to count malformed records and pipeline anomalies without stopping execution.
 - **Data Steward:** Verifies that broadcast variables do not distribute unencrypted sensitive PII or credential keys to shared worker nodes.
 - **Business Analyst:** Relies on pipeline validation metrics (total rows processed, invalid records skipped) generated accurately via Spark accumulators.
 

@@ -1,0 +1,190 @@
+name: Deploy Static Handbook Portal to GitHub Pages
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build Zero-Bloat Static Site
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v6
+
+      - name: Generate Static site/index.html via Python stdlib
+        run: |
+          python - <<'EOF'
+          import html
+          import json
+          import pathlib
+          import re
+
+          root = pathlib.Path(".")
+          site = root / "site"
+          site.mkdir(exist_ok=True)
+          (site / ".nojekyll").write_text("", encoding="utf-8")
+
+          manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+          readme_text = (root / "README.md").read_text(encoding="utf-8")
+
+          sections = [
+              ("01_foundations", "Core Foundations", "DataFrame API, complex types, SQL, windows, joins, SQL-to-PySpark Rosetta Stone"),
+              ("02_production_patterns", "Production Patterns", "Ingestion, Medallion/SCD modeling, Arrow UDFs, pytest assertDataFrameEqual"),
+              ("03_performance_and_streaming", "Performance & Streaming", "Catalyst, AQE, skew salting, OOM triage, Structured Streaming, DLQ"),
+              ("04_spark4_and_modern_api", "Spark 4.0+ & Modern API", "Spark Connect, ANSI default, VARIANT, Python Data Source API, Polymorphic UDTFs, SQL Pipe, JSON logs"),
+              ("05_lakehouse_formats", "Lakehouse Formats", "Delta Lake ACID, Liquid Clustering, Deletion Vectors, Delta vs Iceberg vs Parquet"),
+              ("06_platform_adapters", "Multi-Cloud Platform Adapters", "Databricks & DABs, Microsoft Fabric OneLake, AWS EMR/Glue, GCP Dataproc/BigQuery, Kubernetes"),
+          ]
+
+          cards_html = []
+          for dir_name, title, summary in sections:
+              py_files = sorted((root / dir_name).glob("*.py"))
+              repo_url = f"https://github.com/santoshjammi29/pyspark-handbook/tree/main/{dir_name}"
+              cards_html.append(
+                  f'<article class="card">'
+                  f'<h3><a href="{repo_url}">{html.escape(title)}</a></h3>'
+                  f'<p class="meta">{len(py_files)} modules · <code>{html.escape(dir_name)}/</code></p>'
+                  f'<p>{html.escape(summary)}</p>'
+                  f'</article>'
+              )
+
+          title_match = re.search(r"^#\s+(.+)$", readme_text, re.MULTILINE)
+          page_title = title_match.group(1) if title_match else "The PySpark Handbook"
+
+          html_doc = f"""<!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1" />
+            <title>{html.escape(page_title)}</title>
+            <style>
+              :root {{
+                --bg: #ffffff;
+                --surface: #f8fafc;
+                --border: #cbd5e1;
+                --text: #0f172a;
+                --muted: #334155;
+                --accent: #0369a1;
+              }}
+              * {{ box-sizing: border-box; }}
+              body {{
+                margin: 0;
+                font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                background: var(--bg);
+                color: var(--text);
+                line-height: 1.6;
+                overflow-wrap: anywhere;
+              }}
+              code {{
+                font-family: "JetBrains Mono", "Fira Code", ui-monospace, Menlo, monospace;
+                background: #e2e8f0;
+                padding: 0.1rem 0.35rem;
+                border-radius: 4px;
+                font-size: 0.9em;
+              }}
+              main {{ max-width: 1040px; margin: 0 auto; padding: 2rem 1.25rem 4rem; }}
+              h1, h2, h3 {{ line-height: 1.25; text-wrap: balance; }}
+              a {{ color: var(--accent); text-decoration: none; font-weight: 600; }}
+              a:hover {{ text-decoration: underline; }}
+              .hero {{
+                border: 1px solid var(--border);
+                background: var(--surface);
+                border-radius: 10px;
+                padding: 1.5rem;
+                margin-bottom: 2rem;
+              }}
+              .badges {{ display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.75rem; }}
+              .pill {{
+                background: #0369a1;
+                color: #ffffff;
+                padding: 0.2rem 0.65rem;
+                border-radius: 999px;
+                font-size: 0.85rem;
+                font-weight: 600;
+              }}
+              .grid {{
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+                gap: 1rem;
+                margin-bottom: 2rem;
+              }}
+              .card {{
+                border: 1px solid var(--border);
+                background: var(--surface);
+                border-radius: 8px;
+                padding: 1rem 1.15rem;
+              }}
+              .card h3 {{ margin: 0 0 0.35rem; }}
+              .meta {{ color: var(--muted); font-size: 0.9rem; margin: 0 0 0.5rem; }}
+              ul.links {{ padding-left: 1.25rem; }}
+            </style>
+          </head>
+          <body>
+            <main>
+              <section class="hero">
+                <h1>{html.escape(page_title)}</h1>
+                <p>Code-only Apache Spark 4.0+ &amp; Lakehouse Engineering Handbook ({manifest.get("entry_count", 0)} indexed assets).</p>
+                <div class="badges">
+                  <span class="pill">Apache Spark 4.0+</span>
+                  <span class="pill">Python 3.10–3.13</span>
+                  <span class="pill">Code-Only / Zero JVM CI</span>
+                  <span class="pill">MIT License</span>
+                </div>
+              </section>
+              <h2>Curriculum Modules</h2>
+              <section class="grid">
+                {"".join(cards_html)}
+              </section>
+              <h2>Key Resources</h2>
+              <ul class="links">
+                <li><a href="https://github.com/santoshjammi29/pyspark-handbook/blob/main/README.md">Full Handbook Hub (README.md)</a></li>
+                <li><a href="https://github.com/santoshjammi29/pyspark-handbook/blob/main/docs/ROADMAP.md">Interactive Curriculum Roadmap</a></li>
+                <li><a href="https://github.com/santoshjammi29/pyspark-handbook/tree/main/runbooks">Production Incident Runbooks</a></li>
+                <li><a href="https://github.com/santoshjammi29/pyspark-handbook/tree/main/architectures">Engine Architecture Deep Dives</a></li>
+                <li><a href="https://github.com/santoshjammi29/pyspark-handbook/tree/main/interview">4-Tier Interview Guides</a></li>
+                <li><a href="https://github.com/santoshjammi29/pyspark-handbook/blob/main/docs/whiteboard_diagrams/README.md">52 Whiteboard Architecture Blueprints</a></li>
+                <li><a href="https://moderndataengineer.uk">Modern Data Engineer Ecosystem Hub</a></li>
+              </ul>
+            </main>
+          </body>
+          </html>
+          """
+          (site / "index.html").write_text(html_doc, encoding="utf-8")
+          print(f"Generated site/index.html ({len(html_doc)} bytes)")
+          EOF
+
+      - name: Upload Pages Artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  deploy:
+    name: Deploy to GitHub Pages
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-24.04
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

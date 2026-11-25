@@ -4,19 +4,32 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pyspark-handbook"
-version = "1.0.0"
-description = "The PySpark Handbook: 105 Production PySpark & Databricks Lakehouse Coding Use Cases with Executable Notebooks"
+version = "2.0.0"
+description = "The PySpark Handbook: Code-Only Apache Spark 4.0+ Patterns, Diagnostics, Lakehouse Formats & Multi-Cloud Adapters"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 authors = [
     { name = "Santosh Jammi" }
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "License :: OSI Approved :: MIT License",
     "Topic :: Scientific/Engineering :: Information Analysis",
     "Topic :: Software Development :: Libraries :: Application Frameworks",
 ]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+exclude = [".git", "__pycache__", ".pytest_cache", ".ruff_cache", "site"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
