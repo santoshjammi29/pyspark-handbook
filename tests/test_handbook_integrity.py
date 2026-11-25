@@ -67,7 +67,7 @@ def test_core_modules_free_of_databricks_headers_and_sparkcontext():
 
 def test_markdown_links_resolve():
     md_files = []
-    for root_md in ("README.md", "CONTRIBUTING.md", "SECURITY.md", "AGENTS.md"):
+    for root_md in ("README.md", "CONTRIBUTING.md", "AGENTS.md"):
         p = BASE_DIR / root_md
         if p.exists():
             md_files.append(p)

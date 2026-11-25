@@ -6,7 +6,6 @@ Scenario & Scale:
     database CPU or exhausting connection pools.
 """
 
-from typing import Dict
 
 from pyspark.sql import DataFrame, SparkSession, functions as F, types as T
 
@@ -43,7 +42,7 @@ def build_jdbc_options(
     fetch_size: int = 10000,
     user: str = "",
     password: str = "",
-) -> Dict[str, str]:
+) -> dict[str, str]:
     """Construct bounded parallel JDBC read options protecting OLTP capacity."""
     return {
         "url": jdbc_url,
@@ -60,7 +59,7 @@ def build_jdbc_options(
     }
 
 
-def read_jdbc_parallel(spark: SparkSession, options: Dict[str, str]) -> DataFrame:
+def read_jdbc_parallel(spark: SparkSession, options: dict[str, str]) -> DataFrame:
     """Execute partitioned JDBC extraction across executor tasks."""
     return spark.read.format("jdbc").options(**options).load()
 

@@ -6,7 +6,6 @@ statistically representative stratified samples across imbalanced risk tiers.
 """
 
 import random
-from typing import Dict
 
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
@@ -55,7 +54,7 @@ def sort_audit_queue(df: DataFrame) -> DataFrame:
     return df.orderBy(F.col("risk_tier").asc(), F.col("amount").desc_nulls_last())
 
 
-def stratified_sample(df: DataFrame, fractions: Dict[str, float], seed: int = 42) -> DataFrame:
+def stratified_sample(df: DataFrame, fractions: dict[str, float], seed: int = 42) -> DataFrame:
     """Draw a reproducible stratified sample per risk tier in a single pass."""
     return df.sampleBy("risk_tier", fractions=fractions, seed=seed)
 

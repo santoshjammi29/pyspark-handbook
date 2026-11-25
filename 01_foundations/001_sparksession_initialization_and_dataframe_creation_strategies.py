@@ -6,7 +6,6 @@ strongly-typed PySpark 4.0+ DataFrames without triggering driver-side schema inf
 or relying on non-portable SparkContext/RDD APIs.
 """
 
-from typing import List, Tuple
 
 import pandas as pd
 from pyspark.sql import DataFrame, SparkSession
@@ -60,7 +59,7 @@ ORDER_DDL_SCHEMA = (
 
 def create_customers_df(
     spark: SparkSession,
-    rows: List[Tuple[str, str, str, str, float]],
+    rows: list[tuple[str, str, str, str, float]],
 ) -> DataFrame:
     """Build a DataFrame with an explicit StructType schema (zero inference pass)."""
     return spark.createDataFrame(data=rows, schema=CUSTOMER_SCHEMA)

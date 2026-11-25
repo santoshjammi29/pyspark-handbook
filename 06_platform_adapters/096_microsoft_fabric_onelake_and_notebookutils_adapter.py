@@ -48,7 +48,7 @@ class NotebookUtilsAdapter:
         self._utils = runtime_utils
 
     @classmethod
-    def auto_detect(cls) -> "NotebookUtilsAdapter":
+    def auto_detect(cls) -> NotebookUtilsAdapter:
         for mod_name in ("notebookutils", "mssparkutils"):
             try:
                 mod = __import__(mod_name)

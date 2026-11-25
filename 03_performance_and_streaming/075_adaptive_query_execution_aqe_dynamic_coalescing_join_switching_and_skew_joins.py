@@ -4,7 +4,6 @@ Demonstrates Adaptive Query Execution (AQE): dynamic partition coalescing,
 runtime SortMergeJoin -> BroadcastHashJoin switching, and dynamic skew splitting.
 """
 
-from typing import Dict
 
 from pyspark.sql import DataFrame, SparkSession, functions as F
 
@@ -33,7 +32,7 @@ def configure_aqe(
     advisory_partition_bytes: int = 64 * 1024 * 1024,
     skew_factor: int = 5,
     skew_threshold_bytes: int = 256 * 1024 * 1024,
-) -> Dict[str, str]:
+) -> dict[str, str]:
     """Enable and inspect core AQE runtime optimization settings."""
     settings = {
         "spark.sql.adaptive.enabled": "true",

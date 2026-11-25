@@ -6,7 +6,6 @@ corrupted strings. Under Spark 4.0+ ANSI mode (enabled by default), unsafe casts
 the entire batch; dirty rows must be coerced cleanly to NULL and routed to quarantine.
 """
 
-from typing import Tuple
 
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
@@ -49,7 +48,7 @@ RAW_SCHEMA = T.StructType(
 )
 
 
-def parse_and_split_payments(df_raw: DataFrame) -> Tuple[DataFrame, DataFrame]:
+def parse_and_split_payments(df_raw: DataFrame) -> tuple[DataFrame, DataFrame]:
     """Sanitize currency/timestamps with ANSI-safe try_* functions and split quarantine."""
     clean_amount_str = F.nullif(
         F.regexp_replace(F.col("raw_amount"), r"[^0-9.\-]", ""),

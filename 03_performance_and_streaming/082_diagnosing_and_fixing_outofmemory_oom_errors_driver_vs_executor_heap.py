@@ -4,7 +4,6 @@ Separates Driver OOM vs Executor OOM root causes and provides Spark 4.0 /
 Spark Connect-safe mitigations (bounded driver reads & staging lineage cuts).
 """
 
-from typing import List
 
 from pyspark.sql import DataFrame, Row, SparkSession, functions as F
 
@@ -18,7 +17,7 @@ from pyspark.sql import DataFrame, Row, SparkSession, functions as F
 # Otherwise: Driver JVM exhausts `spark.driver.memory` (`OutOfMemoryError: Java
 # heap space` or `GC overhead limit exceeded`); on workers, huge `collect_list`
 # or undersized partitions trigger Executor OOM (`Exit code 137` container kill).
-def bad_driver_collect_and_deep_dag(df: DataFrame) -> List[Row]:
+def bad_driver_collect_and_deep_dag(df: DataFrame) -> list[Row]:
     for i in range(150):
         # Deeply nested projection tree causes Catalyst planning/driver OOM
         df = df.withColumn(f"c_{i}", F.col("id") + F.lit(i))
@@ -32,7 +31,7 @@ def bad_driver_collect_and_deep_dag(df: DataFrame) -> List[Row]:
 # `toLocalIterator()`, combine projections in a single `select(...)`, and break
 # deep iterative DAGs using a staging write/read (portable across Spark Connect
 # without JVM checkpoint directory configuration).
-def safe_driver_sample(df: DataFrame, max_rows: int = 10) -> List[Row]:
+def safe_driver_sample(df: DataFrame, max_rows: int = 10) -> list[Row]:
     """Retrieve bounded rows safely without pulling full data to driver."""
     return list(df.limit(max_rows).toLocalIterator())
 

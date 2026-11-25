@@ -5,7 +5,7 @@ PySpark 4.0 transformWithState (StatefulProcessor, ValueState & EventTime Timers
 """
 
 import math
-from typing import Iterator, Tuple
+from collections.abc import Iterator
 
 from pyspark.sql import DataFrame, Row, SparkSession, functions as F, types as T
 from pyspark.sql.streaming import (
@@ -26,8 +26,7 @@ from pyspark.sql.streaming import (
 def bad_legacy_flatmap_groups(df_stream: DataFrame) -> DataFrame:
     def _legacy_fn(key, pdf_iter, state):
         # Spark 3.x legacy pattern: single untyped tuple state, manual timeout
-        for pdf in pdf_iter:
-            yield pdf
+        yield from pdf_iter
 
     return df_stream.groupBy("user_id").flatMapGroupsWithState(
         _legacy_fn,
@@ -74,7 +73,7 @@ class TowerVelocityProcessor(StatefulProcessor):
 
     def handleInputRows(
         self,
-        key: Tuple[str],
+        key: tuple[str],
         rows: Iterator[Row],
         timerValues: TimerValues,
     ) -> Iterator[Row]:
@@ -115,7 +114,7 @@ class TowerVelocityProcessor(StatefulProcessor):
 
     def handleExpiredTimer(
         self,
-        key: Tuple[str],
+        key: tuple[str],
         timerValues: TimerValues,
         expiredTimerInfo,
     ) -> Iterator[Row]:
@@ -182,4 +181,7 @@ if __name__ == "__main__":
         .config("spark.sql.shuffle.partitions", "4")
         .getOrCreate()
     )
-    print("TowerVelocityProcessor configured for Spark 4.0 transformWithState.")
+    print(
+        f"Spark {spark.version}: TowerVelocityProcessor configured "
+        "for Spark 4.0 transformWithState."
+    )

@@ -5,7 +5,7 @@ Identify critical vehicle health alerts across target territories while ensuring
 filter predicates push down cleanly into columnar Parquet/Delta row-group statistics.
 """
 
-from typing import Sequence
+from collections.abc import Sequence
 
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F

@@ -1,80 +1,20 @@
-name: Static CI & Handbook Integrity
+name: Handbook CI
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main]
   pull_request:
-    branches: [ main, master ]
-
-permissions:
-  contents: read
+    branches: [main]
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  validate:
-    name: Static Lint, Links & Integrity (<30s, Zero JVM)
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Set up Python
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: "3.12"
-          cache: "pip"
-
-      - name: Install Lightweight Static Tooling
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: 1. Bytecode Compilation Check
-        run: python -m compileall -q .
-
-      - name: 2. Ruff Static Lint
-        run: ruff check .
-
-      - name: 3. Relative Markdown Link Check
-        run: pytest tests/test_handbook_integrity.py -k "markdown_links"
-
-      - name: 4. Bloat & Banned Artifact Guardrail
-        run: |
-          python - <<'EOF'
-          import fnmatch
-          import pathlib
-          import sys
-
-          root = pathlib.Path(".")
-          banned_dirs = {"notebooks", "scripts", "apps"}
-          banned_exts = {".csv", ".parquet", ".orc", ".avro", ".ipynb"}
-          banned_names = ("Dockerfile*", "*devcontainer*")
-          max_bytes = 500 * 1024
-          failures = []
-
-          for d in banned_dirs:
-              if (root / d).exists():
-                  failures.append(f"Banned directory present: {d}/")
-
-          for p in root.rglob("*"):
-              if ".git" in p.parts:
-                  continue
-              if p.is_file():
-                  if p.stat().st_size > max_bytes:
-                      failures.append(f"File exceeds 500 KB ({p.stat().st_size} B): {p}")
-                  if p.suffix.lower() in banned_exts:
-                      failures.append(f"Banned extension {p.suffix}: {p}")
-                  if any(fnmatch.fnmatch(p.name, pat) for pat in banned_names):
-                      failures.append(f"Banned filename pattern: {p}")
-
-          if failures:
-              print("\n".join(failures), file=sys.stderr)
-              sys.exit(1)
-          print("Bloat guardrail passed: 0 files >500 KB, 0 banned dirs/extensions.")
-          EOF
-
-      - name: 5. Run Full Static Integrity Suite
-        run: pytest tests/
+  ci:
+    uses: santoshjammi29/.github/.github/workflows/handbook-ci.yml@v1
+    with:
+      max_file_kb: 500
+      require_manifest: true
+      allow_notebooks: false
+      check_unused_spark: true

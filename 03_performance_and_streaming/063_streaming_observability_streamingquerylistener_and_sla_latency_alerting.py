@@ -4,7 +4,7 @@ Captures asynchronous micro-batch throughput, watermark lag, and query failures
 via StreamingQueryListener without adding overhead to executor tasks.
 """
 
-from typing import Callable, Optional
+from collections.abc import Callable
 
 from pyspark.sql import SparkSession
 from pyspark.sql.streaming import StreamingQueryListener
@@ -40,7 +40,7 @@ class PipelineSLAListener(StreamingQueryListener):
     def __init__(
         self,
         lag_ratio_threshold: float = 0.8,
-        alert_sink: Optional[Callable[[str], None]] = None,
+        alert_sink: Callable[[str], None] | None = None,
     ) -> None:
         self.lag_ratio_threshold = lag_ratio_threshold
         self.alert_sink = alert_sink or print

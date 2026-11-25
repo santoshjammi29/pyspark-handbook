@@ -10,7 +10,7 @@ import io
 import tempfile
 import zipfile
 from pathlib import Path
-from typing import Iterator
+from collections.abc import Iterator
 
 import pandas as pd
 from pyspark.sql import DataFrame, SparkSession, functions as F
@@ -39,7 +39,7 @@ def _unpack_zip_batches(batches: Iterator[pd.DataFrame]) -> Iterator[pd.DataFram
     """Executor-side ZIP extractor operating on Arrow/Pandas DataFrame batches."""
     for pdf in batches:
         rows = []
-        for path, raw_bytes in zip(pdf["path"], pdf["content"]):
+        for path, raw_bytes in zip(pdf["path"], pdf["content"], strict=False):
             with zipfile.ZipFile(io.BytesIO(raw_bytes)) as zf:
                 for member in zf.namelist():
                     if not member.endswith(".csv"):

@@ -4,7 +4,6 @@ Isolates malformed JSON and business-rule violations into a Quarantine DLQ
 table without halting analytics, enabling audited repair and zero-loss replay.
 """
 
-from typing import Tuple
 
 from pyspark.sql import DataFrame, SparkSession, functions as F, types as T
 
@@ -37,7 +36,7 @@ def bad_fragile_json_parse(df_raw: DataFrame) -> DataFrame:
 # -----------------------------------------------------------------------------
 # ✅ Good Practice: Route incoming records into clean Silver vs Quarantine DLQ
 # using from_json + F.try_cast() for ANSI-safe repair/replay and reconciliation.
-def route_clean_and_dlq(df_incoming: DataFrame) -> Tuple[DataFrame, DataFrame]:
+def route_clean_and_dlq(df_incoming: DataFrame) -> tuple[DataFrame, DataFrame]:
     """Split raw payloads into (clean_silver_df, dlq_quarantine_df)."""
     df_classified = (
         df_incoming.withColumn(

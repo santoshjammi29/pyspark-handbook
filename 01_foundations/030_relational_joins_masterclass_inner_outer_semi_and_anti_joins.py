@@ -6,7 +6,6 @@ Reconcile Salesforce CRM accounts against billing ledgers using `inner`, `full_o
 ambiguous column collisions.
 """
 
-from typing import Tuple
 
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import types as T
@@ -59,7 +58,7 @@ BILLING_SCHEMA = T.StructType(
 def reconcile_crm_and_billing(
     df_crm: DataFrame,
     df_bill: DataFrame,
-) -> Tuple[DataFrame, DataFrame, DataFrame, DataFrame]:
+) -> tuple[DataFrame, DataFrame, DataFrame, DataFrame]:
     """Produce matched, full footprint, semi-joined active, and anti-joined orphan views."""
     df_inner = df_crm.join(df_bill, on="cust_id", how="inner")
     df_outer = df_crm.join(df_bill, on="cust_id", how="full_outer")
