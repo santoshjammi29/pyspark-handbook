@@ -14,7 +14,7 @@ import tempfile
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Callable
+from collections.abc import Callable
 
 from pyspark.sql import DataFrame, SparkSession, functions as F, types as T
 

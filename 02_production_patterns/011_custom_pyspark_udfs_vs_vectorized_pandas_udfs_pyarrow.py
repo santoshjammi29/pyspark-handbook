@@ -7,7 +7,7 @@ Scenario & Scale:
     are required to sustain throughput.
 """
 
-from typing import Iterator, Tuple
+from collections.abc import Iterator
 
 import pandas as pd
 from pyspark.sql import DataFrame, SparkSession, functions as F, types as T
@@ -61,7 +61,7 @@ def adjust_risk_curve_iter(batches: Iterator[pd.Series]) -> Iterator[pd.Series]:
 
 @F.pandas_udf(T.DoubleType())
 def calculate_risk_arrow_iter(
-    batches: Iterator[Tuple[pd.Series, pd.Series, pd.Series]],
+    batches: Iterator[tuple[pd.Series, pd.Series, pd.Series]],
 ) -> Iterator[pd.Series]:
     """Multi-column vectorized Arrow iterator UDF with zero-division guard."""
     for credit_score, debt, income in batches:

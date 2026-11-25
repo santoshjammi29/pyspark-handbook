@@ -8,7 +8,7 @@ Scenario & Scale:
 
 import time
 from datetime import datetime, timezone
-from typing import Iterator
+from collections.abc import Iterator
 
 import pandas as pd
 from pyspark.sql import DataFrame, SparkSession, functions as F, types as T

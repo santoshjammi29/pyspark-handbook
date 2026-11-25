@@ -286,7 +286,7 @@ ruff check .
 pytest tests/
 ```
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the code-only PR rules and [`SECURITY.md`](SECURITY.md) for vulnerability disclosure.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the code-only PR rules and the [organization Security Policy](https://github.com/santoshjammi29/.github/blob/main/SECURITY.md) for vulnerability disclosure.
 
 ---
 

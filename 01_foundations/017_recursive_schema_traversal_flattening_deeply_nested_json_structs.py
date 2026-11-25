@@ -5,7 +5,6 @@ Flatten deeply nested `StructType` payloads (5+ levels) into BI-ready tabular co
 using metadata-driven schema traversal without running JVM actions or SparkContext APIs.
 """
 
-from typing import List
 
 from pyspark.sql import Column, DataFrame, SparkSession
 from pyspark.sql import functions as F
@@ -97,9 +96,9 @@ def _collect_flat_columns(
     schema: T.StructType,
     prefix: str = "",
     alias_prefix: str = "",
-) -> List[Column]:
+) -> list[Column]:
     """Traverse StructType metadata in Python and emit leaf Column aliases in one pass."""
-    cols: List[Column] = []
+    cols: list[Column] = []
     for field in schema.fields:
         col_path = f"{prefix}.{field.name}" if prefix else field.name
         alias_name = f"{alias_prefix}_{field.name}" if alias_prefix else field.name

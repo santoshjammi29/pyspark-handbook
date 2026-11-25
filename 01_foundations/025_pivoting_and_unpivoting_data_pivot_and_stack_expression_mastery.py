@@ -5,7 +5,7 @@ Pivot narrow monthly sales into wide BI columns without triggering an extra disc
 scan, and unpivot wide tables back into tidy long format via Spark 4.0+ `unpivot()`.
 """
 
-from typing import Sequence
+from collections.abc import Sequence
 
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F

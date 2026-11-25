@@ -12,7 +12,6 @@ import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List
 
 from pyspark.sql import DataFrame, SparkSession, functions as F
 
@@ -26,8 +25,8 @@ class IngestionSpec:
     raw_uri: str
     target_uri: str
     schema_ddl: str
-    partition_cols: List[str] = field(default_factory=list)
-    options: Dict[str, str] = field(default_factory=dict)
+    partition_cols: list[str] = field(default_factory=list)
+    options: dict[str, str] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------

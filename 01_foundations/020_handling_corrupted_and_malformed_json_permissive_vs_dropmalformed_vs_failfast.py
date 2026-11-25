@@ -8,7 +8,6 @@ Silver while broken payloads route cleanly to a dead-letter audit table.
 
 from pathlib import Path
 import tempfile
-from typing import Tuple
 
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
@@ -53,7 +52,7 @@ QUARANTINE_SCHEMA = T.StructType(
 def ingest_json_with_quarantine(
     spark: SparkSession,
     input_uri: str,
-) -> Tuple[DataFrame, DataFrame]:
+) -> tuple[DataFrame, DataFrame]:
     """Ingest JSON files permissively and separate valid records from dead-letter rows."""
     df_permissive = (
         spark.read.option("mode", "PERMISSIVE")

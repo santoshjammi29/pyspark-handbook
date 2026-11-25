@@ -6,7 +6,7 @@ Scenario & Scale:
     external storage, heavy test harnesses, or fragile `.collect()` comparisons.
 """
 
-from typing import Callable
+from collections.abc import Callable
 
 import pytest
 from pyspark.sql import DataFrame, SparkSession, functions as F, types as T
