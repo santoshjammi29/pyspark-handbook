@@ -55,7 +55,7 @@ resources:
         - task_key: "01_ingest_raw_files_autoloader"
           job_cluster_key: "primary_lakehouse_compute"
           notebook_task:
-            notebook_path: "../notebooks/05_data_ingestion_autoloader/048_databricks_auto_loader_directory_mode_cloudfiles_schema_inference_and_checkpointing.py"
+            notebook_path: "../../048_databricks_auto_loader_directory_mode_cloudfiles_schema_inference_and_checkpointing.py"
             base_parameters:
               source_volume: "/Volumes/${var.catalog}/${var.schema}/raw_landing"
               checkpoint_path: "/Volumes/${var.catalog}/${var.schema}/streaming_checkpoints/autoloader"
@@ -69,7 +69,7 @@ resources:
             - task_key: "01_ingest_raw_files_autoloader"
           job_cluster_key: "primary_lakehouse_compute"
           notebook_task:
-            notebook_path: "../notebooks/02_complex_data_types/020_handling_corrupted_and_malformed_json_permissive_vs_dropmalformed_vs_failfast.py"
+            notebook_path: "../../../01_foundations/020_handling_corrupted_and_malformed_json_permissive_vs_dropmalformed_vs_failfast.py"
             base_parameters:
               bronze_table: "${var.catalog}.${var.schema}.bronze_ingestion"
               silver_clean_table: "${var.catalog}.${var.schema}.silver_validated_events"
@@ -83,7 +83,7 @@ resources:
             - task_key: "02_cleanse_and_quarantine_records"
           job_cluster_key: "primary_lakehouse_compute"
           notebook_task:
-            notebook_path: "../notebooks/07_lakehouse_modeling_scd/069_slowly_changing_dimension_type_2_scd_type_2_historical_tracking_with_effective_dates.py"
+            notebook_path: "../../../02_production_patterns/069_slowly_changing_dimension_type_2_scd_type_2_historical_tracking_with_effective_dates.py"
             base_parameters:
               silver_source_table: "${var.catalog}.${var.schema}.silver_validated_events"
               target_dimension_table: "${var.catalog}.${var.schema}.silver_dim_customer_scd2"
@@ -96,7 +96,7 @@ resources:
             - task_key: "03_upsert_scd_type_2_dimensions"
           job_cluster_key: "primary_lakehouse_compute"
           notebook_task:
-            notebook_path: "../notebooks/08_performance_and_tuning/076_data_skew_detection_and_mitigation_using_salting_and_two_stage_joins.py"
+            notebook_path: "../../../03_performance_and_streaming/076_data_skew_detection_and_mitigation_using_salting_and_two_stage_joins.py"
             base_parameters:
               salt_factor: "16"
 
@@ -108,7 +108,7 @@ resources:
             - task_key: "04_mitigate_skew_and_join"
           job_cluster_key: "primary_lakehouse_compute"
           notebook_task:
-            notebook_path: "../notebooks/03_sql_and_window_functions/027_aggregate_and_cumulative_window_functions_running_totals_and_moving_averages.py"
+            notebook_path: "../../../01_foundations/027_aggregate_and_cumulative_window_functions_running_totals_and_moving_averages.py"
             base_parameters:
               gold_mart_table: "${var.catalog}.${var.schema}.gold_executive_daily_sales"
 
@@ -120,6 +120,6 @@ resources:
             - task_key: "05_calculate_gold_analytics_marts"
           job_cluster_key: "primary_lakehouse_compute"
           notebook_task:
-            notebook_path: "../notebooks/10_end_to_end_projects/105_master_enterprise_production_orchestration_workflow_parameters_and_alerting.py"
+            notebook_path: "../../../02_production_patterns/105_master_enterprise_production_orchestration_workflow_parameters_and_alerting.py"
             base_parameters:
               pipeline_status: "SUCCESS"

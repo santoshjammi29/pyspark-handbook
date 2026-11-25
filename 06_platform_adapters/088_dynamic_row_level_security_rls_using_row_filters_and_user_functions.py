@@ -1,142 +1,95 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 088: Dynamic Row-Level Security (RLS) Using Row Filters and User Functions
-# MAGIC
-# MAGIC **Module:** Module 09: Databricks Platform, Unity Catalog, Security & FinOps
-# MAGIC **Difficulty:** `Advanced`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC A multinational sales organization maintains a single centralized `sales_pipeline` table. Regional sales reps must only see deals within their assigned territory (US reps only see US deals; EU reps only see EU deals), while executive managers see all global records.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Implement dynamic Row-Level Security (RLS) in Databricks Unity Catalog: create a SQL user-defined filter function using `is_account_group_member()` and `current_user()`, apply the filter to a table using `ALTER TABLE ... SET ROW FILTER`, and verify secure row filtering.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC Unity Catalog Row Filters evaluate dynamically at query compilation time. Catalyst injects the boolean filter function into the query plan, ensuring unauthorized rows are filtered out at the storage scan level before reaching memory.
+"""
+088 — Dynamic Row-Level Security (RLS) via Unity Catalog Row Filters.
 
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
-
-# COMMAND ----------
-
-import os
-import sys
-import shutil
-from pathlib import Path
-
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_088_Dynamic_Row_Level_Security_RLS_Using_Row_Filters_and_User_Functions")
-        .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
-        .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-        .getOrCreate()
-    )
-
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
-
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 1: Defining SQL Row Filter User-Defined Function
-# MAGIC Create function evaluating user group membership against row region.
-
-# COMMAND ----------
-
-# Row Filter Function Blueprint:
-rls_sql = """
-CREATE OR REPLACE FUNCTION enterprise_prod.sales.region_row_filter(region STRING)
-RETURN IF(
-    is_account_group_member('global_sales_executives'),  -- Execs see all rows
-    true,
-    IF(is_account_group_member('us_sales_reps') AND region = 'US', true,
-    IF(is_account_group_member('eu_sales_reps') AND region = 'EU', true, false))
-);
+Scenario & Scale:
+    A global `sales_pipeline` Delta table (500M+ rows) serves regional sales teams
+    (`US`, `EU`, `APAC`) and executives. Maintaining duplicated regional tables or
+    hundreds of views creates storage bloat, stale sync bugs, and governance drift.
 """
 
-print("Row Filter SQL Function:")
-print(rls_sql)
+from __future__ import annotations
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 2: Applying Row Filter to Production Table
-# MAGIC Attach filter function to table using SET ROW FILTER DDL.
+# ==============================================================================
+# 2. Anti-Pattern: Duplicated Regional Tables & Hardcoded View Sprawl
+# ==============================================================================
+# ❌ Bad Practice:
+#   spark.sql("CREATE OR REPLACE VIEW v_sales_us AS SELECT * FROM sales WHERE deal_region = 'US'")
+#   # Plus v_sales_eu, v_sales_apac, and physical regional table clones
+#
+# Otherwise:
+#   Duplicating tables multiplies storage and ETL cost, while per-region views break
+#   cross-region executive BI queries and force analysts to remember view names.
 
-# COMMAND ----------
 
-# Attach filter function to target table:
-# ALTER TABLE enterprise_prod.sales.t_deals
-# SET ROW FILTER enterprise_prod.sales.region_row_filter ON (deal_region);
+# ==============================================================================
+# 3. ANSI-Safe PySpark 4.0+ Fix: Unity Catalog Row Filters & Group Predicates
+# ==============================================================================
+# ✅ Good Practice: Attach a SQL Row Filter UDF using `is_account_group_member()`
+#                   directly to the base table, and test policy logic portably.
+ROW_FILTER_DDL = """
+CREATE OR REPLACE FUNCTION enterprise_prod.sales.region_row_filter(region STRING)
+RETURN IF(
+    is_account_group_member('global_sales_executives'),
+    TRUE,
+    (is_account_group_member('us_sales_reps') AND region = 'US')
+    OR (is_account_group_member('eu_sales_reps') AND region = 'EU')
+);
 
-print("Table successfully protected with dynamic Row Filter.")
+ALTER TABLE enterprise_prod.sales.t_deals
+SET ROW FILTER enterprise_prod.sales.region_row_filter ON (deal_region);
+""".strip()
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 3: Simulating Dynamic Row Filtering Locally in PySpark
-# MAGIC Simulate the Catalyst row filtering evaluation logic.
+def apply_portable_rls_policy(df, user_groups: set[str]):
+    """Portable PySpark 4.0+ row-filter evaluator for CI unit testing."""
+    from pyspark.sql import functions as F
 
-# COMMAND ----------
-
-# Simulating current user context and dynamic row filter
-deals = [
-    ("DEAL-1", "US", 150000.0, "Acme Corp"),
-    ("DEAL-2", "EU", 220000.0, "Bavaria Ltd"),
-    ("DEAL-3", "APAC", 95000.0, "Tokyo Corp")
-]
-df_deals = spark.createDataFrame(deals, ["deal_id", "deal_region", "value", "account"])
-
-# Simulate user who belongs to 'us_sales_reps'
-user_group = "us_sales_reps"
-
-def simulate_rls_filter(df, active_group):
-    if active_group == "global_sales_executives":
+    if "global_sales_executives" in user_groups:
         return df
-    elif active_group == "us_sales_reps":
-        return df.filter(F.col("deal_region") == "US")
-    elif active_group == "eu_sales_reps":
-        return df.filter(F.col("deal_region") == "EU")
-    return df.filter("1 = 0") # Deny all
 
-df_filtered_user = simulate_rls_filter(df_deals, user_group)
-print(f"Query Result for user in group '{user_group}':")
-df_filtered_user.show()
+    allowed_regions: list[str] = []
+    if "us_sales_reps" in user_groups:
+        allowed_regions.append("US")
+    if "eu_sales_reps" in user_groups:
+        allowed_regions.append("EU")
 
-# COMMAND ----------
+    if not allowed_regions:
+        return df.filter(F.lit(False))
+    return df.filter(F.col("deal_region").isin(allowed_regions))
 
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **Unity Catalog Row Filters enforce data isolation on single conformed tables without creating fragmented regional views.**
-# MAGIC - **Row filters are defined via SQL UDFs using `is_account_group_member()` and `current_user()`.**
-# MAGIC - **Filters are injected into the Catalyst optimizer plan, ensuring performance optimization and predicate pushdown.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. How does Unity Catalog Row-Level Security differ from creating separate regional SQL views?
-# MAGIC 2. What happens if an unauthorized user attempts to query a table protected by a Row Filter?
-# MAGIC 3. How does Catalyst Optimizer optimize queries with Row Filters applied?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+
+# ==============================================================================
+# 4. explain("formatted") & Spark UI Diagnostics
+# ==============================================================================
+# - Catalyst injects the Row Filter predicate directly above `FileScan` / `Relation`
+#   in `df.explain("formatted")` (`Filter isnotnull(deal_region) AND (deal_region = US)`).
+# - On partitioned or Liquid-Clustered Delta tables (`CLUSTER BY (deal_region)`),
+#   Unity Catalog skips non-matching files via `PushedFilters` / Delta Z-Cube stats.
+# - In Spark UI -> SQL tab, verify `number of files pruned` increases for regional queries.
+
+
+# ==============================================================================
+# 5. Production & Interview Gotchas
+# ==============================================================================
+# - Gotcha 1: Always use `is_account_group_member('group')` (account-level groups),
+#   not workspace-local groups, so policies stay consistent across all workspaces.
+# - Gotcha 2: Row Filters cannot be bypassed by `CREATE TABLE AS SELECT` or views;
+#   downstream derived tables inherit only the filtered rows visible to the caller.
+# - Gotcha 3: Keep Row Filter UDFs pure and deterministic—avoid joining lookup tables
+#   inside the filter if you want Catalyst file-skipping and predicate pushdown.
+
+
+if __name__ == "__main__":
+    from pyspark.sql import SparkSession
+
+    spark = SparkSession.builder.appName("Adapter_088_UnityCatalog_RLS").getOrCreate()
+    print(ROW_FILTER_DDL)
+
+    deals = [
+        ("DEAL-1", "US", 150_000.0, "Acme Corp"),
+        ("DEAL-2", "EU", 220_000.0, "Bavaria Ltd"),
+        ("DEAL-3", "APAC", 95_000.0, "Tokyo Corp"),
+    ]
+    df_deals = spark.createDataFrame(deals, "deal_id STRING, deal_region STRING, value DOUBLE, account STRING")
+    apply_portable_rls_policy(df_deals, {"us_sales_reps"}).show(truncate=False)

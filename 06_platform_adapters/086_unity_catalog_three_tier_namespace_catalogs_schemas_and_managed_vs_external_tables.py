@@ -1,145 +1,104 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 086: Unity Catalog Three-Tier Namespace: Catalogs, Schemas and Managed vs External Tables
-# MAGIC
-# MAGIC **Module:** Module 09: Databricks Platform, Unity Catalog, Security & FinOps
-# MAGIC **Difficulty:** `Intermediate`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC An enterprise migrates from the legacy Hive Metastore (`hive_metastore.default`) to Databricks Unity Catalog. Platform administrators need to establish a secure 3-tier namespace (`catalog.schema.table`) separating dev, staging, and prod environments, and differentiate between Managed and External tables.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Master Unity Catalog architecture: create 3-tier namespaces (`catalog.schema.table`), configure Managed tables (storage lifecycle managed by Databricks) vs External tables (pointing to existing cloud object storage paths), grant access permissions, and query table metadata.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC Unity Catalog introduces a centralized governance model across workspaces using a 3-tier namespace: `catalog` -> `schema` -> `table/view/volume`. Dropping a Managed table deletes both metadata and underlying Delta files; dropping an External table removes ONLY metadata, preserving underlying cloud storage data files.
+"""
+086 — Unity Catalog Three-Tier Namespace (catalog.schema.table) & Managed vs External Tables.
 
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
-
-# COMMAND ----------
-
-import os
-import sys
-import shutil
-from pathlib import Path
-
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_086_Unity_Catalog_Three_Tier_Namespace_Catalogs_Schemas_and_Managed_vs_External_Tables")
-        .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
-        .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-        .getOrCreate()
-    )
-
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
-
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 1: Configuring 3-Tier Namespace Hierarchy in SQL
-# MAGIC Create catalogs and schemas representing development and production environments.
-
-# COMMAND ----------
-
-# SQL Blueprint for Unity Catalog 3-Tier Hierarchy:
-uc_setup_sql = """
--- 1. Create Catalogs for environment isolation
-CREATE CATALOG IF NOT EXISTS enterprise_dev COMMENT 'Development Sandbox Catalog';
-CREATE CATALOG IF NOT EXISTS enterprise_prod COMMENT 'Production Analytical Catalog';
-
--- 2. Create Schemas within Catalog
-CREATE SCHEMA IF NOT EXISTS enterprise_dev.finance COMMENT 'Finance development schema';
-CREATE SCHEMA IF NOT EXISTS enterprise_dev.marketing COMMENT 'Marketing development schema';
-
--- 3. Set current active context
-USE CATALOG enterprise_dev;
-USE SCHEMA finance;
+Scenario & Scale:
+    An enterprise migrates 1,000+ tables from legacy 2-tier `hive_metastore.default`
+    into Databricks Unity Catalog (`catalog.schema.table`) to isolate dev/staging/prod
+    environments and enforce centralized governance over Managed vs External tables.
 """
 
-print("Unity Catalog 3-Tier DDL Hierarchy defined:")
-print(uc_setup_sql)
+from __future__ import annotations
 
-# COMMAND ----------
+import re
 
-# MAGIC %md
-# MAGIC ### Step 2: Comparing Managed vs External Tables
-# MAGIC Illustrate differences in storage lifecycle and DDL syntax.
 
-# COMMAND ----------
+# ==============================================================================
+# 2. Anti-Pattern: 2-Tier Hive Metastore & Hardcoded Raw Cloud Paths
+# ==============================================================================
+# ❌ Bad Practice:
+#   spark.sql(f"CREATE TABLE default.{tbl} USING DELTA LOCATION 's3://raw-bucket/{tbl}'")
+#   df = spark.read.parquet("s3://raw-bucket/finance/invoices/")
+#
+# Otherwise:
+#   2-tier names collide across environments, raw S3/ADLS paths bypass Unity Catalog
+#   RBAC/audit lineage, and string-formatted DDL invites SQL injection or syntax breaks.
 
-# Managed Table: Storage location managed by Unity Catalog metastore root
-# CREATE TABLE enterprise_dev.finance.t_managed_invoices (
-#     invoice_id STRING,
-#     amount DOUBLE
-# ) USING DELTA;
 
-# External Table: References explicit cloud storage location (S3 / ADLS / GCS)
-# CREATE TABLE enterprise_dev.finance.t_external_invoices (
-#     invoice_id STRING,
-#     amount DOUBLE
-# ) USING DELTA
-# LOCATION 's3://my-enterprise-data-bucket/finance/invoices/';
+# ==============================================================================
+# 3. ANSI-Safe PySpark 4.0+ Fix: Governed 3-Tier Namespace Builders
+# ==============================================================================
+# ✅ Good Practice: Enforce validated 3-tier identifiers (`catalog.schema.table`)
+#                   and separate Managed vs External lifecycle semantics cleanly.
+_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
-table_comparison = [
-    ("Managed Table", "Managed by Unity Catalog root", "Both metadata AND physical data files are DELETED"),
-    ("External Table", "Custom user-supplied S3/ADLS/GCS URL", "Metadata deleted; physical Parquet files are PRESERVED")
-]
 
-schema = "table_type STRING, storage_lifecycle STRING, drop_table_behavior STRING"
-df_comp = spark.createDataFrame(table_comparison, schema)
-df_comp.show(truncate=False)
+def format_three_tier_name(catalog: str, schema: str, table: str) -> str:
+    """Validate and return a safe 3-tier Unity Catalog identifier."""
+    for part_name, value in (("catalog", catalog), ("schema", schema), ("table", table)):
+        if not _IDENT_RE.match(value):
+            raise ValueError(f"Invalid Unity Catalog {part_name} identifier: {value!r}")
+    return f"{catalog}.{schema}.{table}"
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 3: Granting Access Control Privileges
-# MAGIC Apply role-based access control grants in Unity Catalog.
+def build_unity_catalog_ddl(
+    catalog: str,
+    schema: str,
+    table: str,
+    external_location: str | None = None,
+) -> list[str]:
+    """Generate idempotent Unity Catalog DDL statements for Managed or External tables."""
+    fqn = format_three_tier_name(catalog, schema, table)
+    create_table = (
+        f"CREATE TABLE IF NOT EXISTS {fqn} (invoice_id STRING NOT NULL, amount DECIMAL(18, 2)) "
+        "USING DELTA"
+    )
+    if external_location:
+        if not external_location.startswith(("s3://", "abfss://", "gs://")):
+            raise ValueError(f"External location must be a cloud URI: {external_location}")
+        create_table += f" LOCATION '{external_location}'"
 
-# COMMAND ----------
+    return [
+        f"CREATE CATALOG IF NOT EXISTS {catalog}",
+        f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}",
+        create_table,
+    ]
 
-# Production Grant Examples:
-# GRANT USAGE ON CATALOG enterprise_dev TO `data_engineers`;
-# GRANT SELECT, MODIFY ON SCHEMA enterprise_dev.finance TO `data_engineers`;
-# GRANT SELECT ON TABLE enterprise_dev.finance.t_managed_invoices TO `finance_analysts`;
 
-print("Unity Catalog RBAC privilege model mapped.")
+def table_lifecycle_matrix(spark):
+    """Compare Managed vs External table storage ownership and DROP behavior."""
+    rows = [
+        ("Managed Table", "Unity Catalog managed storage", "Deletes metadata AND purges files after retention"),
+        ("External Table", "User-specified External Location", "Deletes metadata ONLY; physical files preserved"),
+    ]
+    return spark.createDataFrame(rows, "table_type STRING, storage_owner STRING, drop_behavior STRING")
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **Unity Catalog replaces the legacy 2-tier Hive Metastore with a structured 3-tier namespace (`catalog.schema.table`).**
-# MAGIC - **Managed tables manage both file storage and metadata; dropping them purges physical data files.**
-# MAGIC - **External tables decouple metadata from underlying cloud storage, preserving files upon DROP.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. What is the difference between Managed Tables and External Tables in Databricks Unity Catalog?
-# MAGIC 2. What happens to underlying data files when an External Table is dropped versus a Managed Table?
-# MAGIC 3. Why is a 3-tier namespace superior to the legacy 2-tier Hive Metastore for enterprise multi-tenancy?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+# ==============================================================================
+# 4. explain("formatted") & Spark UI Diagnostics
+# ==============================================================================
+# - In `spark.table("prod_catalog.finance.invoices").explain("formatted")`, verify
+#   `Relation` displays the full 3-tier `catalog.schema.table` name and Catalyst
+#   pushes `PartitionFilters` / `PushedFilters` through Unity Catalog credential vending.
+# - In Spark UI -> SQL tab, check `Scan parquet/delta` to confirm partition pruning
+#   happens at the catalog metadata layer before executor task dispatch.
+
+
+# ==============================================================================
+# 5. Production & Interview Gotchas
+# ==============================================================================
+# - Gotcha 1: Dropping a Managed table marks underlying cloud objects for automated
+#   deletion (typically 7–30 days depending on cloud/UC retention), whereas dropping
+#   an External table leaves all Parquet/Delta files untouched in S3/ADLS/GCS.
+# - Gotcha 2: Databricks Predictive Optimization (auto-OPTIMIZE / auto-VACUUM) applies
+#   to Unity Catalog Managed tables; External tables still require scheduled maintenance.
+# - Gotcha 3: Bind production catalogs strictly to production workspaces (`Workspace-Catalog`
+#   bindings) so dev clusters cannot accidentally query or mutate prod data.
+
+
+if __name__ == "__main__":
+    from pyspark.sql import SparkSession
+
+    spark = SparkSession.builder.appName("Adapter_086_UnityCatalog_3Tier").getOrCreate()
+    for stmt in build_unity_catalog_ddl("enterprise_prod", "finance", "invoices"):
+        print(stmt)
+    table_lifecycle_matrix(spark).show(truncate=False)

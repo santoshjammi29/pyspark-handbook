@@ -1,78 +1,36 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 093: Lakeflow Declarative Pipelines and Delta Live Tables (DLT) Expectations
-# MAGIC
-# MAGIC **Module:** Module 09: Databricks Platform, Unity Catalog, Security & FinOps
-# MAGIC **Difficulty:** `Advanced`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC An enterprise financial lakehouse migrates manual notebook pipelines to Databricks Lakeflow Declarative Pipelines (Delta Live Tables). The platform requires declarative Medallion pipelines with embedded Data Quality Expectations that log, drop, or fail on bad data.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Master Delta Live Tables (DLT) & Lakeflow Declarative Pipelines: understand the `@dlt.table` and `@dlt.view` decorators, compare the 3 expectation types (`expect`, `expect_or_drop`, `expect_or_fail`), configure streaming tables vs materialized views, and inspect pipeline event logs.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC Lakeflow Declarative Pipelines (DLT) allow data engineers to define *what* tables to produce rather than *how* to orchestrate them. DLT automatically constructs the DAG, provisions clusters, manages checkpoints, and captures data quality metrics per expectation rule.
+"""
+093 — Lakeflow Declarative Pipelines (Delta Live Tables / DLT) & Expectations.
 
-# COMMAND ----------
+Scenario & Scale:
+    An enterprise financial lakehouse processes millions of daily invoices across
+    Bronze -> Silver -> Gold. Manual imperative job chains require brittle retry
+    bookkeeping and silently drop malformed records without data-quality observability.
+"""
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+from __future__ import annotations
 
-# COMMAND ----------
 
-import os
-import sys
-import shutil
-from pathlib import Path
+# ==============================================================================
+# 2. Anti-Pattern: Silent Dropna() & Manual Imperative Checkpoint Wiring
+# ==============================================================================
+# ❌ Bad Practice:
+#   df.dropna(subset=["invoice_no", "amount"]).filter("amount > 0").write.mode("append").save(...)
+#
+# Otherwise:
+#   Silent filtering hides upstream schema/value regressions, gives zero audit metrics
+#   on how many rows failed quality checks, and risks corrupting downstream Gold KPIs.
 
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_093_Lakeflow_Declarative_Pipelines_and_Delta_Live_Tables_DLT_Expectations")
-        .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
-        .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-        .getOrCreate()
-    )
 
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
-
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 1: Lakeflow / DLT Declarative Pipeline Blueprint
-# MAGIC Display the production PySpark syntax for Delta Live Tables with expectations.
-
-# COMMAND ----------
-
-# Production Delta Live Tables / Lakeflow Pipeline:
-dlt_pipeline_code = """
+# ==============================================================================
+# 3. ANSI-Safe PySpark 4.0+ Fix: DLT Expectations & Quarantine Pattern
+# ==============================================================================
+# ✅ Good Practice: Declare `@dlt.expect*` quality contracts in Lakeflow Pipelines
+#                   and model equivalent single-pass quarantine routing in pure PySpark.
+LAKEFLOW_DLT_BLUEPRINT = """
 import dlt
 from pyspark.sql import functions as F
 
-# 1. Bronze Streaming Table (Raw Ingestion)
-@dlt.table(
-    comment="Raw streaming invoices ingested via Auto Loader",
-    table_properties={"quality": "bronze"}
-)
+@dlt.table(comment="Raw streaming invoices ingested via Auto Loader")
 def invoices_raw():
     return (
         spark.readStream.format("cloudFiles")
@@ -80,91 +38,73 @@ def invoices_raw():
         .load("/Volumes/enterprise/raw/invoices/")
     )
 
-# 2. Silver Table with Data Quality Expectations
-@dlt.table(
-    comment="Cleansed invoices with data quality rules"
-)
+@dlt.table(comment="Cleansed invoices passing quality contracts")
 @dlt.expect("valid_invoice_no", "invoice_no IS NOT NULL")
 @dlt.expect_or_drop("valid_positive_amount", "amount > 0")
 @dlt.expect_or_fail("valid_status", "status IN ('APPROVED', 'PENDING', 'REJECTED')")
 def invoices_silver():
     return dlt.read_stream("invoices_raw").select("invoice_no", "amount", "status")
+""".strip()
 
-# 3. Gold Materialized View (Business Summary)
-@dlt.table(
-    comment="Daily aggregated sales summary"
-)
-def invoices_gold():
-    return (
-        dlt.read("invoices_silver")
-        .groupBy("status")
-        .agg(F.sum("amount").alias("total_amount"))
+
+def evaluate_dlt_expectations_portably(df):
+    """Emulate DLT expect / expect_or_drop / expect_or_fail + quarantine in OSS PySpark."""
+    from pyspark.sql import functions as F
+
+    valid_statuses = ["APPROVED", "PENDING", "REJECTED"]
+
+    # 1. expect_or_fail check (abort if fatal domain invariant is violated)
+    fatal_count = df.filter(~F.col("status").isin(valid_statuses) | F.col("status").isNull()).count()
+    if fatal_count > 0:
+        raise ValueError(f"expect_or_fail('valid_status') aborted pipeline: {fatal_count} invalid rows.")
+
+    # 2. Tag expectation violations in a single pass for audit + quarantine
+    df_tagged = df.withColumn(
+        "_dq_drop_reason",
+        F.when(F.col("amount").isNull() | (F.col("amount") <= 0), F.lit("invalid_positive_amount")),
+    ).withColumn(
+        "_dq_warn_flag",
+        F.col("invoice_no").isNull(),
     )
-"""
 
-print("Lakeflow / DLT Declarative Pipeline Blueprint defined:")
-print(dlt_pipeline_code)
+    df_clean = df_tagged.filter(F.col("_dq_drop_reason").isNull()).drop("_dq_drop_reason")
+    df_quarantine = df_tagged.filter(F.col("_dq_drop_reason").isNotNull())
+    return df_clean, df_quarantine
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 2: Simulating the 3 DLT Expectation Behaviors in Standard PySpark
-# MAGIC Demonstrate expect (log only), expect_or_drop, and expect_or_fail.
+# ==============================================================================
+# 4. explain("formatted") & Spark UI Diagnostics
+# ==============================================================================
+# - In `df_clean.explain("formatted")`, verify expectation predicates fold into a
+#   single `Filter` operator above the source scan (`isnotnull(amount) AND amount > 0`).
+# - In Databricks Lakeflow / DLT UI, inspect the Lineage Graph node badges for
+#   `Dropped` vs `Warned` expectation counts persisted in the DLT event log.
 
-# COMMAND ----------
 
-# Mock incoming data with varying levels of quality issues
-raw_batch = [
-    ("INV-01", 100.0, "APPROVED"),   # Valid
-    ("INV-02", -50.0, "APPROVED"),   # Violates positive amount -> DROP
-    (None,     250.0, "PENDING"),    # Violates non-null -> LOG (retain row)
-    ("INV-03", 500.0, "INVALID_STATE")# Violates valid_status -> FAIL PIPELINE
-]
+# ==============================================================================
+# 5. Production & Interview Gotchas
+# ==============================================================================
+# - Gotcha 1: `@dlt.expect` logs violations and keeps rows; `@dlt.expect_or_drop`
+#   discards failing rows silently unless you add a parallel quarantine table with
+#   inverted predicates (`expect_all_or_drop` vs quarantine).
+# - Gotcha 2: Streaming Tables (`dlt.read_stream`) process append-only increments once;
+#   Materialized Views (`dlt.read`) incrementally recompute aggregations/joins.
+# - Gotcha 3: Never pass `--` or unvalidated expressions into expectation strings;
+#   keep expectations as pure, deterministic SQL boolean predicates for pushdown.
 
-schema = "invoice_no STRING, amount DOUBLE, status STRING"
-df_test = spark.createDataFrame(raw_batch, schema)
 
-# Behavior 1: expect_or_drop (Filters out violating rows)
-df_clean = df_test.filter(F.col("amount") > 0)
-print(f"After expect_or_drop (amount > 0): {df_clean.count()} rows retained.")
-df_clean.show()
+if __name__ == "__main__":
+    from pyspark.sql import SparkSession
 
-# Behavior 2: expect_or_fail (Throws exception if any row violates rule)
-has_fatal_error = df_clean.filter(~F.col("status").isin(["APPROVED", "PENDING", "REJECTED"])).count() > 0
-if has_fatal_error:
-    print("ALERT: expect_or_fail triggered! Pipeline run aborted due to invalid status values.")
+    spark = SparkSession.builder.appName("Adapter_093_Lakeflow_DLT").getOrCreate()
+    print(LAKEFLOW_DLT_BLUEPRINT)
 
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 3: DLT Expectations Cheatsheet
-# MAGIC Review the operational behavior of DLT expectation modes.
-
-# COMMAND ----------
-
-exp_modes = [
-    ("@dlt.expect('rule', 'condition')", "Logs violation count to event log; retains row in table."),
-    ("@dlt.expect_or_drop('rule', 'condition')", "Logs violation; automatically drops invalid rows from target table."),
-    ("@dlt.expect_or_fail('rule', 'condition')", "Logs violation; immediately aborts pipeline execution with error.")
-]
-
-for mode, behavior in exp_modes:
-    print(f" {mode}\n   -> {behavior}")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **Delta Live Tables (DLT) provides a declarative framework for building reliable Medallion lakehouses.**
-# MAGIC - **Use `@dlt.expect` to log metrics, `@dlt.expect_or_drop` to clean data, and `@dlt.expect_or_fail` for strict compliance.**
-# MAGIC - **DLT automatically manages streaming checkpoints, schema evolution, and optimal cluster sizing.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. What is the difference between a Streaming Table and a Materialized View in Delta Live Tables?
-# MAGIC 2. Explain the 3 types of DLT Data Quality Expectations and when to use each.
-# MAGIC 3. How does DLT handle pipeline failure recovery compared to standard Databricks Jobs?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+    batch = [
+        ("INV-01", 100.0, "APPROVED"),
+        ("INV-02", -50.0, "APPROVED"),
+        (None, 250.0, "PENDING"),
+    ]
+    df_in = spark.createDataFrame(batch, "invoice_no STRING, amount DOUBLE, status STRING")
+    clean_df, quarantine_df = evaluate_dlt_expectations_portably(df_in)
+    clean_df.show(truncate=False)
+    quarantine_df.show(truncate=False)

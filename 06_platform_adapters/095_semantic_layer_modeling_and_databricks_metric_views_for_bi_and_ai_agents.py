@@ -1,149 +1,109 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 095: Semantic Layer Modeling and Databricks Metric Views for BI and AI Agents
-# MAGIC
-# MAGIC **Module:** Module 09: Databricks Platform, Unity Catalog, Security & FinOps
-# MAGIC **Difficulty:** `Advanced`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC Different business teams calculate 'Customer Churn' and 'Net Revenue' using conflicting SQL formulas, producing discrepancies between executive reports and Databricks Genie AI natural language answers.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Build an enterprise Semantic Layer using Databricks Metric Views: define centralized business metrics, dimensions, hierarchies, and time grains, ensuring identical calculations across Power BI, Tableau, and Databricks Genie AI agents.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC A Semantic Layer translates physical Delta tables into business concepts (Measures and Dimensions). Databricks Metric Views provide a standardized semantic definition where metrics (e.g. ARR, Churn Rate) are defined once and computed dynamically at any aggregation grain.
+"""
+095 — Semantic Layer Modeling & Databricks Metric Views for BI and AI Agents.
 
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
-
-# COMMAND ----------
-
-import os
-import sys
-import shutil
-from pathlib import Path
-
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_095_Semantic_Layer_Modeling_and_Databricks_Metric_Views_for_BI_and_AI_Agents")
-        .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
-        .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-        .getOrCreate()
-    )
-
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
-
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 1: Creating Physical Sales Fact and Dimension Tables
-# MAGIC Create underlying analytical data for semantic modeling.
-
-# COMMAND ----------
-
-sales_records = [
-    ("S-01", "2023-11-01", "US", "Electronics", 1200.0, 100.0),
-    ("S-02", "2023-11-02", "US", "Home", 450.0, 50.0),
-    ("S-03", "2023-11-03", "EU", "Electronics", 800.0, 80.0),
-    ("S-04", "2023-11-04", "EU", "Electronics", 950.0, 95.0)
-]
-
-schema = "sale_id STRING, sale_date STRING, country STRING, category STRING, gross_revenue DOUBLE, discount DOUBLE"
-df_sales = spark.createDataFrame(sales_records, schema)
-df_sales.createOrReplaceTempView("fact_sales_semantic")
-df_sales.show()
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 2: Defining Semantic Metric View with Standard Measures
-# MAGIC Define conformed measures: Gross Revenue, Total Discounts, and Net Revenue.
-
-# COMMAND ----------
-
-semantic_view_sql = """
-CREATE OR REPLACE VIEW v_semantic_sales_metrics AS
-SELECT
-    sale_date,
-    country,
-    category,
-    -- Standard Measures:
-    gross_revenue,
-    discount,
-    (gross_revenue - discount) AS net_revenue,
-    ROUND(((discount) / gross_revenue) * 100, 1) AS discount_pct
-FROM fact_sales_semantic
+Scenario & Scale:
+    Multiple BI teams and Databricks Genie AI agents compute KPIs like `Net Revenue`
+    and `Discount %` across 500M+ sales rows. Duplicating SQL formulas in Power BI,
+    Tableau, and notebooks causes metric drift and ANSI `DIVIDE_BY_ZERO` crashes.
 """
 
-spark.sql(semantic_view_sql)
-print("Semantic View 'v_semantic_sales_metrics' created.")
+from __future__ import annotations
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 3: Querying Metrics Consistently Across Any Dimensional Grain
-# MAGIC Demonstrate that Net Revenue computes identically across country or category.
+# ==============================================================================
+# 2. Anti-Pattern: Duplicated Ratios & Unsafe `/` Division Under ANSI Mode
+# ==============================================================================
+# ❌ Bad Practice:
+#   # Computing `ROUND((discount / gross_revenue) * 100, 1)` at row grain, then
+#   # averaging percentages across categories in BI (`AVG(discount_pct)`), which is
+#   # mathematically wrong AND throws `DIVIDE_BY_ZERO` when `gross_revenue = 0`.
+#
+# Otherwise:
+#   Averaging pre-computed row ratios produces Simpson's paradox errors, while raw
+#   `/` crashes Spark 4.0 ANSI queries on zero-revenue returns or promo orders.
 
-# COMMAND ----------
 
-# Query 1: By Country
-print("Metric Aggregation by Country:")
-spark.sql("""
-SELECT
-    country,
-    ROUND(SUM(gross_revenue), 2) AS total_gross,
-    ROUND(SUM(net_revenue), 2) AS total_net
-FROM v_semantic_sales_metrics
-GROUP BY country
-""").show()
+# ==============================================================================
+# 3. ANSI-Safe PySpark 4.0+ Fix: Certified Metric Layer & Ratio-of-Sums
+# ==============================================================================
+# ✅ Good Practice: Define additive base measures in a Metric View and compute
+#                   non-additive ratios post-aggregation using `try_divide`.
+METRIC_VIEW_YAML_BLUEPRINT = """
+version: 0.1
+source: enterprise_prod.sales.fact_sales
+dimensions:
+  - name: sale_date
+    expr: sale_date
+  - name: country
+    expr: country
+  - name: category
+    expr: category
+measures:
+  - name: total_gross_revenue
+    expr: SUM(gross_revenue)
+  - name: total_discount
+    expr: SUM(discount)
+  - name: net_revenue
+    expr: SUM(gross_revenue - discount)
+  - name: discount_pct
+    expr: ROUND(TRY_DIVIDE(SUM(discount), SUM(gross_revenue)) * 100, 2)
+""".strip()
 
-# Query 2: By Category
-print("Metric Aggregation by Category:")
-spark.sql("""
-SELECT
-    category,
-    ROUND(SUM(gross_revenue), 2) AS total_gross,
-    ROUND(SUM(net_revenue), 2) AS total_net
-FROM v_semantic_sales_metrics
-GROUP BY category
-""").show()
 
-# COMMAND ----------
+def aggregate_certified_metrics(df_sales, group_cols: list[str]):
+    """Compute consistent additive and ratio metrics at any dimensional grain."""
+    from pyspark.sql import functions as F
 
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **A Semantic Layer standardizes business metrics (Net Revenue, Churn, Margin) across the entire company.**
-# MAGIC - **Metric Views allow BI tools and Databricks Genie AI agents to query certified metrics without SQL discrepancies.**
-# MAGIC - **Defining measures once ensures compliance and trust across executive reporting.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. What is a Semantic Layer and why is it critical when deploying AI agents like Databricks Genie?
-# MAGIC 2. How does a Metric View differ from a standard SQL view?
-# MAGIC 3. How do you prevent 'metric drift' across multiple self-service BI tools?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+    return (
+        df_sales.groupBy(*group_cols)
+        .agg(
+            F.round(F.sum("gross_revenue"), 2).alias("total_gross_revenue"),
+            F.round(F.sum("discount"), 2).alias("total_discount"),
+            F.round(F.sum(F.col("gross_revenue") - F.col("discount")), 2).alias("net_revenue"),
+            F.round(
+                F.expr("try_divide(sum(discount), sum(gross_revenue))") * F.lit(100.0),
+                2,
+            ).alias("discount_pct"),
+        )
+        .orderBy(*group_cols)
+    )
+
+
+# ==============================================================================
+# 4. explain("formatted") & Spark UI Diagnostics
+# ==============================================================================
+# - In `df.explain("formatted")`, Catalyst expands semantic views during Analysis and
+#   pushes dimensional filters (`country = 'US'`) below `HashAggregate` to `FileScan`.
+# - Confirm `try_divide` compiles cleanly inside `HashAggregate` final projection
+#   without triggering ANSI `DIVIDE_BY_ZERO` runtime exceptions.
+
+
+# ==============================================================================
+# 5. Production & Interview Gotchas
+# ==============================================================================
+# - Gotcha 1: Non-additive metrics (ratios, `COUNT(DISTINCT)`, percentiles) MUST be
+#   computed at query grain (`SUM(num) / SUM(den)`), never averaged from row-level ratios.
+# - Gotcha 2: AI agents like Databricks Genie rely on rich `COMMENT` metadata on views
+#   and columns to disambiguate `gross_revenue` vs `net_revenue` accurately.
+# - Gotcha 3: Always use `TRY_DIVIDE` in semantic KPIs for Spark 4.0 ANSI safety when
+#   handling zero-dollar refunds, cancellations, or free trials.
+
+
+if __name__ == "__main__":
+    from pyspark.sql import SparkSession
+
+    spark = SparkSession.builder.appName("Adapter_095_Semantic_Metric_Views").getOrCreate()
+    spark.conf.set("spark.sql.ansi.enabled", "true")
+    print(METRIC_VIEW_YAML_BLUEPRINT)
+
+    sales = [
+        ("S-01", "2026-01-01", "US", "Electronics", 1200.0, 100.0),
+        ("S-02", "2026-01-02", "US", "Home", 0.0, 0.0),  # tests ANSI try_divide safety
+        ("S-03", "2026-01-03", "EU", "Electronics", 800.0, 80.0),
+    ]
+    df_sales = spark.createDataFrame(
+        sales,
+        "sale_id STRING, sale_date STRING, country STRING, category STRING, gross_revenue DOUBLE, discount DOUBLE",
+    )
+    aggregate_certified_metrics(df_sales, ["country"]).show(truncate=False)
+    aggregate_certified_metrics(df_sales, ["category"]).show(truncate=False)

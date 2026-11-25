@@ -15,7 +15,7 @@ resources:
 
       libraries:
         - notebook:
-            path: "../notebooks/09_unity_catalog_and_security/093_lakeflow_declarative_pipelines_and_delta_live_tables_dlt_expectations.py"
+            path: "../../093_lakeflow_declarative_pipelines_and_delta_live_tables_dlt_expectations.py"
 
       configuration:
         "bundle.environment": "${bundle.target}"

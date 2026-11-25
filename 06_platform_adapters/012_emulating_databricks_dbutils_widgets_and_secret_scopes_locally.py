@@ -1,187 +1,202 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 012: Emulating Databricks DBUtils, Widgets & Secret Scopes Locally
-# MAGIC
-# MAGIC **Module:** Module 01: Core PySpark Foundations & DataFrame API
-# MAGIC **Difficulty:** `Intermediate`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC An enterprise migration team develops Databricks pipelines locally inside VS Code or CI/CD test runners before deploying to production workspaces. Code relying on `dbutils.fs`, `dbutils.secrets`, and `dbutils.widgets` crashes outside of Databricks.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Design a clean, modular Python compatibility wrapper class `MockDBUtils` that provides identical interfaces for `dbutils.fs` (`ls`, `cp`, `mv`, `rm`, `head`, `put`), `dbutils.widgets` (`text`, `dropdown`, `get`), and `dbutils.secrets` (`get`) using environment variables and local disk storage.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC In Databricks, `dbutils` is a Java/Scala bridge injected into the Python REPL. Writing pipeline code that imports or references `dbutils` directly creates tight vendor lock-in. Wrapping it in a helper or using Databricks Connect decouples code for multi-cloud and local portability.
+"""
+012 — Emulating Databricks dbutils (FS, Widgets, Secrets) Locally & Across Clouds.
 
-# COMMAND ----------
+Scenario & Scale:
+    An enterprise data team maintains 50+ parameterized pipelines that run in
+    Databricks Jobs in production but must execute in local pytest suites,
+    GitHub Actions CI, and Spark Connect sessions without Databricks Runtime.
+    Direct calls to the injected `dbutils` Java/Scala bridge raise `NameError`
+    outside Databricks and couple business transforms to a single vendor runtime.
+"""
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
-
-# COMMAND ----------
+from __future__ import annotations
 
 import os
-import sys
 import shutil
+import tempfile
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_012_Emulating_Databricks_DBUtils_Widgets_and_Secret_Scopes_Locally")
-        .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
-        .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-        .getOrCreate()
+
+# ==============================================================================
+# 2. Anti-Pattern: Hardcoded dbutils & Ephemeral Local Paths in Transform Logic
+# ==============================================================================
+# ❌ Bad Practice:
+#   def load_orders(spark):
+#       env = dbutils.widgets.get("env")
+#       token = dbutils.secrets.get("finance", "api_key")
+#       dbutils.fs.put("file:/local/staging/flag.json", f'{{"env": "{env}"}}', True)
+#       return spark.read.json(f"dbfs:/mnt/raw/{env}/orders")
+#
+# Otherwise:
+#   Any unit test, CI runner, or Spark Connect client outside Databricks fails
+#   with `NameError: name 'dbutils' is not defined`. Hardcoded local scratch writes leak
+#   stale state across runs and break on serverless/multi-tenant drivers.
+
+
+# ==============================================================================
+# 3. ANSI-Safe PySpark 4.0+ Fix: Portable Platform Context Adapter
+# ==============================================================================
+# ✅ Good Practice: Isolate vendor bridges behind a thin dependency-injected adapter.
+@dataclass(frozen=True)
+class FileEntry:
+    path: str
+    name: str
+    size: int
+
+
+class PlatformContext(Protocol):
+    def get_param(self, name: str, default: str = "") -> str: ...
+    def get_secret(self, scope: str, key: str) -> str: ...
+    def read_text(self, path: str, max_bytes: int = 4096) -> str: ...
+    def write_text(self, path: str, content: str) -> None: ...
+    def list_dir(self, path: str) -> list[FileEntry]: ...
+    def remove_path(self, path: str, recurse: bool = False) -> None: ...
+
+
+class LocalDBUtilsAdapter:
+    """Drop-in local/CI adapter for dbutils.fs, dbutils.widgets, and dbutils.secrets."""
+
+    def __init__(self, root_dir: Path, params: dict[str, str] | None = None) -> None:
+        self._root = root_dir
+        self._params = dict(params or {})
+
+    def register_param(self, name: str, default: str) -> None:
+        self._params.setdefault(name, default)
+
+    def get_param(self, name: str, default: str = "") -> str:
+        env_key = f"PIPELINE_PARAM_{name.upper()}"
+        return os.environ.get(env_key, self._params.get(name, default))
+
+    def get_secret(self, scope: str, key: str) -> str:
+        env_key = f"{scope.upper()}_{key.upper()}"
+        secret = os.environ.get(env_key)
+        if secret is None:
+            return f"local-dev-placeholder-{key}"
+        return secret
+
+    def _resolve(self, uri: str) -> Path:
+        clean = uri.replace("dbfs:", "").replace("file:", "").lstrip("/")
+        resolved = (self._root / clean).resolve()
+        if not str(resolved).startswith(str(self._root.resolve())):
+            raise ValueError(f"Path escapes sandbox root: {uri}")
+        return resolved
+
+    def write_text(self, path: str, content: str) -> None:
+        target = self._resolve(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+
+    def read_text(self, path: str, max_bytes: int = 4096) -> str:
+        target = self._resolve(path)
+        with target.open("r", encoding="utf-8") as handle:
+            return handle.read(max_bytes)
+
+    def list_dir(self, path: str) -> list[FileEntry]:
+        target = self._resolve(path)
+        if not target.exists():
+            return []
+        return [
+            FileEntry(path=str(item), name=item.name, size=item.stat().st_size)
+            for item in sorted(target.iterdir())
+        ]
+
+    def remove_path(self, path: str, recurse: bool = False) -> None:
+        target = self._resolve(path)
+        if target.is_dir():
+            if not recurse:
+                raise IsADirectoryError(f"Set recurse=True to delete directory: {path}")
+            shutil.rmtree(target)
+        elif target.exists():
+            target.unlink()
+
+
+class DatabricksDBUtilsAdapter:
+    """Thin production wrapper around Databricks runtime dbutils."""
+
+    def __init__(self, dbutils_obj: object) -> None:
+        self._dbutils = dbutils_obj
+
+    def get_param(self, name: str, default: str = "") -> str:
+        try:
+            return str(self._dbutils.widgets.get(name))  # type: ignore[attr-defined]
+        except Exception:
+            return default
+
+    def get_secret(self, scope: str, key: str) -> str:
+        return str(self._dbutils.secrets.get(scope=scope, key=key))  # type: ignore[attr-defined]
+
+    def read_text(self, path: str, max_bytes: int = 4096) -> str:
+        return str(self._dbutils.fs.head(path, max_bytes))  # type: ignore[attr-defined]
+
+    def write_text(self, path: str, content: str) -> None:
+        self._dbutils.fs.put(path, content, True)  # type: ignore[attr-defined]
+
+    def list_dir(self, path: str) -> list[FileEntry]:
+        items = self._dbutils.fs.ls(path)  # type: ignore[attr-defined]
+        return [FileEntry(path=i.path, name=i.name, size=i.size) for i in items]
+
+    def remove_path(self, path: str, recurse: bool = False) -> None:
+        self._dbutils.fs.rm(path, recurse)  # type: ignore[attr-defined]
+
+
+def build_platform_context(sandbox_root: Path, native_dbutils: object | None = None) -> PlatformContext:
+    if native_dbutils is not None:
+        return DatabricksDBUtilsAdapter(native_dbutils)
+    return LocalDBUtilsAdapter(root_dir=sandbox_root)
+
+
+def run_parameterized_query(spark, ctx: PlatformContext):
+    """Keep Spark 4.0+ SQL execution pure and ANSI-safe using parameterized args."""
+    from pyspark.sql import functions as F
+
+    spark.conf.set("spark.sql.ansi.enabled", "true")
+    target_env = ctx.get_param("env", "staging")
+    batch_date = ctx.get_param("processing_date", "2026-01-15")
+
+    df = spark.createDataFrame(
+        [("ORD-1", "staging", "2026-01-15", "100.50"), ("ORD-2", "prod", "2026-01-15", "bad_amt")],
+        ["order_id", "env", "order_date", "raw_amount"],
+    )
+    return (
+        df.filter((F.col("env") == F.lit(target_env)) & (F.col("order_date") == F.lit(batch_date)))
+        .withColumn("amount", F.expr("try_cast(raw_amount AS DECIMAL(12, 2))"))
     )
 
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+# ==============================================================================
+# 4. explain("formatted") & Spark UI Diagnostics
+# ==============================================================================
+# - Parameter injection happens on the driver before Catalyst compiles the plan;
+#   in `df.explain("formatted")`, `target_env` and `batch_date` appear as pushed
+#   literal predicates inside `Filter` / `FileScan` (`PushedFilters`).
+# - Because business logic receives plain strings instead of `dbutils` calls,
+#   Spark Connect thin clients serialize only the DataFrame plan without JVM bridges.
+# - In Spark UI -> SQL/DataFrame tab, verify no `BatchEvalPython` nodes appear.
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 1: Building the Universal DBUtils Emulation Bridge
-# MAGIC Create a drop-in replacement that activates when native `dbutils` is unavailable.
+# ==============================================================================
+# 5. Production & Interview Gotchas
+# ==============================================================================
+# - Gotcha 1: `dbutils` is unavailable in pure Spark Connect clients and local unit
+#   tests; always pass parameters via job arguments or an injected adapter interface.
+# - Gotcha 2: Databricks redacts `dbutils.secrets.get()` only in notebook stdout/logs;
+#   writing a secret into a DataFrame column or JSON file bypasses redaction.
+# - Gotcha 3: Prefer Unity Catalog Volumes (`/Volumes/<cat>/<schema>/<vol>`) over
+#   `dbfs:/mnt/...` mounts so standard Python libraries can use POSIX I/O safely.
 
-# COMMAND ----------
 
-import os
-import shutil
-from pathlib import Path
+if __name__ == "__main__":
+    from pyspark.sql import SparkSession
 
-class MockFS:
-    def ls(self, path: str):
-        p = Path(path.replace("dbfs:", "").replace("file:", ""))
-        if not p.exists():
-            return []
-        class FileInfo:
-            def __init__(self, path, name, size):
-                self.path = str(path)
-                self.name = name
-                self.size = size
-        return [FileInfo(f, f.name, f.stat().st_size) for f in p.iterdir()]
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        ctx = build_platform_context(Path(tmp_dir))
+        ctx.write_text("config/run.json", '{"env": "staging", "batch_size": 5000}')
+        assert "staging" in ctx.read_text("config/run.json")
+        assert len(ctx.list_dir("config")) == 1
 
-    def put(self, path: str, content: str, overwrite: bool = True):
-        p = Path(path.replace("dbfs:", ""))
-        p.parent.mkdir(parents=True, exist_ok=True)
-        with open(p, "w") as f:
-            f.write(content)
-
-    def head(self, path: str, max_bytes: int = 1000):
-        p = Path(path.replace("dbfs:", ""))
-        with open(p, "r") as f:
-            return f.read(max_bytes)
-
-    def rm(self, path: str, recurse: bool = False):
-        p = Path(path.replace("dbfs:", ""))
-        if p.is_dir():
-            shutil.rmtree(p)
-        elif p.exists():
-            p.unlink()
-
-class MockWidgets:
-    def __init__(self):
-        self._widgets = {}
-
-    def text(self, name: str, defaultValue: str, label: str = ""):
-        self._widgets[name] = defaultValue
-
-    def dropdown(self, name: str, defaultValue: str, choices: list, label: str = ""):
-        self._widgets[name] = defaultValue
-
-    def get(self, name: str):
-        return self._widgets.get(name, "")
-
-class MockSecrets:
-    def get(self, scope: str, key: str):
-        # Resolve from environment variables (e.g. SCOPE_KEY)
-        env_key = f"{scope.upper()}_{key.upper()}"
-        return os.environ.get(env_key, f"mock-secret-for-{key}")
-
-class DBUtilsEmulator:
-    def __init__(self):
-        self.fs = MockFS()
-        self.widgets = MockWidgets()
-        self.secrets = MockSecrets()
-
-# Instantiate emulator
-dbutils = DBUtilsEmulator()
-print("Universal DBUtils Emulator initialized successfully!")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 2: Testing DBUtils Filesystem Operations
-# MAGIC Create, list, read, and delete files using the dbutils interface.
-
-# COMMAND ----------
-
-# 1. Put file in mock DBFS
-dbutils.fs.put("/tmp/dbfs_test/config.json", '{"environment": "staging", "batch_size": 5000}')
-
-# 2. Read file back with head
-content = dbutils.fs.head("/tmp/dbfs_test/config.json")
-print("Read Content:", content)
-
-# 3. List directory
-files = dbutils.fs.ls("/tmp/dbfs_test")
-for f in files:
-    print(f"File found: {f.name} ({f.size} bytes)")
-
-# 4. Clean up
-dbutils.fs.rm("/tmp/dbfs_test", recurse=True)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 3: Testing Widgets & Secure Secret Retrieval
-# MAGIC Pass dynamic parameters and fetch credentials without hardcoding.
-
-# COMMAND ----------
-
-# Configure notebook widgets
-dbutils.widgets.dropdown("env", "staging", ["dev", "staging", "prod"], "Target Environment")
-dbutils.widgets.text("processing_date", "2023-11-20", "Batch Date")
-
-current_env = dbutils.widgets.get("env")
-proc_date = dbutils.widgets.get("processing_date")
-api_key = dbutils.secrets.get(scope="finance_scope", key="stripe_token")
-
-print(f"Running pipeline for ENV={current_env}, DATE={proc_date}")
-print(f"Retrieved Secret: {api_key[:4]}**** (Masked)")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **Never hardcode credentials in notebooks—use secret scopes via `dbutils.secrets.get()` in Databricks or environment variables locally.**
-# MAGIC - **Widgets allow parameterized workflow execution from Databricks Jobs and Airflow DAGs.**
-# MAGIC - **Emulating `dbutils` enables seamless local development and automated CI testing outside Databricks.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. What is the difference between `%run` and `dbutils.notebook.run()` when chaining notebooks?
-# MAGIC 2. How does Databricks redact secrets retrieved via `dbutils.secrets.get()` in driver output logs?
-# MAGIC 3. What are Unity Catalog Volumes and how do they replace legacy DBFS mounts?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+        spark = SparkSession.builder.appName("Adapter_012_DBUtils_Boundary").getOrCreate()
+        result_df = run_parameterized_query(spark, ctx)
+        result_df.show(truncate=False)
+        ctx.remove_path("config", recurse=True)

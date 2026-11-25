@@ -39,9 +39,11 @@ targets:
       schema: "dev_${workspace.current_user.short_name}"
     sync:
       include:
-        - notebooks/**
-        - apps/**
         - resources/**
+        - "../*.py"
+        - "../../01_foundations/*.py"
+        - "../../02_production_patterns/*.py"
+        - "../../03_performance_and_streaming/*.py"
 
   # --------------------------------------------------------------------------
   # 2. Staging / Pre-Production Environment

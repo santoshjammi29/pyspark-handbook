@@ -1,136 +1,104 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 091: Databricks Secret Scopes and Secure Credential Injection via dbutils.secrets
-# MAGIC
-# MAGIC **Module:** Module 09: Databricks Platform, Unity Catalog, Security & FinOps
-# MAGIC **Difficulty:** `Intermediate`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC A data integration pipeline connects to cloud databases, external APIs (Stripe, Salesforce), and message queues. Developers must never hardcode API keys or passwords in notebooks, Git repositories, or logs.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Master secret management in Databricks: create Azure Key Vault / AWS Secrets Manager backed secret scopes, retrieve secrets safely via `dbutils.secrets.get()`, understand automatic secret redaction in driver stdout, and pass credentials into JDBC and REST APIs securely.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC Databricks Secret Scopes store encrypted key-value pairs backed by Databricks internal storage or cloud key vaults (Azure Key Vault / AWS KMS). When `dbutils.secrets.get()` is called, Databricks replaces the secret with `[REDACTED]` in all notebook output cells and Spark logs, preventing credential leakage.
+"""
+091 — Databricks Secret Scopes & Secure Credential Injection via SecretProvider.
 
-# COMMAND ----------
+Scenario & Scale:
+    Enterprise pipelines connect to PostgreSQL, Kafka, and external REST APIs
+    across dev/staging/prod workspaces. Credentials must never be committed to
+    Git, printed in driver stdout, or leaked into the Spark UI Environment tab.
+"""
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
-
-# COMMAND ----------
+from __future__ import annotations
 
 import os
-import sys
-import shutil
-from pathlib import Path
 
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_091_Databricks_Secret_Scopes_and_Secure_Credential_Injection_via_dbutilssecrets")
-        .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
-        .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-        .getOrCreate()
+
+# ==============================================================================
+# 2. Anti-Pattern: Hardcoded Secrets & Leaking Credentials via SparkConf/Logs
+# ==============================================================================
+# ❌ Bad Practice:
+#   spark.conf.set("spark.jdbc.password", "SuperSecret123!")
+#   print(f"Connecting with password={db_pass}")
+#
+# Otherwise:
+#   Static strings leak in Git history. Putting secrets in `spark.conf` exposes
+#   them in plaintext on the Spark UI `Environment` tab and event logs.
+
+
+# ==============================================================================
+# 3. ANSI-Safe PySpark 4.0+ Fix: SecretProvider Boundary & Transient Options
+# ==============================================================================
+# ✅ Good Practice: Resolve secrets dynamically from Databricks Secret Scopes
+#                   (backed by Azure Key Vault / AWS Secrets Manager) or env vars,
+#                   and inject them only into transient reader/client options.
+class SecretProvider:
+    """Platform adapter for Databricks Secret Scopes with local CI env-var fallback."""
+
+    def __init__(self, dbutils_obj: object | None = None) -> None:
+        self._dbutils = dbutils_obj
+
+    def get_secret(self, scope: str, key: str) -> str:
+        if self._dbutils is not None:
+            return str(self._dbutils.secrets.get(scope=scope, key=key))  # type: ignore[attr-defined]
+
+        env_name = f"{scope.upper()}_{key.upper()}"
+        value = os.environ.get(env_name)
+        if value is None:
+            raise KeyError(f"Secret '{scope}/{key}' not found; set {env_name} in CI/local env.")
+        return value
+
+
+def build_jdbc_options(
+    jdbc_url: str,
+    table: str,
+    username: str,
+    provider: SecretProvider,
+    scope: str = "dw_scope",
+    secret_key: str = "postgres_password",
+) -> dict[str, str]:
+    """Assemble transient JDBC DataFrameReader options without mutating global SparkConf."""
+    return {
+        "url": jdbc_url,
+        "dbtable": table,
+        "user": username,
+        "password": provider.get_secret(scope, secret_key),
+        "driver": "org.postgresql.Driver",
+        "fetchsize": "10000",
+    }
+
+
+def redact_preview(secret_value: str) -> str:
+    """Return a log-safe masked fingerprint without exposing secret material."""
+    return f"<redacted:len={len(secret_value)}>"
+
+
+# ==============================================================================
+# 4. explain("formatted") & Spark UI Diagnostics
+# ==============================================================================
+# - In `df.explain("formatted")` for `JDBCRelation`, verify `PushedFilters` appear
+#   without credential strings in SQL predicates; never embed passwords in `url`.
+# - Audit Spark UI -> `Environment` tab to confirm zero `password`, `token`, or
+#   `secret` entries exist in Spark Properties or System Properties.
+
+
+# ==============================================================================
+# 5. Production & Interview Gotchas
+# ==============================================================================
+# - Gotcha 1: `dbutils.secrets.get()` registers the string for `[REDACTED]` scrubbing
+#   in Databricks notebook stdout, but sending the value to an external webhook or
+#   writing it to a Delta table bypasses redaction completely.
+# - Gotcha 2: Prefer cloud-backed secret scopes (Azure Key Vault / AWS Secrets Manager)
+#   over Databricks-backed scopes so rotation, RBAC, and audit logs stay centralized.
+# - Gotcha 3: Better yet, replace static passwords with keyless OIDC / Managed Identity
+#   / Unity Catalog Lakehouse Federation connections wherever supported.
+
+
+if __name__ == "__main__":
+    os.environ.setdefault("DW_SCOPE_POSTGRES_PASSWORD", "ephemeral_ci_only_token")
+    provider = SecretProvider(dbutils_obj=None)
+    opts = build_jdbc_options(
+        jdbc_url="jdbc:postgresql://warehouse.internal:5432/analytics",
+        table="public.fact_orders",
+        username="etl_service_principal",
+        provider=provider,
     )
-
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
-
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 1: Secret Scope Creation Blueprint (CLI & Cloud Key Vault)
-# MAGIC Review commands to configure Databricks Secret Scopes.
-
-# COMMAND ----------
-
-# Databricks CLI Secret Scope Creation:
-# 1. Create Databricks-backed scope:
-#    databricks secrets create-scope finance_scope
-# 2. Store a secret:
-#    databricks secrets put-secret finance_scope stripe_api_key
-# 3. List available scopes:
-#    databricks secrets list-scopes
-
-print("Databricks secret scope management commands reviewed.")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 2: Demonstrating Secure Secret Retrieval and Output Redaction
-# MAGIC Retrieve secrets via dbutils.secrets.get and observe automatic redaction.
-
-# COMMAND ----------
-
-# Safe wrapper for dbutils.secrets across Databricks and local dev
-import os
-
-class SafeSecretProvider:
-    @staticmethod
-    def get_secret(scope: str, key: str) -> str:
-        try:
-            # Native Databricks environment
-            import dbutils
-            return dbutils.secrets.get(scope=scope, key=key)
-        except Exception:
-            # Local / CI fallback using environment variables
-            env_var = f"{scope.upper()}_{key.upper()}"
-            return os.environ.get(env_var, f"dummy_secret_for_{key}")
-
-api_token = SafeSecretProvider.get_secret("finance_scope", "stripe_api_key")
-print(f"Retrieved token value: {api_token[:4]}**** (Never print complete secrets to logs!)")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 3: Injecting Credentials into JDBC Connections Safely
-# MAGIC Use retrieved credentials in connection configurations without persisting to disk.
-
-# COMMAND ----------
-
-db_pass = SafeSecretProvider.get_secret("dw_scope", "postgres_password")
-
-connection_properties = {
-    "user": "etl_service_account",
-    "password": db_pass,
-    "driver": "org.postgresql.Driver"
-}
-
-print("Database connection properties assembled securely.")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **Never hardcode passwords or API keys in notebooks or Git repositories.**
-# MAGIC - **Databricks automatically intercepts and redacts secrets retrieved via `dbutils.secrets.get()` in notebook outputs.**
-# MAGIC - **Back secret scopes with Azure Key Vault or AWS Secrets Manager for enterprise audit compliance.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. How does Databricks ensure that secrets retrieved via `dbutils.secrets.get()` are not exposed in stdout logs?
-# MAGIC 2. What is the difference between a Databricks-backed secret scope and an Azure Key Vault-backed secret scope?
-# MAGIC 3. How do you manage secret scope access control using Databricks Access Control Lists (ACLs)?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+    print("JDBC target:", opts["url"], "| password:", redact_preview(opts["password"]))

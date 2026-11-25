@@ -1,140 +1,100 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Notebook 092: FinOps and DBU Cost Calculation Using system.billing.usage System Tables
-# MAGIC
-# MAGIC **Module:** Module 09: Databricks Platform, Unity Catalog, Security & FinOps
-# MAGIC **Difficulty:** `Advanced`
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Business Scenario & Real-World Context
-# MAGIC A Director of Data Engineering needs to track monthly Databricks DBU (Databricks Unit) consumption across business units (Finance, Marketing, ML). The FinOps team must identify expensive rogue jobs, untagged clusters, and cost spikes.
-# MAGIC
-# MAGIC ### Technical Requirement & Problem Statement
-# MAGIC Query Databricks Unity Catalog system billing tables: analyze `system.billing.usage`, compute DBU consumption by job, cluster, and user, calculate estimated dollar expenditures, and build an automated FinOps cost anomaly detection query in PySpark SQL.
-# MAGIC
-# MAGIC ### Spark & Databricks Architecture Notes
-# MAGIC Databricks system tables (`system.billing.usage`, `system.compute.clusters`) provide historical operational telemetry. The `system.billing.usage` table records DBU consumption per SKU, account, workspace, cluster, and custom billing tags every hour.
+"""
+092 — FinOps & DBU Cost Attribution Using system.billing.usage System Tables.
 
-# COMMAND ----------
+Scenario & Scale:
+    A multi-workspace platform tracks millions of hourly SKU billing records in
+    `system.billing.usage` to attribute DBU spend across Finance, Marketing, and ML,
+    and to detect untagged interactive `ALL_PURPOSE` clusters running scheduled ETL.
+"""
 
-# MAGIC %md
-# MAGIC ### Environment Setup & SparkSession Initialization
-# MAGIC If running inside a Databricks notebook, the `spark` session is pre-initialized by the cluster.
-# MAGIC If executing outside Databricks (e.g. VS Code, local CLI, CI/CD runner), we initialize a local SparkSession with Delta Lake support.
+from __future__ import annotations
 
-# COMMAND ----------
 
-import os
-import sys
-import shutil
-from pathlib import Path
+# ==============================================================================
+# 2. Anti-Pattern: Unfiltered System Table Scans & Unsafe Division
+# ==============================================================================
+# ❌ Bad Practice:
+#   spark.sql("""
+#       SELECT usage_metadata.job_id, SUM(usage_quantity) / COUNT(*) AS avg_dbu
+#       FROM system.billing.usage GROUP BY 1
+#   """)
+#
+# Otherwise:
+#   Scanning `system.billing.usage` without `usage_date` pruning reads months of
+#   historical billing telemetry, while `/` throws `DIVIDE_BY_ZERO` if `COUNT`
+#   or denominator metrics are zero under Spark 4.0 ANSI mode.
 
-# In Databricks, the SparkSession 'spark' is pre-initialized by the cluster.
-# For local PySpark / CI execution, initialize a local session with Delta Lake support:
-try:
-    spark
-except NameError:
-    from pyspark.sql import SparkSession
-    spark = (
-        SparkSession.builder
-        .appName("UseCase_092_FinOps_and_DBU_Cost_Calculation_Using_systembillingusage_System_Tables")
-        .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "4")
-        .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-        .getOrCreate()
+
+# ==============================================================================
+# 3. ANSI-Safe PySpark 4.0+ Fix: Partition-Pruned Attribution & Anomaly Audit
+# ==============================================================================
+# ✅ Good Practice: Prune on `usage_date`, join/map contract DBU rates safely with
+#                   `try_divide`, and flag interactive `ALL_PURPOSE` untagged runs.
+def compute_departmental_dbu_report(df_usage, start_date: str, dbu_rate_usd: float = 0.30):
+    """Aggregate pruned DBU consumption and estimated USD spend by department & SKU."""
+    from pyspark.sql import functions as F
+
+    return (
+        df_usage.filter(F.col("usage_date") >= F.lit(start_date))
+        .groupBy("department", "sku_name")
+        .agg(
+            F.count("*").alias("run_events"),
+            F.round(F.sum("usage_quantity"), 2).alias("total_dbus"),
+            F.round(F.sum("usage_quantity") * F.lit(dbu_rate_usd), 2).alias("estimated_cost_usd"),
+            F.round(F.expr("try_divide(sum(usage_quantity), count(*))"), 2).alias("avg_dbus_per_event"),
+        )
+        .orderBy(F.col("total_dbus").desc())
     )
 
-from pyspark.sql import functions as F
-from pyspark.sql import types as T
-from pyspark.sql.window import Window
 
-spark.sparkContext.setLogLevel("WARN")
-print(f"Spark Version: {spark.version}")
-print(f"Session Active: {spark.sparkContext.appName}")
+def detect_untagged_all_purpose_anomalies(df_usage, dbu_threshold: float = 50.0):
+    """Flag high-cost interactive ALL_PURPOSE compute lacking a scheduled job_id."""
+    from pyspark.sql import functions as F
 
-# COMMAND ----------
+    return (
+        df_usage.filter((F.col("sku_name") == "ALL_PURPOSE") & F.col("job_id").isNull())
+        .groupBy("workload_name", "department")
+        .agg(F.round(F.sum("usage_quantity"), 2).alias("total_dbus"))
+        .filter(F.col("total_dbus") >= F.lit(dbu_threshold))
+        .withColumn("recommendation", F.lit("Migrate scheduled workload to Jobs Compute (~55-60% DBU savings)"))
+    )
 
-# MAGIC %md
-# MAGIC ### Step 1: Mocking system.billing.usage Telemetry Data
-# MAGIC Create representative billing usage records.
 
-# COMMAND ----------
+# ==============================================================================
+# 4. explain("formatted") & Spark UI Diagnostics
+# ==============================================================================
+# - In `df.explain("formatted")`, confirm `usage_date >= start_date` is pushed into
+#   `PartitionFilters` / `PushedFilters` inside `FileScan` before `HashAggregate`.
+# - Look for two-stage `HashAggregate` (partial aggregate -> `Exchange hashpartitioning`
+#   -> final aggregate) keeping shuffle bytes tiny before final `Sort`.
 
-usage_records = [
-    ("WS-1", "JOB-101", "Nightly Ingestion", "ALL_PURPOSE", 45.2, "Finance", "2023-11-20"),
-    ("WS-1", "JOB-102", "Customer 360", "JOBS", 12.8, "Marketing", "2023-11-20"),
-    ("WS-1", "JOB-103", "Fraud Model Training", "DLT", 65.0, "Fraud", "2023-11-20"),
-    ("WS-1", None, "Ad-Hoc Data Science", "ALL_PURPOSE", 110.5, "DataScience", "2023-11-20"),
-    ("WS-1", "JOB-101", "Nightly Ingestion", "ALL_PURPOSE", 48.0, "Finance", "2023-11-21")
-]
 
-schema = "workspace_id STRING, job_id STRING, workload_name STRING, sku_name STRING, dbus DOUBLE, department STRING, usage_date STRING"
-df_billing = spark.createDataFrame(usage_records, schema)
-df_billing.createOrReplaceTempView("system_billing_usage")
-df_billing.show()
+# ==============================================================================
+# 5. Production & Interview Gotchas
+# ==============================================================================
+# - Gotcha 1: `system.billing.usage` reports `usage_quantity` (DBUs), NOT dollars;
+#   join against `system.billing.list_prices` (on `sku_name` and price effective window)
+#   to compute exact list-price spend before enterprise discount multipliers.
+# - Gotcha 2: Automated Jobs Compute is ~50–60% cheaper per DBU than interactive
+#   All-Purpose Compute; enforce Cluster Policies requiring `cost_center` & `env` tags.
+# - Gotcha 3: System tables have ingestion latency (up to 24h for billing records),
+#   so daily FinOps SLAs should use a 2-day rolling watermark rather than `CURRENT_DATE()`.
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Step 2: FinOps DBU and Dollar Cost Calculation by Department
-# MAGIC Aggregate DBU consumption and apply average contract DBU rate ($0.30/DBU).
+if __name__ == "__main__":
+    from pyspark.sql import SparkSession
 
-# COMMAND ----------
+    spark = SparkSession.builder.appName("Adapter_092_FinOps_Billing").getOrCreate()
+    spark.conf.set("spark.sql.ansi.enabled", "true")
 
-finops_query = """
-SELECT
-    department,
-    sku_name,
-    COUNT(*) AS run_events,
-    ROUND(SUM(dbus), 2) AS total_dbus,
-    ROUND(SUM(dbus) * 0.30, 2) AS estimated_cost_usd
-FROM system_billing_usage
-GROUP BY department, sku_name
-ORDER BY total_dbus DESC
-"""
-
-df_finops = spark.sql(finops_query)
-print("Departmental FinOps Cost Report:")
-df_finops.show(truncate=False)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Step 3: Detecting Cost Anomalies and Untagged Workloads
-# MAGIC Identify interactive all-purpose cluster usage that should run as scheduled jobs.
-
-# COMMAND ----------
-
-anomaly_query = """
-SELECT
-    workload_name,
-    SUM(dbus) AS total_dbus,
-    ROUND(SUM(dbus) * 0.30, 2) AS cost_usd,
-    'WARNING: High All-Purpose Compute! Convert to Automated Jobs Cluster to save 60%' AS recommendation
-FROM system_billing_usage
-WHERE sku_name = 'ALL_PURPOSE' AND job_id IS NULL
-GROUP BY workload_name
-"""
-
-spark.sql(anomaly_query).show(truncate=False)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Key Architectural Takeaways
-# MAGIC - **`system.billing.usage` provides granular operational visibility into DBU spend across workspaces.**
-# MAGIC - **Automated Jobs compute is ~60% cheaper than interactive All-Purpose compute for scheduled pipelines.**
-# MAGIC - **Enforce custom cluster tags (e.g. `Department`, `CostCenter`, `Environment`) to attribute costs accurately.**
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ### Senior Data Engineering Interview Questions
-# MAGIC 1. What is a DBU (Databricks Unit) and how is it calculated?
-# MAGIC 2. What is the cost difference between All-Purpose Compute and Jobs Compute in Databricks?
-# MAGIC 3. How do you query `system.billing.usage` to identify untagged compute resources?
-# MAGIC
-# MAGIC ---
-# MAGIC *Created for the **Spark & Databricks Coding Use Cases Masterclass**.*
+    usage_records = [
+        ("WS-1", "JOB-101", "Nightly Ingestion", "JOBS", 45.2, "Finance", "2026-01-14"),
+        ("WS-1", "JOB-102", "Customer 360", "JOBS", 12.8, "Marketing", "2026-01-15"),
+        ("WS-1", None, "Ad-Hoc Data Science", "ALL_PURPOSE", 110.5, "DataScience", "2026-01-15"),
+    ]
+    df_usage = spark.createDataFrame(
+        usage_records,
+        "workspace_id STRING, job_id STRING, workload_name STRING, sku_name STRING, usage_quantity DOUBLE, department STRING, usage_date STRING",
+    )
+    compute_departmental_dbu_report(df_usage, "2026-01-15").show(truncate=False)
+    detect_untagged_all_purpose_anomalies(df_usage).show(truncate=False)
