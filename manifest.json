@@ -10,7 +10,7 @@
       "id": "pyspark-handbook-001_sparksession_initialization_and_dataframe_creation_strategies",
       "type": "pattern_module",
       "title": "Sparksession Initialization And Dataframe Creation Strategies",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "01_foundations/001_sparksession_initialization_and_dataframe_creation_strategies.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -21,7 +21,7 @@
       "id": "pyspark-handbook-002_schema_enforcement_safe_type_casting_and_try_cast_handling",
       "type": "pattern_module",
       "title": "Schema Enforcement Safe Type Casting And Try Cast Handling",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "01_foundations/002_schema_enforcement_safe_type_casting_and_try_cast_handling.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -32,7 +32,7 @@
       "id": "pyspark-handbook-003_column_manipulation_batch_addition_and_projection_pruning",
       "type": "pattern_module",
       "title": "Column Manipulation Batch Addition And Projection Pruning",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "01_foundations/003_column_manipulation_batch_addition_and_projection_pruning.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -43,7 +43,7 @@
       "id": "pyspark-handbook-004_filtering_multi_condition_predicates_and_pushdown_analysis",
       "type": "pattern_module",
       "title": "Filtering Multi Condition Predicates And Pushdown Analysis",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "01_foundations/004_filtering_multi_condition_predicates_and_pushdown_analysis.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -54,7 +54,7 @@
       "id": "pyspark-handbook-005_string_operations_regex_extraction_and_data_cleansing",
       "type": "pattern_module",
       "title": "String Operations Regex Extraction And Data Cleansing",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "01_foundations/005_string_operations_regex_extraction_and_data_cleansing.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -65,7 +65,7 @@
       "id": "pyspark-handbook-006_date_and_timestamp_mastery_parsing_arithmetic_and_timezones",
       "type": "pattern_module",
       "title": "Date And Timestamp Mastery Parsing Arithmetic And Timezones",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "01_foundations/006_date_and_timestamp_mastery_parsing_arithmetic_and_timezones.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -76,7 +76,7 @@
       "id": "pyspark-handbook-007_handling_nulls_nans_and_imputation_strategies",
       "type": "pattern_module",
       "title": "Handling Nulls Nans And Imputation Strategies",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "01_foundations/007_handling_nulls_nans_and_imputation_strategies.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -87,7 +87,7 @@
       "id": "pyspark-handbook-008_sorting_ordering_semantics_and_stratified_sampling",
       "type": "pattern_module",
       "title": "Sorting Ordering Semantics And Stratified Sampling",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "01_foundations/008_sorting_ordering_semantics_and_stratified_sampling.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -98,7 +98,7 @@
       "id": "pyspark-handbook-009_deduplication_strategies_dropduplicates_vs_window_row_number",
       "type": "pattern_module",
       "title": "Deduplication Strategies Dropduplicates Vs Window Row Number",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "01_foundations/009_deduplication_strategies_dropduplicates_vs_window_row_number.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -109,7 +109,7 @@
       "id": "pyspark-handbook-010_transformations_vs_actions_lazy_evaluation_and_lineage_graph",
       "type": "pattern_module",
       "title": "Transformations Vs Actions Lazy Evaluation And Lineage Graph",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "01_foundations/010_transformations_vs_actions_lazy_evaluation_and_lineage_graph.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -120,7 +120,7 @@
       "id": "pyspark-handbook-013_array_creation_element_extraction_and_array_search_functions",
       "type": "pattern_module",
       "title": "Array Creation Element Extraction And Array Search Functions",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "01_foundations/013_array_creation_element_extraction_and_array_search_functions.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -131,7 +131,7 @@
       "id": "pyspark-handbook-014_spark_higher_order_functions_transform_filter_and_aggregate",
       "type": "pattern_module",
       "title": "Spark Higher Order Functions Transform Filter And Aggregate",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "01_foundations/014_spark_higher_order_functions_transform_filter_and_aggregate.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -142,7 +142,7 @@
       "id": "pyspark-handbook-015_exploding_and_flattening_arrays_explode_vs_explode_outer_and_posexplode",
       "type": "pattern_module",
       "title": "Exploding And Flattening Arrays Explode Vs Explode Outer And Posexplode",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "01_foundations/015_exploding_and_flattening_arrays_explode_vs_explode_outer_and_posexplode.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -153,7 +153,7 @@
       "id": "pyspark-handbook-016_struct_creation_nested_field_access_and_updating_sub_fields",
       "type": "pattern_module",
       "title": "Struct Creation Nested Field Access And Updating Sub Fields",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "01_foundations/016_struct_creation_nested_field_access_and_updating_sub_fields.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -164,7 +164,7 @@
       "id": "pyspark-handbook-017_recursive_schema_traversal_flattening_deeply_nested_json_structs",
       "type": "pattern_module",
       "title": "Recursive Schema Traversal Flattening Deeply Nested Json Structs",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "01_foundations/017_recursive_schema_traversal_flattening_deeply_nested_json_structs.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -175,7 +175,7 @@
       "id": "pyspark-handbook-018_maptype_creation_key_extraction_and_dynamic_properties",
       "type": "pattern_module",
       "title": "Maptype Creation Key Extraction And Dynamic Properties",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "01_foundations/018_maptype_creation_key_extraction_and_dynamic_properties.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -186,7 +186,7 @@
       "id": "pyspark-handbook-019_parsing_raw_json_payloads_from_json_to_json_and_schema_of_json",
       "type": "pattern_module",
       "title": "Parsing Raw Json Payloads From Json To Json And Schema Of Json",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "01_foundations/019_parsing_raw_json_payloads_from_json_to_json_and_schema_of_json.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -197,7 +197,7 @@
       "id": "pyspark-handbook-020_handling_corrupted_and_malformed_json_permissive_vs_dropmalformed_vs_failfast",
       "type": "pattern_module",
       "title": "Handling Corrupted And Malformed Json Permissive Vs Dropmalformed Vs Failfast",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "01_foundations/020_handling_corrupted_and_malformed_json_permissive_vs_dropmalformed_vs_failfast.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -208,7 +208,7 @@
       "id": "pyspark-handbook-021_xml_data_ingestion_hierarchical_parsing_and_tag_structuring",
       "type": "pattern_module",
       "title": "Xml Data Ingestion Hierarchical Parsing And Tag Structuring",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "01_foundations/021_xml_data_ingestion_hierarchical_parsing_and_tag_structuring.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -219,7 +219,7 @@
       "id": "pyspark-handbook-022_advanced_aggregations_collect_list_vs_collect_set_and_sorted_collections",
       "type": "pattern_module",
       "title": "Advanced Aggregations Collect List Vs Collect Set And Sorted Collections",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "01_foundations/022_advanced_aggregations_collect_list_vs_collect_set_and_sorted_collections.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -230,7 +230,7 @@
       "id": "pyspark-handbook-023_basic_and_multi_column_aggregations_with_alias_management",
       "type": "pattern_module",
       "title": "Basic And Multi Column Aggregations With Alias Management",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "01_foundations/023_basic_and_multi_column_aggregations_with_alias_management.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -241,7 +241,7 @@
       "id": "pyspark-handbook-024_advanced_multidimensional_olap_rollup_cube_and_grouping_sets",
       "type": "pattern_module",
       "title": "Advanced Multidimensional Olap Rollup Cube And Grouping Sets",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "01_foundations/024_advanced_multidimensional_olap_rollup_cube_and_grouping_sets.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -252,7 +252,7 @@
       "id": "pyspark-handbook-025_pivoting_and_unpivoting_data_pivot_and_stack_expression_mastery",
       "type": "pattern_module",
       "title": "Pivoting And Unpivoting Data Pivot And Stack Expression Mastery",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "01_foundations/025_pivoting_and_unpivoting_data_pivot_and_stack_expression_mastery.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -263,7 +263,7 @@
       "id": "pyspark-handbook-026_ranking_window_functions_row_number_rank_dense_rank_and_percent_rank",
       "type": "pattern_module",
       "title": "Ranking Window Functions Row Number Rank Dense Rank And Percent Rank",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "01_foundations/026_ranking_window_functions_row_number_rank_dense_rank_and_percent_rank.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -274,7 +274,7 @@
       "id": "pyspark-handbook-027_aggregate_and_cumulative_window_functions_running_totals_and_moving_averages",
       "type": "pattern_module",
       "title": "Aggregate And Cumulative Window Functions Running Totals And Moving Averages",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "01_foundations/027_aggregate_and_cumulative_window_functions_running_totals_and_moving_averages.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -285,7 +285,7 @@
       "id": "pyspark-handbook-028_offset_window_functions_lead_lag_and_period_over_period_churn",
       "type": "pattern_module",
       "title": "Offset Window Functions Lead Lag And Period Over Period Churn",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "01_foundations/028_offset_window_functions_lead_lag_and_period_over_period_churn.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -296,7 +296,7 @@
       "id": "pyspark-handbook-029_sessionization_and_the_gaps_and_islands_problem_in_pyspark",
       "type": "pattern_module",
       "title": "Sessionization And The Gaps And Islands Problem In Pyspark",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "01_foundations/029_sessionization_and_the_gaps_and_islands_problem_in_pyspark.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -307,7 +307,7 @@
       "id": "pyspark-handbook-030_relational_joins_masterclass_inner_outer_semi_and_anti_joins",
       "type": "pattern_module",
       "title": "Relational Joins Masterclass Inner Outer Semi And Anti Joins",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "01_foundations/030_relational_joins_masterclass_inner_outer_semi_and_anti_joins.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -318,7 +318,7 @@
       "id": "pyspark-handbook-031_broadcast_hash_joins_threshold_tuning_and_memory_limits",
       "type": "pattern_module",
       "title": "Broadcast Hash Joins Threshold Tuning And Memory Limits",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "01_foundations/031_broadcast_hash_joins_threshold_tuning_and_memory_limits.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -329,7 +329,7 @@
       "id": "pyspark-handbook-032_spark_sql_views_temp_tables_and_catalyst_sql_optimization",
       "type": "pattern_module",
       "title": "Spark Sql Views Temp Tables And Catalyst Sql Optimization",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "01_foundations/032_spark_sql_views_temp_tables_and_catalyst_sql_optimization.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -340,7 +340,7 @@
       "id": "pyspark-handbook-033_sql_to_pyspark_rosetta_stone",
       "type": "pattern_module",
       "title": "SQL To PySpark Rosetta Stone",
-      "difficulty": "L200",
+      "difficulty": "L2",
       "relative_path": "01_foundations/033_sql_to_pyspark_rosetta_stone.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -351,7 +351,7 @@
       "id": "pyspark-handbook-011_custom_pyspark_udfs_vs_vectorized_pandas_udfs_pyarrow",
       "type": "pattern_module",
       "title": "Custom Pyspark Udfs Vs Vectorized Pandas Udfs Pyarrow",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "02_production_patterns/011_custom_pyspark_udfs_vs_vectorized_pandas_udfs_pyarrow.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -362,7 +362,7 @@
       "id": "pyspark-handbook-012_pytest_and_assert_dataframe_equal_testing_patterns",
       "type": "pattern_module",
       "title": "Pytest And assertDataFrameEqual Testing Patterns",
-      "difficulty": "L200",
+      "difficulty": "L2",
       "relative_path": "02_production_patterns/012_pytest_and_assert_dataframe_equal_testing_patterns.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -373,7 +373,7 @@
       "id": "pyspark-handbook-044_csv_ingestion_edge_cases_multiline_escaped_quotes_and_custom_delimiters",
       "type": "pattern_module",
       "title": "Csv Ingestion Edge Cases Multiline Escaped Quotes And Custom Delimiters",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "02_production_patterns/044_csv_ingestion_edge_cases_multiline_escaped_quotes_and_custom_delimiters.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -384,7 +384,7 @@
       "id": "pyspark-handbook-045_parquet_and_orc_columnar_ingestion_predicate_pushdown_and_dictionary_encoding",
       "type": "pattern_module",
       "title": "Parquet And Orc Columnar Ingestion Predicate Pushdown And Dictionary Encoding",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "02_production_patterns/045_parquet_and_orc_columnar_ingestion_predicate_pushdown_and_dictionary_encoding.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -395,7 +395,7 @@
       "id": "pyspark-handbook-046_avro_binary_ingestion_and_schema_registry_compatibility",
       "type": "pattern_module",
       "title": "Avro Binary Ingestion And Schema Registry Compatibility",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "02_production_patterns/046_avro_binary_ingestion_and_schema_registry_compatibility.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -406,7 +406,7 @@
       "id": "pyspark-handbook-047_jdbc_parallel_ingestion_partitioning_by_column_fetchsize_and_connection_sizing",
       "type": "pattern_module",
       "title": "Jdbc Parallel Ingestion Partitioning By Column Fetchsize And Connection Sizing",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "02_production_patterns/047_jdbc_parallel_ingestion_partitioning_by_column_fetchsize_and_connection_sizing.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -417,7 +417,7 @@
       "id": "pyspark-handbook-050_building_a_metadata_driven_multi_format_ingestion_engine",
       "type": "pattern_module",
       "title": "Building A Metadata Driven Multi Format Ingestion Engine",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "02_production_patterns/050_building_a_metadata_driven_multi_format_ingestion_engine.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -428,7 +428,7 @@
       "id": "pyspark-handbook-051_incremental_batch_file_discovery_watermarking_and_modification_timestamps",
       "type": "pattern_module",
       "title": "Incremental Batch File Discovery Watermarking And Modification Timestamps",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "02_production_patterns/051_incremental_batch_file_discovery_watermarking_and_modification_timestamps.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -439,7 +439,7 @@
       "id": "pyspark-handbook-052_handling_compressed_archives_zip_tar_gz_bz2_in_distributed_pyspark",
       "type": "pattern_module",
       "title": "Handling Compressed Archives Zip Tar Gz Bz2 In Distributed Pyspark",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "02_production_patterns/052_handling_compressed_archives_zip_tar_gz_bz2_in_distributed_pyspark.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -450,7 +450,7 @@
       "id": "pyspark-handbook-053_distributed_rest_api_and_webhook_ingestion_without_driver_oom",
       "type": "pattern_module",
       "title": "Distributed Rest Api And Webhook Ingestion Without Driver Oom",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "02_production_patterns/053_distributed_rest_api_and_webhook_ingestion_without_driver_oom.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -461,7 +461,7 @@
       "id": "pyspark-handbook-064_medallion_architecture_bronze_ingestion_layer_standards_and_audit_trails",
       "type": "pattern_module",
       "title": "Medallion Architecture Bronze Ingestion Layer Standards And Audit Trails",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "02_production_patterns/064_medallion_architecture_bronze_ingestion_layer_standards_and_audit_trails.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -472,7 +472,7 @@
       "id": "pyspark-handbook-065_medallion_architecture_silver_transformation_cleansing_and_conformance",
       "type": "pattern_module",
       "title": "Medallion Architecture Silver Transformation Cleansing And Conformance",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "02_production_patterns/065_medallion_architecture_silver_transformation_cleansing_and_conformance.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -483,7 +483,7 @@
       "id": "pyspark-handbook-066_medallion_architecture_gold_business_aggregations_and_dimensional_serving",
       "type": "pattern_module",
       "title": "Medallion Architecture Gold Business Aggregations And Dimensional Serving",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "02_production_patterns/066_medallion_architecture_gold_business_aggregations_and_dimensional_serving.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -494,7 +494,7 @@
       "id": "pyspark-handbook-067_distributed_surrogate_key_generation_monotonically_increasing_id_vs_xxhash64_vs_uuids",
       "type": "pattern_module",
       "title": "Distributed Surrogate Key Generation Monotonically Increasing Id Vs Xxhash64 Vs Uuids",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "02_production_patterns/067_distributed_surrogate_key_generation_monotonically_increasing_id_vs_xxhash64_vs_uuids.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -505,7 +505,7 @@
       "id": "pyspark-handbook-068_slowly_changing_dimension_type_1_scd_type_1_in_place_overwrites_via_delta_merge",
       "type": "pattern_module",
       "title": "Slowly Changing Dimension Type 1 Scd Type 1 In Place Overwrites Via Delta Merge",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "02_production_patterns/068_slowly_changing_dimension_type_1_scd_type_1_in_place_overwrites_via_delta_merge.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -516,7 +516,7 @@
       "id": "pyspark-handbook-069_slowly_changing_dimension_type_2_scd_type_2_historical_tracking_with_effective_dates",
       "type": "pattern_module",
       "title": "Slowly Changing Dimension Type 2 Scd Type 2 Historical Tracking With Effective Dates",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "02_production_patterns/069_slowly_changing_dimension_type_2_scd_type_2_historical_tracking_with_effective_dates.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -527,7 +527,7 @@
       "id": "pyspark-handbook-070_slowly_changing_dimension_type_3_and_type_4_multi_tier_implementation",
       "type": "pattern_module",
       "title": "Slowly Changing Dimension Type 3 And Type 4 Multi Tier Implementation",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "02_production_patterns/070_slowly_changing_dimension_type_3_and_type_4_multi_tier_implementation.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -538,7 +538,7 @@
       "id": "pyspark-handbook-071_change_data_capture_cdc_ingestion_from_debezium_kafka_into_lakehouse",
       "type": "pattern_module",
       "title": "Change Data Capture Cdc Ingestion From Debezium Kafka Into Lakehouse",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "02_production_patterns/071_change_data_capture_cdc_ingestion_from_debezium_kafka_into_lakehouse.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -549,7 +549,7 @@
       "id": "pyspark-handbook-072_star_schema_implementation_fact_and_conformed_dimension_modeling_in_spark",
       "type": "pattern_module",
       "title": "Star Schema Implementation Fact And Conformed Dimension Modeling In Spark",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "02_production_patterns/072_star_schema_implementation_fact_and_conformed_dimension_modeling_in_spark.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -560,7 +560,7 @@
       "id": "pyspark-handbook-073_data_vault_2_0_in_the_lakehouse_hubs_links_and_satellites_modeling",
       "type": "pattern_module",
       "title": "Data Vault 2 0 In The Lakehouse Hubs Links And Satellites Modeling",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "02_production_patterns/073_data_vault_2_0_in_the_lakehouse_hubs_links_and_satellites_modeling.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -571,7 +571,7 @@
       "id": "pyspark-handbook-096_project_finance_real_time_credit_card_fraud_detection_and_customer_360",
       "type": "pattern_module",
       "title": "Project Finance Real Time Credit Card Fraud Detection And Customer 360",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "02_production_patterns/096_project_finance_real_time_credit_card_fraud_detection_and_customer_360.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -582,7 +582,7 @@
       "id": "pyspark-handbook-097_project_retail_omnichannel_multi_source_lakehouse_etl",
       "type": "pattern_module",
       "title": "Project Retail Omnichannel Multi Source Lakehouse Etl",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "02_production_patterns/097_project_retail_omnichannel_multi_source_lakehouse_etl.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -593,7 +593,7 @@
       "id": "pyspark-handbook-098_project_healthcare_hipaa_compliant_clinical_records_de_identification",
       "type": "pattern_module",
       "title": "Project Healthcare Hipaa Compliant Clinical Records De Identification",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "02_production_patterns/098_project_healthcare_hipaa_compliant_clinical_records_de_identification.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -604,7 +604,7 @@
       "id": "pyspark-handbook-099_project_telecom_customer_churn_prediction_feature_store_and_window_features",
       "type": "pattern_module",
       "title": "Project Telecom Customer Churn Prediction Feature Store And Window Features",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "02_production_patterns/099_project_telecom_customer_churn_prediction_feature_store_and_window_features.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -615,7 +615,7 @@
       "id": "pyspark-handbook-100_project_cybersecurity_web_server_access_log_analytics_and_threat_detection",
       "type": "pattern_module",
       "title": "Project Cybersecurity Web Server Access Log Analytics And Threat Detection",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "02_production_patterns/100_project_cybersecurity_web_server_access_log_analytics_and_threat_detection.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -626,7 +626,7 @@
       "id": "pyspark-handbook-101_project_iot_industrial_telemetry_anomaly_detection_via_z_score_statistics",
       "type": "pattern_module",
       "title": "Project Iot Industrial Telemetry Anomaly Detection Via Z Score Statistics",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "02_production_patterns/101_project_iot_industrial_telemetry_anomaly_detection_via_z_score_statistics.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -637,7 +637,7 @@
       "id": "pyspark-handbook-102_project_supply_chain_inventory_replenishment_forecasting_and_reorder_triggers",
       "type": "pattern_module",
       "title": "Project Supply Chain Inventory Replenishment Forecasting And Reorder Triggers",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "02_production_patterns/102_project_supply_chain_inventory_replenishment_forecasting_and_reorder_triggers.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -648,7 +648,7 @@
       "id": "pyspark-handbook-103_project_e_commerce_collaborative_filtering_recommendation_engine_with_spark_mllib",
       "type": "pattern_module",
       "title": "Project E Commerce Collaborative Filtering Recommendation Engine With Spark Mllib",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "02_production_patterns/103_project_e_commerce_collaborative_filtering_recommendation_engine_with_spark_mllib.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -659,7 +659,7 @@
       "id": "pyspark-handbook-104_project_agentic_ai_and_rag_lakehouse_document_chunking_and_vector_search",
       "type": "pattern_module",
       "title": "Project Agentic Ai And Rag Lakehouse Document Chunking And Vector Search",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "02_production_patterns/104_project_agentic_ai_and_rag_lakehouse_document_chunking_and_vector_search.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -670,7 +670,7 @@
       "id": "pyspark-handbook-105_master_enterprise_production_orchestration_workflow_parameters_and_alerting",
       "type": "pattern_module",
       "title": "Master Enterprise Production Orchestration Workflow Parameters And Alerting",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "02_production_patterns/105_master_enterprise_production_orchestration_workflow_parameters_and_alerting.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -681,7 +681,7 @@
       "id": "pyspark-handbook-054_structured_streaming_foundations_sources_execution_model_and_query_progress",
       "type": "pattern_module",
       "title": "Structured Streaming Foundations Sources Execution Model And Query Progress",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "03_performance_and_streaming/054_structured_streaming_foundations_sources_execution_model_and_query_progress.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -692,7 +692,7 @@
       "id": "pyspark-handbook-055_streaming_triggers_processingtime_once_and_availablenow_for_cost_optimization",
       "type": "pattern_module",
       "title": "Streaming Triggers Processingtime Once And Availablenow For Cost Optimization",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "03_performance_and_streaming/055_streaming_triggers_processingtime_once_and_availablenow_for_cost_optimization.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -703,7 +703,7 @@
       "id": "pyspark-handbook-056_streaming_window_aggregations_and_watermarking_for_late_arriving_events",
       "type": "pattern_module",
       "title": "Streaming Window Aggregations And Watermarking For Late Arriving Events",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "03_performance_and_streaming/056_streaming_window_aggregations_and_watermarking_for_late_arriving_events.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -714,7 +714,7 @@
       "id": "pyspark-handbook-057_stream_static_joins_with_slowly_changing_dimension_lookups",
       "type": "pattern_module",
       "title": "Stream Static Joins With Slowly Changing Dimension Lookups",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "03_performance_and_streaming/057_stream_static_joins_with_slowly_changing_dimension_lookups.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -725,7 +725,7 @@
       "id": "pyspark-handbook-058_stream_stream_dual_watermark_joins_with_interval_conditions",
       "type": "pattern_module",
       "title": "Stream Stream Dual Watermark Joins With Interval Conditions",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "03_performance_and_streaming/058_stream_stream_dual_watermark_joins_with_interval_conditions.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -736,7 +736,7 @@
       "id": "pyspark-handbook-059_streaming_deduplication_across_time_windows_with_watermarks",
       "type": "pattern_module",
       "title": "Streaming Deduplication Across Time Windows With Watermarks",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "03_performance_and_streaming/059_streaming_deduplication_across_time_windows_with_watermarks.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -747,7 +747,7 @@
       "id": "pyspark-handbook-060_idempotent_acid_delta_upserts_using_writestream_foreachbatch",
       "type": "pattern_module",
       "title": "Idempotent Acid Delta Upserts Using Writestream Foreachbatch",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "03_performance_and_streaming/060_idempotent_acid_delta_upserts_using_writestream_foreachbatch.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -758,7 +758,7 @@
       "id": "pyspark-handbook-061_arbitrary_stateful_streaming_operations_with_flatmapgroupswithstate_concepts",
       "type": "pattern_module",
       "title": "Arbitrary Stateful Streaming Operations (transformWithState / flatMapGroupsWithState)",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "03_performance_and_streaming/061_arbitrary_stateful_streaming_operations_with_flatmapgroupswithstate_concepts.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -769,7 +769,7 @@
       "id": "pyspark-handbook-062_dead_letter_queue_dlq_quarantine_streaming_pattern_in_pyspark",
       "type": "pattern_module",
       "title": "Dead Letter Queue Dlq Quarantine Streaming Pattern In Pyspark",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "03_performance_and_streaming/062_dead_letter_queue_dlq_quarantine_streaming_pattern_in_pyspark.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -780,7 +780,7 @@
       "id": "pyspark-handbook-063_streaming_observability_streamingquerylistener_and_sla_latency_alerting",
       "type": "pattern_module",
       "title": "Streaming Observability Streamingquerylistener And Sla Latency Alerting",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "03_performance_and_streaming/063_streaming_observability_streamingquerylistener_and_sla_latency_alerting.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -791,7 +791,7 @@
       "id": "pyspark-handbook-074_catalyst_optimizer_deep_dive_parsed_analyzed_optimized_plans_and_code_generation",
       "type": "pattern_module",
       "title": "Catalyst Optimizer Deep Dive Parsed Analyzed Optimized Plans And Code Generation",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "03_performance_and_streaming/074_catalyst_optimizer_deep_dive_parsed_analyzed_optimized_plans_and_code_generation.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -802,7 +802,7 @@
       "id": "pyspark-handbook-075_adaptive_query_execution_aqe_dynamic_coalescing_join_switching_and_skew_joins",
       "type": "pattern_module",
       "title": "Adaptive Query Execution Aqe Dynamic Coalescing Join Switching And Skew Joins",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "03_performance_and_streaming/075_adaptive_query_execution_aqe_dynamic_coalescing_join_switching_and_skew_joins.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -813,7 +813,7 @@
       "id": "pyspark-handbook-076_data_skew_detection_and_mitigation_using_salting_and_two_stage_joins",
       "type": "pattern_module",
       "title": "Data Skew Detection And Mitigation Using Salting And Two Stage Joins",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "03_performance_and_streaming/076_data_skew_detection_and_mitigation_using_salting_and_two_stage_joins.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -824,7 +824,7 @@
       "id": "pyspark-handbook-077_partitioning_strategies_avoiding_over_partitioning_and_directory_pruning",
       "type": "pattern_module",
       "title": "Partitioning Strategies Avoiding Over Partitioning And Directory Pruning",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "03_performance_and_streaming/077_partitioning_strategies_avoiding_over_partitioning_and_directory_pruning.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -835,7 +835,7 @@
       "id": "pyspark-handbook-078_bucketing_for_pre_sorted_join_optimization_and_shuffle_elimination",
       "type": "pattern_module",
       "title": "Bucketing For Pre Sorted Join Optimization And Shuffle Elimination",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "03_performance_and_streaming/078_bucketing_for_pre_sorted_join_optimization_and_shuffle_elimination.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -846,7 +846,7 @@
       "id": "pyspark-handbook-079_caching_and_persistence_storagelevel_memory_and_disk_vs_cache_traps",
       "type": "pattern_module",
       "title": "Caching And Persistence Storagelevel Memory And Disk Vs Cache Traps",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "03_performance_and_streaming/079_caching_and_persistence_storagelevel_memory_and_disk_vs_cache_traps.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -857,7 +857,7 @@
       "id": "pyspark-handbook-080_repartition_vs_coalesce_internals_full_shuffle_vs_partition_minimization",
       "type": "pattern_module",
       "title": "Repartition Vs Coalesce Internals Full Shuffle Vs Partition Minimization",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "03_performance_and_streaming/080_repartition_vs_coalesce_internals_full_shuffle_vs_partition_minimization.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -868,7 +868,7 @@
       "id": "pyspark-handbook-081_shuffle_partition_sizing_and_tuning_for_small_vs_terabyte_scale_jobs",
       "type": "pattern_module",
       "title": "Shuffle Partition Sizing And Tuning For Small Vs Terabyte Scale Jobs",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "03_performance_and_streaming/081_shuffle_partition_sizing_and_tuning_for_small_vs_terabyte_scale_jobs.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -879,7 +879,7 @@
       "id": "pyspark-handbook-082_diagnosing_and_fixing_outofmemory_oom_errors_driver_vs_executor_heap",
       "type": "pattern_module",
       "title": "Diagnosing And Fixing Outofmemory Oom Errors Driver Vs Executor Heap",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "03_performance_and_streaming/082_diagnosing_and_fixing_outofmemory_oom_errors_driver_vs_executor_heap.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -890,7 +890,7 @@
       "id": "pyspark-handbook-083_spark_ui_eventlog_metrics_task_skew_and_shuffle_spill_analysis",
       "type": "pattern_module",
       "title": "Spark Ui Eventlog Metrics Task Skew And Shuffle Spill Analysis",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "03_performance_and_streaming/083_spark_ui_eventlog_metrics_task_skew_and_shuffle_spill_analysis.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -901,7 +901,7 @@
       "id": "pyspark-handbook-085_fixing_accidental_cartesian_products_and_broadcastnestedloopjoins",
       "type": "pattern_module",
       "title": "Fixing Accidental Cartesian Products And Broadcastnestedloopjoins",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "03_performance_and_streaming/085_fixing_accidental_cartesian_products_and_broadcastnestedloopjoins.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -912,7 +912,7 @@
       "id": "pyspark-handbook-spark4-001_spark_connect_decoupled_client_architecture",
       "type": "pattern_module",
       "title": "Spark Connect Decoupled Client Architecture",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "04_spark4_and_modern_api/001_spark_connect_decoupled_client_architecture.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -923,7 +923,7 @@
       "id": "pyspark-handbook-spark4-002_ansi_mode_default_and_spark35_to_40_migration_gotchas",
       "type": "pattern_module",
       "title": "ANSI Mode Default And Spark 3.5 To 4.0 Migration Gotchas",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "04_spark4_and_modern_api/002_ansi_mode_default_and_spark35_to_40_migration_gotchas.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -934,7 +934,7 @@
       "id": "pyspark-handbook-spark4-003_variant_semi_structured_data_type_and_shredding",
       "type": "pattern_module",
       "title": "VARIANT Semi-Structured Data Type And Shredding",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "04_spark4_and_modern_api/003_variant_semi_structured_data_type_and_shredding.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -945,7 +945,7 @@
       "id": "pyspark-handbook-spark4-004_python_data_source_api_custom_connectors",
       "type": "pattern_module",
       "title": "Python Data Source API Custom Connectors",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "04_spark4_and_modern_api/004_python_data_source_api_custom_connectors.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -956,7 +956,7 @@
       "id": "pyspark-handbook-spark4-005_polymorphic_python_udtfs_and_table_arguments",
       "type": "pattern_module",
       "title": "Polymorphic Python UDTFs And TABLE Arguments",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "04_spark4_and_modern_api/005_polymorphic_python_udtfs_and_table_arguments.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -967,7 +967,7 @@
       "id": "pyspark-handbook-spark4-006_sql_pipe_syntax_and_parameterized_sql",
       "type": "pattern_module",
       "title": "SQL Pipe Syntax And Parameterized SQL",
-      "difficulty": "L200",
+      "difficulty": "L2",
       "relative_path": "04_spark4_and_modern_api/006_sql_pipe_syntax_and_parameterized_sql.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -978,7 +978,7 @@
       "id": "pyspark-handbook-spark4-007_structured_json_logging_and_observability",
       "type": "pattern_module",
       "title": "Structured JSON Logging And Observability",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "04_spark4_and_modern_api/007_structured_json_logging_and_observability.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -989,7 +989,7 @@
       "id": "pyspark-handbook-033_delta_table_creation_metadata_inspection_and_transaction_log_internals",
       "type": "pattern_module",
       "title": "Delta Table Creation Metadata Inspection And Transaction Log Internals",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "05_lakehouse_formats/033_delta_table_creation_metadata_inspection_and_transaction_log_internals.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -1000,7 +1000,7 @@
       "id": "pyspark-handbook-034_acid_crud_operations_on_delta_insert_update_and_delete_mechanics",
       "type": "pattern_module",
       "title": "Acid Crud Operations On Delta Insert Update And Delete Mechanics",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "05_lakehouse_formats/034_acid_crud_operations_on_delta_insert_update_and_delete_mechanics.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -1011,7 +1011,7 @@
       "id": "pyspark-handbook-035_delta_upsert_and_merge_into_mastery_with_multiple_conditions",
       "type": "pattern_module",
       "title": "Delta Upsert And Merge Into Mastery With Multiple Conditions",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "05_lakehouse_formats/035_delta_upsert_and_merge_into_mastery_with_multiple_conditions.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -1022,7 +1022,7 @@
       "id": "pyspark-handbook-036_delta_time_travel_audit_history_and_version_rollback",
       "type": "pattern_module",
       "title": "Delta Time Travel Audit History And Version Rollback",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "05_lakehouse_formats/036_delta_time_travel_audit_history_and_version_rollback.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -1033,7 +1033,7 @@
       "id": "pyspark-handbook-037_vacuum_command_retention_hours_and_safe_tombstone_management",
       "type": "pattern_module",
       "title": "Vacuum Command Retention Hours And Safe Tombstone Management",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "05_lakehouse_formats/037_vacuum_command_retention_hours_and_safe_tombstone_management.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -1044,7 +1044,7 @@
       "id": "pyspark-handbook-038_delta_optimize_file_compaction_and_auto_compaction_strategies",
       "type": "pattern_module",
       "title": "Delta Optimize File Compaction And Auto Compaction Strategies",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "05_lakehouse_formats/038_delta_optimize_file_compaction_and_auto_compaction_strategies.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -1055,7 +1055,7 @@
       "id": "pyspark-handbook-039_z_order_multi_dimensional_indexing_vs_liquid_clustering_cluster_by",
       "type": "pattern_module",
       "title": "Z Order Multi Dimensional Indexing Vs Liquid Clustering Cluster By",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "05_lakehouse_formats/039_z_order_multi_dimensional_indexing_vs_liquid_clustering_cluster_by.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -1066,7 +1066,7 @@
       "id": "pyspark-handbook-040_delta_change_data_feed_cdf_enabling_and_consuming_row_level_changes",
       "type": "pattern_module",
       "title": "Delta Change Data Feed Cdf Enabling And Consuming Row Level Changes",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "05_lakehouse_formats/040_delta_change_data_feed_cdf_enabling_and_consuming_row_level_changes.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -1077,7 +1077,7 @@
       "id": "pyspark-handbook-041_delta_schema_evolution_mergeschema_and_schema_enforcement",
       "type": "pattern_module",
       "title": "Delta Schema Evolution Mergeschema And Schema Enforcement",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "05_lakehouse_formats/041_delta_schema_evolution_mergeschema_and_schema_enforcement.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -1088,7 +1088,7 @@
       "id": "pyspark-handbook-042_delta_table_constraints_check_and_not_null_data_quality_rules",
       "type": "pattern_module",
       "title": "Delta Table Constraints Check And Not Null Data Quality Rules",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "05_lakehouse_formats/042_delta_table_constraints_check_and_not_null_data_quality_rules.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -1099,7 +1099,7 @@
       "id": "pyspark-handbook-043_in_place_parquet_to_delta_lake_migration_with_convert_to_delta",
       "type": "pattern_module",
       "title": "In Place Parquet To Delta Lake Migration With Convert To Delta",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "05_lakehouse_formats/043_in_place_parquet_to_delta_lake_migration_with_convert_to_delta.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -1110,7 +1110,7 @@
       "id": "pyspark-handbook-044_delta_vs_iceberg_vs_parquet_format_patterns",
       "type": "pattern_module",
       "title": "Delta Lake vs Apache Iceberg vs Parquet Format Patterns",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "05_lakehouse_formats/044_delta_vs_iceberg_vs_parquet_format_patterns.py",
       "pillars": [
         "Modern Lakehouse Architectures",
@@ -1121,7 +1121,7 @@
       "id": "pyspark-handbook-012_emulating_databricks_dbutils_widgets_and_secret_scopes_locally",
       "type": "pattern_module",
       "title": "Emulating Databricks Dbutils Widgets And Secret Scopes Locally",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "06_platform_adapters/012_emulating_databricks_dbutils_widgets_and_secret_scopes_locally.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -1132,7 +1132,7 @@
       "id": "pyspark-handbook-048_databricks_auto_loader_directory_mode_cloudfiles_schema_inference_and_checkpointing",
       "type": "pattern_module",
       "title": "Databricks Auto Loader Directory Mode Cloudfiles Schema Inference And Checkpointing",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "06_platform_adapters/048_databricks_auto_loader_directory_mode_cloudfiles_schema_inference_and_checkpointing.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -1143,7 +1143,7 @@
       "id": "pyspark-handbook-049_auto_loader_schema_evolution_and_rescued_data_column_rescued_data",
       "type": "pattern_module",
       "title": "Auto Loader Schema Evolution And Rescued Data Column Rescued Data",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "06_platform_adapters/049_auto_loader_schema_evolution_and_rescued_data_column_rescued_data.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -1154,7 +1154,7 @@
       "id": "pyspark-handbook-084_vectorized_execution_and_photon_engine_acceleration_mechanics",
       "type": "pattern_module",
       "title": "Vectorized Execution And Photon Engine Acceleration Mechanics",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "06_platform_adapters/084_vectorized_execution_and_photon_engine_acceleration_mechanics.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -1165,7 +1165,7 @@
       "id": "pyspark-handbook-086_unity_catalog_three_tier_namespace_catalogs_schemas_and_managed_vs_external_tables",
       "type": "pattern_module",
       "title": "Unity Catalog Three Tier Namespace Catalogs Schemas And Managed Vs External Tables",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "06_platform_adapters/086_unity_catalog_three_tier_namespace_catalogs_schemas_and_managed_vs_external_tables.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -1176,7 +1176,7 @@
       "id": "pyspark-handbook-087_unity_catalog_volumes_for_unstructured_and_semi_structured_data_governance",
       "type": "pattern_module",
       "title": "Unity Catalog Volumes For Unstructured And Semi Structured Data Governance",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "06_platform_adapters/087_unity_catalog_volumes_for_unstructured_and_semi_structured_data_governance.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -1187,7 +1187,7 @@
       "id": "pyspark-handbook-088_dynamic_row_level_security_rls_using_row_filters_and_user_functions",
       "type": "pattern_module",
       "title": "Dynamic Row Level Security Rls Using Row Filters And User Functions",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "06_platform_adapters/088_dynamic_row_level_security_rls_using_row_filters_and_user_functions.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -1198,7 +1198,7 @@
       "id": "pyspark-handbook-089_dynamic_column_masking_for_pii_protection_and_compliance",
       "type": "pattern_module",
       "title": "Dynamic Column Masking For Pii Protection And Compliance",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "06_platform_adapters/089_dynamic_column_masking_for_pii_protection_and_compliance.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -1209,7 +1209,7 @@
       "id": "pyspark-handbook-090_pii_encryption_salted_hashing_and_aes_decryption_aes_encrypt_sha2",
       "type": "pattern_module",
       "title": "Pii Encryption Salted Hashing And Aes Decryption Aes Encrypt Sha2",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "06_platform_adapters/090_pii_encryption_salted_hashing_and_aes_decryption_aes_encrypt_sha2.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -1220,7 +1220,7 @@
       "id": "pyspark-handbook-091_databricks_secret_scopes_and_secure_credential_injection_via_dbutils_secrets",
       "type": "pattern_module",
       "title": "Databricks Secret Scopes And Secure Credential Injection Via Dbutils Secrets",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "06_platform_adapters/091_databricks_secret_scopes_and_secure_credential_injection_via_dbutils_secrets.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -1231,7 +1231,7 @@
       "id": "pyspark-handbook-092_finops_and_dbu_cost_calculation_using_system_billing_usage_system_tables",
       "type": "pattern_module",
       "title": "Finops And Dbu Cost Calculation Using System Billing Usage System Tables",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "06_platform_adapters/092_finops_and_dbu_cost_calculation_using_system_billing_usage_system_tables.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -1242,7 +1242,7 @@
       "id": "pyspark-handbook-093_lakeflow_declarative_pipelines_and_delta_live_tables_dlt_expectations",
       "type": "pattern_module",
       "title": "Lakeflow Declarative Pipelines And Delta Live Tables Dlt Expectations",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "06_platform_adapters/093_lakeflow_declarative_pipelines_and_delta_live_tables_dlt_expectations.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -1253,7 +1253,7 @@
       "id": "pyspark-handbook-094_databricks_asset_bundles_dabs_for_multi_environment_ci_cd_automation",
       "type": "pattern_module",
       "title": "Databricks Asset Bundles Dabs For Multi Environment Ci Cd Automation",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "06_platform_adapters/094_databricks_asset_bundles_dabs_for_multi_environment_ci_cd_automation.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -1264,7 +1264,7 @@
       "id": "pyspark-handbook-095_semantic_layer_modeling_and_databricks_metric_views_for_bi_and_ai_agents",
       "type": "pattern_module",
       "title": "Semantic Layer Modeling And Databricks Metric Views For Bi And Ai Agents",
-      "difficulty": "L300",
+      "difficulty": "L3",
       "relative_path": "06_platform_adapters/095_semantic_layer_modeling_and_databricks_metric_views_for_bi_and_ai_agents.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -1275,7 +1275,7 @@
       "id": "pyspark-handbook-096_microsoft_fabric_onelake_and_notebookutils_adapter",
       "type": "pattern_module",
       "title": "Microsoft Fabric OneLake And notebookutils Adapter",
-      "difficulty": "L400",
+      "difficulty": "L4",
       "relative_path": "06_platform_adapters/096_microsoft_fabric_onelake_and_notebookutils_adapter.py",
       "pillars": [
         "Microsoft Fabric & OneLake",
@@ -1286,7 +1286,7 @@
       "id": "pyspark-handbook-097_aws_emr_glue_catalog_and_s3_committer_adapter",
       "type": "pattern_module",
       "title": "AWS EMR Glue Catalog And S3A Committer Adapter",
-      "difficulty": "L400",
+      "difficulty": "L4",
       "relative_path": "06_platform_adapters/097_aws_emr_glue_catalog_and_s3_committer_adapter.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -1297,7 +1297,7 @@
       "id": "pyspark-handbook-098_gcp_dataproc_serverless_and_bigquery_connector",
       "type": "pattern_module",
       "title": "GCP Dataproc Serverless And BigQuery Connector",
-      "difficulty": "L400",
+      "difficulty": "L4",
       "relative_path": "06_platform_adapters/098_gcp_dataproc_serverless_and_bigquery_connector.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -1308,7 +1308,7 @@
       "id": "pyspark-handbook-099_kubernetes_spark_operator_and_volcano_adapter",
       "type": "pattern_module",
       "title": "Kubernetes Spark Operator And Volcano Adapter",
-      "difficulty": "L400",
+      "difficulty": "L4",
       "relative_path": "06_platform_adapters/099_kubernetes_spark_operator_and_volcano_adapter.py",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -1319,7 +1319,7 @@
       "id": "pyspark-handbook-rb-01_driver_and_executor_oom_triage",
       "type": "incident_runbook",
       "title": "Incident Runbook: Driver And Executor Oom Triage",
-      "difficulty": "L400",
+      "difficulty": "L4",
       "relative_path": "runbooks/01_driver_and_executor_oom_triage.md",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -1330,7 +1330,7 @@
       "id": "pyspark-handbook-rb-02_shuffle_spill_and_partition_sizing",
       "type": "incident_runbook",
       "title": "Incident Runbook: Shuffle Spill And Partition Sizing",
-      "difficulty": "L400",
+      "difficulty": "L4",
       "relative_path": "runbooks/02_shuffle_spill_and_partition_sizing.md",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -1341,7 +1341,7 @@
       "id": "pyspark-handbook-rb-03_data_skew_and_two_phase_salting",
       "type": "incident_runbook",
       "title": "Incident Runbook: Data Skew And Two Phase Salting",
-      "difficulty": "L400",
+      "difficulty": "L4",
       "relative_path": "runbooks/03_data_skew_and_two_phase_salting.md",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -1352,7 +1352,7 @@
       "id": "pyspark-handbook-rb-04_streaming_state_store_and_watermark_drops",
       "type": "incident_runbook",
       "title": "Incident Runbook: Streaming State Store And Watermark Drops",
-      "difficulty": "L400",
+      "difficulty": "L4",
       "relative_path": "runbooks/04_streaming_state_store_and_watermark_drops.md",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -1363,7 +1363,7 @@
       "id": "pyspark-handbook-rb-05_delta_acid_concurrency_and_metadata_bottlenecks",
       "type": "incident_runbook",
       "title": "Incident Runbook: Delta Acid Concurrency And Metadata Bottlenecks",
-      "difficulty": "L400",
+      "difficulty": "L4",
       "relative_path": "runbooks/05_delta_acid_concurrency_and_metadata_bottlenecks.md",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -1374,7 +1374,7 @@
       "id": "pyspark-handbook-rb-06_pandas_udf_arrow_serialization_and_gc_pauses",
       "type": "incident_runbook",
       "title": "Incident Runbook: Pandas Udf Arrow Serialization And Gc Pauses",
-      "difficulty": "L400",
+      "difficulty": "L4",
       "relative_path": "runbooks/06_pandas_udf_arrow_serialization_and_gc_pauses.md",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -1385,7 +1385,7 @@
       "id": "pyspark-handbook-doc-01_catalyst_optimizer_and_tungsten_engine",
       "type": "architecture_blueprint",
       "title": "Architecture: 01 Catalyst Optimizer And Tungsten Engine",
-      "difficulty": "L400",
+      "difficulty": "L4",
       "relative_path": "architectures/01_catalyst_optimizer_and_tungsten_engine.md",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -1396,7 +1396,7 @@
       "id": "pyspark-handbook-doc-02_spark_unified_memory_management_and_spill_mechanics",
       "type": "architecture_blueprint",
       "title": "Architecture: 02 Spark Unified Memory Management And Spill Mechanics",
-      "difficulty": "L400",
+      "difficulty": "L4",
       "relative_path": "architectures/02_spark_unified_memory_management_and_spill_mechanics.md",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -1407,7 +1407,7 @@
       "id": "pyspark-handbook-doc-03_adaptive_query_execution_aqe_deep_dive",
       "type": "architecture_blueprint",
       "title": "Architecture: 03 Adaptive Query Execution Aqe Deep Dive",
-      "difficulty": "L400",
+      "difficulty": "L4",
       "relative_path": "architectures/03_adaptive_query_execution_aqe_deep_dive.md",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -1418,7 +1418,7 @@
       "id": "pyspark-handbook-doc-04_structured_streaming_and_stateful_stream_processing",
       "type": "architecture_blueprint",
       "title": "Architecture: 04 Structured Streaming And Stateful Stream Processing",
-      "difficulty": "L400",
+      "difficulty": "L4",
       "relative_path": "architectures/04_structured_streaming_and_stateful_stream_processing.md",
       "pillars": [
         "Apache Spark & Distributed Compute",
@@ -1429,7 +1429,7 @@
       "id": "pyspark-handbook-curriculum-topics",
       "type": "curriculum_topics_catalog",
       "title": "Topics Directory: PySpark Handbook",
-      "difficulty": "L200",
+      "difficulty": "L2",
       "relative_path": "topics/README.md",
       "pillars": [
         "Apache Spark & Distributed Compute",

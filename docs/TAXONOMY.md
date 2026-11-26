@@ -32,10 +32,10 @@ Every concept, recipe, exercise, architecture scenario, and interview question a
 
 | Level | Code Enum | Target Persona | Architectural Expectations |
 |:---:|:---:|---|---|
-| **L100** | `beginner` / `EASY` | Foundational | Core syntax, fundamental definitions, basic transformations, single-node execution. |
-| **L200** | `intermediate` / `MEDIUM` | Practitioner | Production pipeline patterns, schema validation, standard configurations, error handling. |
-| **L300** | `advanced` / `HARD` | Senior Engineer | Performance tuning, shuffle spill elimination, skew mitigation, incident triage runbooks. |
-| **L400** | `architect` / `ARCHITECT` | Principal Architect | Trade-off matrices, cross-cloud DR, enterprise governance, FinOps cost optimization, zero-trust security. |
+| **L1** | `beginner` / `EASY` | Foundational | Core syntax, fundamental definitions, basic transformations, single-node execution. |
+| **L2** | `intermediate` / `MEDIUM` | Practitioner | Production pipeline patterns, schema validation, standard configurations, error handling. |
+| **L3** | `advanced` / `HARD` | Senior Engineer | Performance tuning, shuffle spill elimination, skew mitigation, incident triage runbooks. |
+| **L4** | `architect` / `ARCHITECT` | Principal Architect | Trade-off matrices, cross-cloud DR, enterprise governance, FinOps cost optimization, zero-trust security. |
 
 ---
 

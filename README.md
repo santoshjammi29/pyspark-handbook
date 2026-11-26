@@ -35,13 +35,13 @@
 
 | Tier | Directory | Modules | Core Scope & Engineering Focus |
 | :---: | :--- | :---: | :--- |
-| **L100–L200** | [`01_foundations/`](01_foundations) | `31` | DataFrame API, `try_cast`, nested types, HOFs, SQL windows, joins, SQL-to-PySpark Rosetta Stone |
-| **L200–L300** | [`02_production_patterns/`](02_production_patterns) | `30` | Arrow UDFs, `assertDataFrameEqual`, CSV/Parquet/Avro/JDBC ingestion, Medallion/SCD/Data Vault, E2E capstones |
-| **L300–L400** | [`03_performance_and_streaming/`](03_performance_and_streaming) | `21` | Catalyst, AQE, skew salting, bucketing, memory/OOM diagnostics, watermarks, stream-stream joins, DLQs |
-| **L200–L300** | [`04_spark4_and_modern_api/`](04_spark4_and_modern_api) | `7` | Spark Connect gRPC, ANSI default, `VARIANT`, Python Data Source API, Polymorphic UDTFs, SQL Pipe `\|>`, JSON logs |
-| **L300** | [`05_lakehouse_formats/`](05_lakehouse_formats) | `12` | Delta ACID transactions, `MERGE INTO`, Liquid Clustering, CDF, constraints, Delta vs. Iceberg vs. Parquet |
-| **L300–L400** | [`06_platform_adapters/`](06_platform_adapters) | `18` + DABs | Databricks UC/Auto Loader/Photon/DABs, Fabric OneLake, AWS EMR/Glue, GCP Dataproc/BQ, K8s Spark Operator |
-| **L400** | [`architectures/`](architectures) · [`runbooks/`](runbooks) | `10` | 4 engine deep dives + 6 incident triage runbooks (OOM, spill, skew, RocksDB state, Delta OCC, Arrow GC) |
+| **L1–L2** | [`01_foundations/`](01_foundations) | `31` | DataFrame API, `try_cast`, nested types, HOFs, SQL windows, joins, SQL-to-PySpark Rosetta Stone |
+| **L2–L3** | [`02_production_patterns/`](02_production_patterns) | `30` | Arrow UDFs, `assertDataFrameEqual`, CSV/Parquet/Avro/JDBC ingestion, Medallion/SCD/Data Vault, E2E capstones |
+| **L3–L4** | [`03_performance_and_streaming/`](03_performance_and_streaming) | `21` | Catalyst, AQE, skew salting, bucketing, memory/OOM diagnostics, watermarks, stream-stream joins, DLQs |
+| **L2–L3** | [`04_spark4_and_modern_api/`](04_spark4_and_modern_api) | `7` | Spark Connect gRPC, ANSI default, `VARIANT`, Python Data Source API, Polymorphic UDTFs, SQL Pipe `\|>`, JSON logs |
+| **L3** | [`05_lakehouse_formats/`](05_lakehouse_formats) | `12` | Delta ACID transactions, `MERGE INTO`, Liquid Clustering, CDF, constraints, Delta vs. Iceberg vs. Parquet |
+| **L3–L4** | [`06_platform_adapters/`](06_platform_adapters) | `18` + DABs | Databricks UC/Auto Loader/Photon/DABs, Fabric OneLake, AWS EMR/Glue, GCP Dataproc/BQ, K8s Spark Operator |
+| **L4** | [`architectures/`](architectures) · [`runbooks/`](runbooks) | `10` | 4 engine deep dives + 6 incident triage runbooks (OOM, spill, skew, RocksDB state, Delta OCC, Arrow GC) |
 
 > Track personal mastery with interactive checkboxes in [`docs/ROADMAP.md`](docs/ROADMAP.md) and review the controlled vocabulary in [`docs/TAXONOMY.md`](docs/TAXONOMY.md).
 
@@ -225,7 +225,7 @@
 
 ## 🏗️ Architectures, Runbooks & Interview Prep
 
-| Architectural Deep Dives (`L400`) | Production Incident Runbooks (`L400`) | 4-Tier Interview Guides |
+| Architectural Deep Dives (`L4`) | Production Incident Runbooks (`L4`) | 4-Tier Interview Guides |
 |---|---|---|
 | [01. Catalyst & Tungsten Engine](architectures/01_catalyst_optimizer_and_tungsten_engine.md) | [01. Driver & Executor OOM Triage](runbooks/01_driver_and_executor_oom_triage.md) | [Tier 1: Junior & Associate](interview/01_junior_and_associate_pyspark_engineer.md) |
 | [02. Unified Memory & Spill](architectures/02_spark_unified_memory_management_and_spill_mechanics.md) | [02. Shuffle Spill & Partition Sizing](runbooks/02_shuffle_spill_and_partition_sizing.md) | [Tier 2: Mid-Level Data Engineer](interview/02_mid_level_data_engineer.md) |
